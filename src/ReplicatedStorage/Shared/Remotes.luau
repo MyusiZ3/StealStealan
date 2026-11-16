@@ -1,6 +1,6 @@
 --!strict
 -- Remotes.luau
--- Creates and retrieves RemoteEvents and RemoteFunctions under ReplicatedStorage.RemotesFolder
+-- Initializes and retrieves RemoteEvents under ReplicatedStorage.GameRemotes
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -15,21 +15,30 @@ local EVENT_NAMES = {
 	"RequestCancelPull",
 	"LassoTapBoost",
 	"PullProgressSync",
-	"PlaceCrateInStall",
+	"DeliverCrateToPen",
 	"CrateDelivered",
-	-- Plot & Zoo
-	"ClaimStallCoins",
-	"UpgradeStall",
-	"OpenCrate",
-	"EquipAnimalToStall",
-	"UnequipStallAnimal",
+	"PlayerKnockback",
+	-- Open-Pen Zoo & Upgrades
+	"ClaimPenCoins",
+	"UpgradePen",
+	"UpgradeTreadmill",
+	"OpenPendingCrate",
+	"EquipAnimalToPen",
+	"EquipBestAnimals",
+	"UnequipPenAnimal",
+	"ToggleLockAnimal",
+	"SellAnimal",
 	"MountAnimal",
-	-- Fuse & Merge
+	-- Index & Fuse/Merge
+	"ClaimIndexReward",
+	"ClaimAllIndexRewards",
 	"RequestMergeAnimals",
 	"RequestCrossFuse",
-	-- Economy & Shop
+	-- Gear, Trails & Vehicles
 	"BuyLasso",
 	"EquipLasso",
+	"BuyTrail",
+	"EquipTrail",
 	"BuyVehicle",
 	"EquipVehicle",
 	"SpawnVehicle",
@@ -37,12 +46,19 @@ local EVENT_NAMES = {
 	-- Training
 	"TrainingPulse",
 	"TrainingTapOrb",
+	"SetMovementState",
+	"TreadmillState",
 	-- Settings, Daily & Sync
 	"UpdateSettings",
 	"ClaimDailyReward",
 	"ProfileSync",
+	"AllPlotsSync",
 	"NotifyClient",
 	"PoacherAlertSync",
+	-- Admin Panel & Live Events
+	"AdminCommand",
+	"AdminStateSync",
+	"GlobalEventBanner",
 	-- Monetization
 	"PromptGamePass",
 	"PromptProduct",
@@ -57,7 +73,7 @@ local function getFolder(): Folder
 		local folder = Instance.new("Folder")
 		folder.Name = FOLDER_NAME
 		folder.Parent = ReplicatedStorage
-		for _, name in EVENT_NAMES do
+		for _, name in ipairs(EVENT_NAMES) do
 			local ev = Instance.new("RemoteEvent")
 			ev.Name = name
 			ev.Parent = folder
@@ -70,7 +86,14 @@ end
 
 function Remotes.InitServer()
 	if RunService:IsServer() then
-		getFolder()
+		local folder = getFolder()
+		for _, name in ipairs(EVENT_NAMES) do
+			if not folder:FindFirstChild(name) then
+				local ev = Instance.new("RemoteEvent")
+				ev.Name = name
+				ev.Parent = folder
+			end
+		end
 	end
 end
 

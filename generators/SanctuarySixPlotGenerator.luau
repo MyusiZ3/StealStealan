@@ -1,9 +1,8 @@
 --!strict
 -- SanctuarySixPlotGenerator.luau
--- Generates the Sanctuary Base Hub (Safe Zone), 6 Pre-Allocated Zoo Plots (for MaxPlayers=6),
--- Central Fuse & Merge Plaza, Shop Booths, and Dyno Training Zones using Blocky Studded aesthetics + Curated Assets.
+-- Generates the Sanctuary Base Hub (Safe Zone), 6 Pre-Allocated Open-Pen Roaming Plots (no stalls, 8->20 capacity),
+-- Personal Upgradeable Treadmills, Cash Collector Pads, Trail Shop, Lasso Shop, Fuse Machine, Vehicle Garage, & Merchant.
 
-local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local SanctuarySixPlotGenerator = {}
@@ -17,8 +16,8 @@ local function makePart(props: {
 	materialVariant: string?,
 	studded: boolean?,
 	canCollide: boolean?,
+	canQuery: boolean?,
 	transparency: number?,
-	shape: Enum.PartType?,
 	parent: Instance,
 }): Part
 	local p = Instance.new("Part")
@@ -30,18 +29,12 @@ local function makePart(props: {
 	if props.materialVariant and props.materialVariant ~= "" then
 		p.MaterialVariant = props.materialVariant
 	end
-	if props.studded then
-		p.TopSurface = Enum.SurfaceType.Studs
-	else
-		p.TopSurface = Enum.SurfaceType.Smooth
-	end
+	p.TopSurface = if props.studded then Enum.SurfaceType.Studs else Enum.SurfaceType.Smooth
 	p.BottomSurface = Enum.SurfaceType.Smooth
 	p.Anchored = true
 	p.CanCollide = if props.canCollide ~= nil then props.canCollide else true
+	p.CanQuery = if props.canQuery ~= nil then props.canQuery else true
 	p.Transparency = props.transparency or 0
-	if props.shape then
-		p.Shape = props.shape
-	end
 	p.Parent = props.parent
 	return p
 end
@@ -91,7 +84,7 @@ local function addPrompt(parent: Instance, actionText: string, objectText: strin
 	prompt.ActionText = actionText
 	prompt.ObjectText = objectText
 	prompt.HoldDuration = 0
-	prompt.MaxActivationDistance = 12
+	prompt.MaxActivationDistance = 13
 	prompt.RequiresLineOfSight = false
 	prompt.Parent = parent
 	return prompt
@@ -106,7 +99,7 @@ local function groundModel(model: Model, targetBottomY: number)
 	end
 end
 
-local function cloneCuratedModel(name: string, targetCFrame: CFrame, scaleFactor: number, parent: Instance, groundY: number?): Model?
+local function cloneCuratedModel(name: string, targetCFrame: CFrame, scaleFactor: number, parent: Instance, groundY: number?, nonCollide: boolean?): Model?
 	local ca = ReplicatedStorage:FindFirstChild("CuratedAssets")
 	if not ca then
 		return nil
@@ -124,6 +117,11 @@ local function cloneCuratedModel(name: string, targetCFrame: CFrame, scaleFactor
 	for _, d in ipairs(clone:GetDescendants()) do
 		if d:IsA("BasePart") then
 			d.Anchored = true
+			if nonCollide then
+				d.CanCollide = false
+				d.CanQuery = false
+				d.CanTouch = false
+			end
 		elseif d:IsA("BaseScript") then
 			d:Destroy()
 		end
@@ -136,22 +134,21 @@ local function cloneCuratedModel(name: string, targetCFrame: CFrame, scaleFactor
 	return clone
 end
 
-local function buildSinglePlot(plotIndex: number, centerPos: Vector3, facingDirX: number, parentFolder: Folder)
+local function buildSingleOpenPlot(plotIndex: number, centerPos: Vector3, facingDirX: number, parentFolder: Folder)
 	local plotModel = Instance.new("Model")
 	plotModel.Name = "Plot_" .. tostring(plotIndex)
 	plotModel:SetAttribute("PlotIndex", plotIndex)
 	plotModel:SetAttribute("OwnerUserId", 0)
 	plotModel.Parent = parentFolder
 
-	-- Plot facing: Left plots face +X (rotation -90 deg around Y), Right plots face -X (+90 deg)
 	local yaw = if facingDirX > 0 then -math.pi / 2 else math.pi / 2
 	local plotCF = CFrame.new(centerPos) * CFrame.Angles(0, yaw, 0)
 
-	-- 1. Main Plot Foundation (66 wide along Z-axis of hub, 64 deep along X)
+	-- 1. Main Plot Foundation (64 wide x 64 deep)
 	local base = makePart({
 		name = "PlotBase",
-		size = Vector3.new(64, 2, 62),
-		cframe = plotCF * CFrame.new(0, 0, 0),
+		size = Vector3.new(64, 2, 64),
+		cframe = plotCF,
 		color = Color3.fromRGB(108, 184, 88),
 		material = Enum.Material.Grass,
 		materialVariant = "BlockyStudGrass",
@@ -160,173 +157,162 @@ local function buildSinglePlot(plotIndex: number, centerPos: Vector3, facingDirX
 	})
 	plotModel.PrimaryPart = base
 
-	-- Border curb
 	makePart({
 		name = "FrontCurb",
 		size = Vector3.new(64, 0.8, 3),
-		cframe = plotCF * CFrame.new(0, 1.1, -29.5),
+		cframe = plotCF * CFrame.new(0, 1.1, -30.5),
 		color = Color3.fromRGB(224, 206, 168),
 		material = Enum.Material.Cobblestone,
 		studded = true,
 		parent = plotModel,
 	})
 
-	-- 2. Owner Signboard at Plot Entrance
+	-- 2. Owner Signboard
 	local signPost = makePart({
 		name = "OwnerSignPost",
 		size = Vector3.new(1.5, 9, 1.5),
-		cframe = plotCF * CFrame.new(-24, 5.5, -28),
+		cframe = plotCF * CFrame.new(-24, 5.5, -29),
 		color = Color3.fromRGB(98, 68, 44),
 		material = Enum.Material.Wood,
+		canQuery = false,
 		parent = plotModel,
 	})
 	local signBoard = makePart({
 		name = "OwnerSignBoard",
 		size = Vector3.new(16, 6, 1),
-		cframe = plotCF * CFrame.new(-24, 10, -28),
+		cframe = plotCF * CFrame.new(-24, 10, -29),
 		color = Color3.fromRGB(34, 42, 56),
-		material = Enum.Material.SmoothPlastic,
 		parent = plotModel,
 	})
-	signPost.CanQuery = false
-	addSurfaceSign(signBoard, Enum.NormalId.Front, "SANCTUARY PLOT #" .. plotIndex, "Claimed automatically on join", Color3.fromRGB(30, 42, 58))
-	addSurfaceSign(signBoard, Enum.NormalId.Back, "SANCTUARY PLOT #" .. plotIndex, "Claimed automatically on join", Color3.fromRGB(30, 42, 58))
+	addSurfaceSign(signBoard, Enum.NormalId.Front, "ZOO SANCTUARY #" .. plotIndex, "Open-Pen (0/8 Animals)", Color3.fromRGB(30, 42, 58))
+	addSurfaceSign(signBoard, Enum.NormalId.Back, "ZOO SANCTUARY #" .. plotIndex, "Open-Pen (0/8 Animals)", Color3.fromRGB(30, 42, 58))
+	signPost.CanCollide = true
 
-	-- 3. Personal Dyno / Speed Training Track (Front strip of the plot)
-	local dynoTrack = makePart({
-		name = "DynoTrainingPad",
-		size = Vector3.new(38, 0.6, 10),
-		cframe = plotCF * CFrame.new(4, 1.3, -22),
-		color = Color3.fromRGB(58, 168, 255),
-		material = Enum.Material.SmoothPlastic,
+	cloneCuratedModel("WoodenFenceGate", plotCF * CFrame.new(-12, 3.6, -30.5), 1.3, plotModel, 1.2)
+
+	-- 3. Open-Pen Roaming Paddock (NO STALLS! Animals walk around freely inside 52 x 36 enclosure)
+	local paddockFloor = makePart({
+		name = "OpenPaddockFloor",
+		size = Vector3.new(52, 0.5, 36),
+		cframe = plotCF * CFrame.new(0, 1.25, 10),
+		color = Color3.fromRGB(122, 198, 94),
+		material = Enum.Material.Grass,
+		materialVariant = "BlockyStudGrass",
 		studded = true,
 		parent = plotModel,
 	})
-	dynoTrack:SetAttribute("IsDynoZone", true)
-	dynoTrack:SetAttribute("PlotIndex", plotIndex)
-	addSurfaceSign(dynoTrack, Enum.NormalId.Top, "SPEED TRAINING TRACK", "Ride Vehicle or Pet here for +SPEED!", Color3.fromRGB(24, 96, 178))
+	paddockFloor:SetAttribute("IsOpenPaddock", true)
+	paddockFloor:SetAttribute("PlotIndex", plotIndex)
 
-	-- Curated Wooden Fence Gate at entrance
-	local gateClone = cloneCuratedModel("WoodenFenceGate", plotCF * CFrame.new(-14, 3.6, -29.5), 1.3, plotModel, 1.2)
-	if not gateClone then
+	-- Perimeter Fence around Open Paddock (leaving open front walkway)
+	local fenceColor = Color3.fromRGB(142, 96, 54)
+	makePart({
+		name = "FenceBack",
+		size = Vector3.new(54, 3.2, 1.4),
+		cframe = plotCF * CFrame.new(0, 2.8, 28.5),
+		color = fenceColor,
+		material = Enum.Material.Wood,
+		parent = plotModel,
+	})
+	makePart({
+		name = "FenceLeft",
+		size = Vector3.new(1.4, 3.2, 38),
+		cframe = plotCF * CFrame.new(-26.5, 2.8, 10),
+		color = fenceColor,
+		material = Enum.Material.Wood,
+		parent = plotModel,
+	})
+	makePart({
+		name = "FenceRight",
+		size = Vector3.new(1.4, 3.2, 38),
+		cframe = plotCF * CFrame.new(26.5, 2.8, 10),
+		color = fenceColor,
+		material = Enum.Material.Wood,
+		parent = plotModel,
+	})
+	-- Front Fence with 14-stud wide entrance gap in center
+	for _, xSide in { -16.5, 16.5 } do
 		makePart({
-			name = "FallbackGateArch",
-			size = Vector3.new(10, 1.5, 1.5),
-			cframe = plotCF * CFrame.new(-14, 8, -29.5),
-			color = Color3.fromRGB(145, 96, 52),
+			name = "FenceFront_" .. tostring(xSide),
+			size = Vector3.new(20, 3.2, 1.4),
+			cframe = plotCF * CFrame.new(xSide, 2.8, -8.5),
+			color = fenceColor,
 			material = Enum.Material.Wood,
 			parent = plotModel,
 		})
 	end
 
-	-- 4. Zoo Enclosure Stalls (20 Stalls in 4 rows x 5 columns)
-	-- Stalls 1..14 = Free unlockable, Stalls 15..20 = Extra Zoo Capacity Pass
-	local stallsFolder = Instance.new("Folder")
-	stallsFolder.Name = "Stalls"
-	stallsFolder.Parent = plotModel
+	-- 4. Front Functional Pads (Unbox Crate | Cash Collector | Pen Capacity Upgrade | Personal Treadmill)
+	-- A. Crate Unbox Pad
+	local unboxPad = makePart({
+		name = "CrateUnboxPad",
+		size = Vector3.new(11, 0.6, 8),
+		cframe = plotCF * CFrame.new(-20, 1.3, -16),
+		color = Color3.fromRGB(255, 168, 52),
+		studded = true,
+		parent = plotModel,
+	})
+	unboxPad:SetAttribute("PlotIndex", plotIndex)
+	addSurfaceSign(unboxPad, Enum.NormalId.Top, "DROP & UNBOX CRATE", "Step here with crate!", Color3.fromRGB(168, 86, 22))
+	addPrompt(unboxPad, "Drop / Open Crate", "Crate Unbox Pad", "UnboxPadPrompt")
 
-	local cols = 5
-	local spacingX = 11.5
-	local spacingZ = 10.5
-	local startX = -23
-	local startZ = -8
+	-- B. Cash Collector Pad
+	local cashPad = makePart({
+		name = "CashCollectorPad",
+		size = Vector3.new(12, 0.6, 8),
+		cframe = plotCF * CFrame.new(-6, 1.3, -16),
+		color = Color3.fromRGB(82, 232, 118),
+		material = Enum.Material.Neon,
+		canCollide = false,
+		parent = plotModel,
+	})
+	cashPad:SetAttribute("PlotIndex", plotIndex)
+	addSurfaceSign(cashPad, Enum.NormalId.Top, "COLLECT CASH: $0", "0/s Pen Income", Color3.fromRGB(24, 122, 54))
+	addPrompt(cashPad, "Collect Coins", "Zoo Pen Cash", "CollectCashPrompt")
 
-	for i = 1, 20 do
-		local row = math.floor((i - 1) / cols)
-		local col = (i - 1) % cols
-		local localPos = Vector3.new(startX + col * spacingX, 1.2, startZ + row * spacingZ)
+	-- C. Pen Capacity Upgrade Stand (8 -> 20)
+	local upgradePad = makePart({
+		name = "PenUpgradePad",
+		size = Vector3.new(11, 0.6, 8),
+		cframe = plotCF * CFrame.new(8, 1.3, -16),
+		color = Color3.fromRGB(152, 92, 255),
+		studded = true,
+		parent = plotModel,
+	})
+	upgradePad:SetAttribute("PlotIndex", plotIndex)
+	addSurfaceSign(upgradePad, Enum.NormalId.Top, "UPGRADE PEN (8/20)", "Next: $600", Color3.fromRGB(84, 34, 158))
+	addPrompt(upgradePad, "Upgrade Pen Capacity", "Zoo Capacity (8->20)", "UpgradePenPrompt")
 
-		local stallModel = Instance.new("Model")
-		stallModel.Name = "Stall_" .. tostring(i)
-		stallModel:SetAttribute("StallIndex", i)
-		stallModel:SetAttribute("PlotIndex", plotIndex)
-		stallModel:SetAttribute("UnlockedByDefault", i <= 4)
-		stallModel:SetAttribute("RequiresPass", i > 14)
-		stallModel.Parent = stallsFolder
+	-- D. Personal Upgradeable Treadmill Track (Right Front) + 3D Treadmill Model & Snap Anchor
+	local treadmillPad = makePart({
+		name = "TreadmillPad",
+		size = Vector3.new(26, 0.6, 8.5),
+		cframe = plotCF * CFrame.new(12, 1.3, -24.5),
+		color = Color3.fromRGB(58, 168, 255),
+		studded = true,
+		parent = plotModel,
+	})
+	treadmillPad:SetAttribute("IsTreadmillZone", true)
+	treadmillPad:SetAttribute("PlotIndex", plotIndex)
+	addSurfaceSign(treadmillPad, Enum.NormalId.Top, "TREADMILL LV.1", "Step on Belt to Run!", Color3.fromRGB(24, 96, 178))
+	addPrompt(treadmillPad, "Upgrade Treadmill", "Speed Training Lv.1", "UpgradeTreadmillPrompt")
 
-		local isStarter = i <= 4
-		local isPassOnly = i > 14
-
-		local padColor = if isStarter
-			then Color3.fromRGB(94, 212, 128)
-			elseif isPassOnly then Color3.fromRGB(238, 186, 62)
-			else Color3.fromRGB(132, 146, 162)
-
-		local pad = makePart({
-			name = "StallPad",
-			size = Vector3.new(9.5, 0.5, 8.5),
-			cframe = plotCF * CFrame.new(localPos),
-			color = padColor,
-			material = Enum.Material.SmoothPlastic,
-			studded = true,
-			parent = stallModel,
-		})
-		stallModel.PrimaryPart = pad
-
-		-- Enclosure low fence rails (left, right, back)
-		local railColor = Color3.fromRGB(136, 92, 52)
-		makePart({
-			name = "FenceBack",
-			size = Vector3.new(9.5, 1.6, 0.6),
-			cframe = plotCF * CFrame.new(localPos + Vector3.new(0, 1.0, 4.0)),
-			color = railColor,
-			material = Enum.Material.Wood,
-			canCollide = false,
-			parent = stallModel,
-		})
-		makePart({
-			name = "FenceLeft",
-			size = Vector3.new(0.6, 1.6, 8.2),
-			cframe = plotCF * CFrame.new(localPos + Vector3.new(-4.45, 1.0, 0)),
-			color = railColor,
-			material = Enum.Material.Wood,
-			canCollide = false,
-			parent = stallModel,
-		})
-		makePart({
-			name = "FenceRight",
-			size = Vector3.new(0.6, 1.6, 8.2),
-			cframe = plotCF * CFrame.new(localPos + Vector3.new(4.45, 1.0, 0)),
-			color = railColor,
-			material = Enum.Material.Wood,
-			canCollide = false,
-			parent = stallModel,
-		})
-
-		-- Collect / Action Pad in front of stall
-		local collectPad = makePart({
-			name = "ActionPad",
-			size = Vector3.new(4.2, 0.35, 2.2),
-			cframe = plotCF * CFrame.new(localPos + Vector3.new(0, 0.3, -3.2)),
-			color = if isStarter then Color3.fromRGB(255, 214, 62) else Color3.fromRGB(92, 102, 118),
-			material = Enum.Material.Neon,
-			canCollide = false,
-			parent = stallModel,
-		})
-		collectPad:SetAttribute("StallIndex", i)
-		collectPad:SetAttribute("PlotIndex", plotIndex)
-
-		-- Anchor where rescued animal / crate spawns
-		local anchor = makePart({
-			name = "AnimalAnchor",
-			size = Vector3.new(1, 0.2, 1),
-			cframe = plotCF * CFrame.new(localPos + Vector3.new(0, 0.35, 0.8)),
-			color = Color3.fromRGB(255, 255, 255),
-			transparency = 1,
-			canCollide = false,
-			parent = stallModel,
-		})
-		anchor.CanQuery = false
-		anchor.CanTouch = false
-
-		local labelText = if isStarter
-			then "STALL #" .. i .. " (EMPTY)"
-			elseif isPassOnly then "VIP STALL #" .. i
-			else "LOCKED #" .. i
-		addSurfaceSign(pad, Enum.NormalId.Top, labelText, if isStarter then "Bring a crate here!" else nil, Color3.fromRGB(28, 36, 48))
-
-		addPrompt(collectPad, "Interact", "Zoo Stall #" .. i, "StallPrompt")
+	local treadMesh = cloneCuratedModel("Hero_Treadmill_AI", plotCF * CFrame.new(12, 4.0, -24.5) * CFrame.Angles(0, math.pi, 0), 1.35, plotModel, 1.6, true)
+	if not treadMesh then
+		cloneCuratedModel("Hero_Treadmill", plotCF * CFrame.new(12, 4.0, -24.5), 1.0, plotModel, 1.6, true)
 	end
+
+	local treadAnchor = makePart({
+		name = "TreadmillStandAnchor",
+		size = Vector3.new(2, 1, 2),
+		cframe = plotCF * CFrame.new(12, 4.4, -24.5) * CFrame.Angles(0, math.pi, 0),
+		color = Color3.fromRGB(0, 255, 255),
+		canCollide = false,
+		canQuery = false,
+		transparency = 1,
+		parent = plotModel,
+	})
+	treadAnchor:SetAttribute("PlotIndex", plotIndex)
 end
 
 function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
@@ -339,7 +325,7 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 	hub.Name = "SanctuaryHub"
 	hub.Parent = worldFolder
 
-	-- 1. Main Sanctuary Ground Platform (Blocky Studded Lawn)
+	-- 1. Main Sanctuary Floor (Blocky Studded Grass)
 	makePart({
 		name = "HubFloor",
 		size = Vector3.new(260, 4, 290),
@@ -351,7 +337,7 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 		parent = hub,
 	})
 
-	-- Central Stone Boulevard leading to Biome 1
+	-- Central Stone Boulevard
 	makePart({
 		name = "CentralBoulevard",
 		size = Vector3.new(44, 0.6, 290),
@@ -362,33 +348,30 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 		parent = hub,
 	})
 
-	-- Curb stripes along boulevard
 	for _, side in { -22.5, 22.5 } do
 		makePart({
 			name = "BoulevardCurb_" .. tostring(side),
 			size = Vector3.new(2, 1.0, 290),
 			cframe = CFrame.new(side, 0.5, 5),
 			color = Color3.fromRGB(238, 224, 178),
-			material = Enum.Material.SmoothPlastic,
 			studded = true,
 			parent = hub,
 		})
 	end
 
-	-- 2. Spawn Plaza & SpawnLocation
+	-- 2. Spawn Plaza (Z = -110)
 	makePart({
 		name = "SpawnPlaza",
 		size = Vector3.new(36, 0.8, 36),
-		cframe = CFrame.new(0, 0.4, -105),
+		cframe = CFrame.new(0, 0.4, -110),
 		color = Color3.fromRGB(76, 156, 224),
-		material = Enum.Material.SmoothPlastic,
 		studded = true,
 		parent = hub,
 	})
 	local spawnLoc = Instance.new("SpawnLocation")
 	spawnLoc.Name = "RangerSpawn"
 	spawnLoc.Size = Vector3.new(12, 1, 12)
-	spawnLoc.CFrame = CFrame.new(0, 0.85, -105)
+	spawnLoc.CFrame = CFrame.new(0, 0.85, -110)
 	spawnLoc.Anchored = true
 	spawnLoc.Neutral = true
 	spawnLoc.Color = Color3.fromRGB(255, 206, 56)
@@ -397,73 +380,95 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 	spawnLoc.Duration = 0
 	spawnLoc.Parent = hub
 
-	-- 3. Central Fuse & Merge Plaza (using AI-Generated Hero_FuseMachine)
+	-- 3. Row 1 (Z = -55): Lasso Gear Shop (Left) & Trail Multiplier Shop (Right)
+	local lassoShopPad = makePart({
+		name = "LassoShopPad",
+		size = Vector3.new(15, 0.9, 14),
+		cframe = CFrame.new(-13, 0.5, -55),
+		color = Color3.fromRGB(244, 162, 52),
+		studded = true,
+		parent = hub,
+	})
+	addSurfaceSign(lassoShopPad, Enum.NormalId.Top, "LASSO GEAR SHOP", "10 Tiers: 150 -> 750Qi!", Color3.fromRGB(148, 82, 18))
+	cloneCuratedModel("Hero_ShopBooth", CFrame.new(-16, 6, -55) * CFrame.Angles(0, math.rad(90), 0), 0.95, hub, 0.95, true)
+	addPrompt(lassoShopPad, "Open Lasso Shop", "10 Lasso Tiers", "LassoShopPrompt")
+
+	local trailShopPad = makePart({
+		name = "TrailShopPad",
+		size = Vector3.new(15, 0.9, 14),
+		cframe = CFrame.new(13, 0.5, -55),
+		color = Color3.fromRGB(0, 212, 255),
+		studded = true,
+		parent = hub,
+	})
+	addSurfaceSign(trailShopPad, Enum.NormalId.Top, "TRAIL SPEED SHOP", "1.25x -> 750x Speed!", Color3.fromRGB(18, 108, 158))
+	cloneCuratedModel("Hero_ShopBooth", CFrame.new(16, 6, -55) * CFrame.Angles(0, math.rad(-90), 0), 0.95, hub, 0.95, true)
+	addPrompt(trailShopPad, "Open Trail Shop", "Speed Multiplier Trails", "TrailShopPrompt")
+
+	-- 4. Row 2 (Z = 0): Mutation & Fuse Machine (Left) & Vehicle Garage (Right)
 	local fuseZone = Instance.new("Model")
 	fuseZone.Name = "FuseAndMergePlaza"
 	fuseZone.Parent = hub
 
 	local fusePad = makePart({
 		name = "FusePad",
-		size = Vector3.new(22, 0.9, 22),
-		cframe = CFrame.new(0, 0.5, -35),
+		size = Vector3.new(18, 0.9, 18),
+		cframe = CFrame.new(-12, 0.5, 0),
 		color = Color3.fromRGB(168, 86, 255),
-		material = Enum.Material.SmoothPlastic,
 		studded = true,
 		parent = fuseZone,
 	})
-	addSurfaceSign(fusePad, Enum.NormalId.Top, "FUSE & MERGE MACHINE", "3x Normal -> Golden -> Rainbow!", Color3.fromRGB(84, 34, 158))
-	local fuseHero = cloneCuratedModel("Hero_FuseMachine", CFrame.new(0, 5.2, -35), 1.0, fuseZone, 0.95)
-	local promptTarget: BasePart = fusePad
+	addSurfaceSign(fusePad, Enum.NormalId.Top, "FUSE & MUTATION", "Merge -> Golden/Rainbow/Celestial!", Color3.fromRGB(84, 34, 158))
+	local fuseHero = cloneCuratedModel("Hero_FuseMachine", CFrame.new(-12, 5.2, 0), 0.9, fuseZone, 0.95)
+	local fusePromptPart: BasePart = fusePad
 	if fuseHero then
 		for _, p in ipairs(fuseHero:GetDescendants()) do
 			if p:IsA("BasePart") then
-				promptTarget = p
+				fusePromptPart = p
 				break
 			end
 		end
 	end
-	addPrompt(promptTarget, "Open Fuse & Merge", "Animal Evolution Machine", "FusePrompt")
-
-	-- 4. Lasso Shop Booth (Left of Boulevard) & Vehicle Garage (Right of Boulevard)
-	local lassoShopPad = makePart({
-		name = "LassoShopPad",
-		size = Vector3.new(16, 0.9, 14),
-		cframe = CFrame.new(-15, 0.5, 45),
-		color = Color3.fromRGB(244, 162, 52),
-		material = Enum.Material.SmoothPlastic,
-		studded = true,
-		parent = hub,
-	})
-	addSurfaceSign(lassoShopPad, Enum.NormalId.Top, "LASSO GEAR SHOP", "Upgrade Pull Power!", Color3.fromRGB(148, 82, 18))
-	addPrompt(lassoShopPad, "Open Lasso Shop", "Ranger Gear Shop", "LassoShopPrompt")
+	addPrompt(fusePromptPart, "Open Fuse Machine", "Mutation & Fuse Machine", "FusePrompt")
 
 	local vehicleShopPad = makePart({
 		name = "VehicleGaragePad",
-		size = Vector3.new(16, 0.9, 14),
-		cframe = CFrame.new(15, 0.5, 45),
+		size = Vector3.new(18, 0.9, 18),
+		cframe = CFrame.new(12, 0.5, 0),
 		color = Color3.fromRGB(64, 188, 128),
-		material = Enum.Material.SmoothPlastic,
 		studded = true,
 		parent = hub,
 	})
 	addSurfaceSign(vehicleShopPad, Enum.NormalId.Top, "VEHICLE GARAGE", "Spawn & Upgrade Ride!", Color3.fromRGB(28, 108, 68))
-	cloneCuratedModel("Hero_SafariATV", CFrame.new(15, 3.6, 45) * CFrame.Angles(0, math.rad(-145), 0), 1.15, hub, 0.95)
+	cloneCuratedModel("Hero_SafariATV", CFrame.new(12, 3.6, 0) * CFrame.Angles(0, math.rad(-145), 0), 1.15, hub, 0.95)
 	addPrompt(vehicleShopPad, "Open Vehicle Garage", "Expedition Vehicles", "VehicleShopPrompt")
 
-	-- Rebirth & Daily Altar
+	-- 5. Row 3 (Z = 58): Rebirth Shrine (Left) & Animal Merchant / Index Board (Right)
 	local rebirthPad = makePart({
 		name = "RebirthAltarPad",
-		size = Vector3.new(16, 0.9, 16),
-		cframe = CFrame.new(0, 0.5, 95),
+		size = Vector3.new(15, 0.9, 14),
+		cframe = CFrame.new(-13, 0.5, 58),
 		color = Color3.fromRGB(255, 86, 132),
-		material = Enum.Material.SmoothPlastic,
 		studded = true,
 		parent = hub,
 	})
-	addSurfaceSign(rebirthPad, Enum.NormalId.Top, "REBIRTH & DAILY", "Reset for Permanent Multiplier!", Color3.fromRGB(142, 26, 68))
+	addSurfaceSign(rebirthPad, Enum.NormalId.Top, "REBIRTH & DAILY", "Permanent Multiplier!", Color3.fromRGB(142, 26, 68))
+	cloneCuratedModel("Hero_RebirthPortal", CFrame.new(-16, 6, 58), 0.72, hub, 0.95, true)
 	addPrompt(rebirthPad, "Open Rebirth / Daily", "Ranger Prestige", "RebirthPrompt")
 
-	-- 5. Grand Sanctuary Safe-Zone Gate at Z = 148
+	local merchantPad = makePart({
+		name = "AnimalMerchantPad",
+		size = Vector3.new(15, 0.9, 14),
+		cframe = CFrame.new(13, 0.5, 58),
+		color = Color3.fromRGB(255, 206, 62),
+		studded = true,
+		parent = hub,
+	})
+	addSurfaceSign(merchantPad, Enum.NormalId.Top, "INDEX & MERCHANT", "Sell Extras & Claim 63 Index!", Color3.fromRGB(132, 92, 18))
+	cloneCuratedModel("Hero_ShopBooth", CFrame.new(16, 6, 58) * CFrame.Angles(0, math.rad(-90), 0), 0.95, hub, 0.95, true)
+	addPrompt(merchantPad, "Open Index / Sell", "Animal Index & Merchant", "IndexPrompt")
+
+	-- 6. Grand Sanctuary Safe-Zone Exit Gate at Z = 148
 	local gateFolder = Instance.new("Model")
 	gateFolder.Name = "SanctuaryExitGate"
 	gateFolder.Parent = hub
@@ -489,13 +494,11 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 		size = Vector3.new(54, 7, 3),
 		cframe = CFrame.new(0, 21, 148),
 		color = Color3.fromRGB(36, 46, 62),
-		material = Enum.Material.SmoothPlastic,
 		parent = gateFolder,
 	})
-	addSurfaceSign(gateBanner, Enum.NormalId.Front, "LEAVING SAFE ZONE ->", "Watch out for Poachers!", Color3.fromRGB(178, 54, 48))
+	addSurfaceSign(gateBanner, Enum.NormalId.Front, "LEAVING SAFE ZONE ->", "63 Animals Across 5 Zones!", Color3.fromRGB(178, 54, 48))
 	addSurfaceSign(gateBanner, Enum.NormalId.Back, "<- SANCTUARY SAFE ZONE", "Bring rescued crates home!", Color3.fromRGB(42, 146, 86))
 
-	-- Safe Zone Visual Laser Line
 	makePart({
 		name = "SafeZoneLine",
 		size = Vector3.new(260, 0.25, 2),
@@ -506,7 +509,7 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 		parent = gateFolder,
 	})
 
-	-- Hub Perimeter Walls (Keep hub enclosed except the exit trail)
+	-- Hub Perimeter Walls
 	makePart({
 		name = "HubWallBack",
 		size = Vector3.new(264, 18, 6),
@@ -528,17 +531,17 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 		})
 	end
 
-	-- 6. Build All 6 Pre-Allocated Zoo Plots (3 Left, 3 Right)
+	-- 7. Build All 6 Pre-Allocated Open-Pen Plots (3 Left, 3 Right)
 	local plotsFolder = Instance.new("Folder")
 	plotsFolder.Name = "Plots"
 	plotsFolder.Parent = hub
 
 	local zPositions = { -82, -4, 74 }
 	for i = 1, 3 do
-		buildSinglePlot(i, Vector3.new(-62, 0.2, zPositions[i]), 1, plotsFolder)
+		buildSingleOpenPlot(i, Vector3.new(-62, 0.2, zPositions[i]), 1, plotsFolder)
 	end
 	for i = 1, 3 do
-		buildSinglePlot(i + 3, Vector3.new(62, 0.2, zPositions[i]), -1, plotsFolder)
+		buildSingleOpenPlot(i + 3, Vector3.new(62, 0.2, zPositions[i]), -1, plotsFolder)
 	end
 
 	return hub

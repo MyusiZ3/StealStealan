@@ -1,7 +1,7 @@
 # Wild Rescue: Poacher Run (`StealStealan`) — Game Design & Technical Architecture Plan
 
 > [!IMPORTANT]
-> Dokumen ini disusun mengikuti **Development Collaboration Protocol (`instruction.md`)** (**Phase 1: Discovery** & **Phase 2: Planning**) serta prinsip **`agency-roblox-experience-designer`**. Rencana ini menjadi acuan utama sebelum dan selama **Phase 3 (Implementation)**.
+> Dokumen ini disusun mengikuti **Development Collaboration Protocol (`docs/instruction.md`)** (**Phase 1: Discovery** & **Phase 2: Planning**) serta prinsip **`agency-roblox-experience-designer`**. Seluruh poin reconcept (Kandang Terbuka Tanpa Sekat 8->20, Ukuran & Mutasi Acak, 63 Animal Index di 5 Zona, 10 Tier Lasso `K–Sp`, 10 Tier Trail Shop, serta Admin Panel & Live Event "Admin Abuse") telah diintegrasikan ke dalam blueprint ini.
 
 ---
 
@@ -9,11 +9,11 @@
 
 1. **Lingkungan & Stack Saat Ini:**
    - **Roblox Studio Live Session:** Terhubung ke `StealSteala` (`placeId: 96456244910807`, `universeId: 10777103449`) dalam mode `Edit`.
-   - **Rojo 7.7.1 Live Sync:** Berjalan di `localhost:34872` dengan pemetaan `default.project.json` (`ReplicatedStorage.Shared/Config/Modules`, `ServerScriptService.Services/Systems`, `StarterPlayerScripts.Client`, `StarterGui.UI`).
-   - **Metode Produksi Semi-Automasi AI:** Map, kendaraan prosedural, kandang, efek partikel, serta script Luau (`--!strict`) dibangun secara modular di repo lokal (Rojo) dan di-generate/diverifikasi langsung di Roblox Studio via MCP (`execute_luau`, `screen_capture`, `start_stop_play`).
-2. **Analisis Referensi & Celah Keamanan Genre (*Surf and Rescue*, *Steal a Pet and Ride It*, *Break and Steal Egg*):**
-   - Dari struktur mekanik genre ini, loop utamanya bertumpu pada: **Base Plot Pribadi (Zoo/Sanctuary)** -> **Speed/Vehicle Training** -> **Ekspedisi ke Zona Bahaya (Biomes)** -> **Ekstraksi Objek (Lasso Pull/Dig)** -> **Kabur dari Kejaran Boss (Poacher Chase)** -> **Unbox, Fuse/Merge, & Passive Income**.
-   - **Risiko Eksploitasi Spesifik Genre:** Berdasarkan pola auto-farm di game referensi (`AutoSteal`, `Instant Teleport`, `AutoTapBoost` spam, `WalkSpeed/Noclip`), seluruh validasi jarak, durasi tarik lasso, kecepatan gerak saat membawa kotak, dan klaim reward **wajib 100% Server-Authoritative**.
+   - **Rojo 7.7.1 Live Sync:** Berjalan di `localhost:34872` dengan pemetaan `default.project.json` (`ReplicatedStorage.Shared/Config/Modules`, `ServerScriptService.Services/Systems`, `ServerStorage.Generators`, `StarterPlayerScripts.Client`, `StarterGui.UI`).
+   - **Metode Produksi Semi-Automasi AI:** Map bergaya *Blocky Studded*, kendaraan, kandang terbuka, efek partikel/trail, serta script Luau (`--!strict`) dibangun secara modular di repo lokal (Rojo) dan di-generate/diverifikasi langsung di Roblox Studio via MCP (`execute_luau`, `generate_material`, `generate_mesh`, `search_asset`, `insert_asset`, `start_stop_play`).
+2. **Analisis Referensi & Celah Keamanan Genre (*Surf and Rescue*, *Steal a Pet and Ride It*, *Steal an Egg*, *Break and Steal Egg*):**
+   - Loop utama bertumpu pada: **Kandang Terbuka Pribadi (Open Roaming Pen)** -> **Treadmill + Trail Speed Grinding** -> **Ekspedisi Kendaraan ke 5 Zona Hutan** -> **Tarik Kotak Hewan Nyungsep dengan Lasso** -> **Kabur dari Kejaran Boss Poacher** -> **Unbox Hewan (Ukuran & Mutasi Acak) -> Nyalakan Animal Index -> Hasilkan Uang/detik untuk Upgrade Kandang, Treadmill, Lasso, & Trail**.
+   - **Risiko Eksploitasi Spesifik Genre:** Berdasarkan pola auto-farm di game referensi (`AutoSteal`, `Instant Teleport`, `AutoTapBoost` spam, `WalkSpeed/Noclip`), seluruh validasi jarak, durasi tarik lasso, kecepatan gerak saat membawa kotak, klaim reward, serta perintah Admin **wajib 100% Server-Authoritative**.
 
 ---
 
@@ -21,303 +21,337 @@
 
 ### 1. Experience Brief & Core Fantasy (`agency-roblox-experience-designer`)
 - **Working Title:** **Lasso & Rescue: Escape the Poachers!**
-- **Core Fantasy:** Pemain adalah **Ranger Penyelamat Satwa** yang mengendarai kendaraan off-road ke markas pemburu liar di hutan, menggunakan **Lasso** untuk menarik keluar kotak/kerangkeng hewan yang terperangkap di lumpur/jebakan, lalu **tancap gas kabur dari kejaran Boss Pemburu Liar** untuk merawat hewan tersebut di **Sanctuary Zoo** milik sendiri.
-- **Target Audiens:** Usia 9–17 tahun (sesi cepat, *high-adrenaline risk vs. reward*, koleksi hewan langka yang bisa ditunggangi/dipamerkan ke teman).
+- **Core Fantasy:** Pemain adalah **Ranger Penyelamat Satwa** yang mengendarai kendaraan off-road ke markas pemburu liar di hutan, menggunakan **Lasso** berkekuatan tinggi (`K, M, B, T, Qa, Qi, Sx, Sp`) untuk menarik keluar kotak/kerangkeng hewan yang terperangkap di lumpur/jebakan, lalu **tancap gas kabur dari kejaran Boss Pemburu Liar** untuk melepas hewan tersebut ke dalam **Kandang Terbuka (Open Sanctuary Pen)** milik sendiri agar menghasilkan uang per detik.
+- **Target Audiens:** Usia 9–17 tahun (sesi cepat, *high-adrenaline risk vs. reward*, koleksi Index hewan langka berukuran raksasa dan bermutasi).
 - **3 Kalimat Viral (Shareable Hooks):**
-  1. *"Gue barusan narik kotak Mythic White Tiger di biome terdalam pas dikejar Boss Poacher 1 inci di belakang mobil!"*
-  2. *"Lihat Zoo gue, gue udah nge-Fuse 3 Golden Panda jadi Rainbow Mount yang bisa dinaikin bareng!"*
-  3. *"Bantu gue narik kerangkeng Boss Crate berdua pake Co-op Lasso biar dapet 2x kecepatan tarik!"*
+  1. *"Gue barusan narik kotak Mythic White Tiger di Zona 5 pas dikejar Boss Poacher, pas dibuka dapet ukuran Titanic 3.4x + Mutasi Celestial!"*
+  2. *"Lihat kandang gue, udah full upgrade 20 hewan Rainbow & Golden jalan-jalan semua dan ngasilin Triliunan per detik!"*
+  3. *"Admin lagi nyalain event Admin Abuse: Hujan Kotak Mythic + 100x Luck Party di server!"*
 
 ---
 
-### 2. Core Gameplay Loop & Mekanik Utama
+### 2. Core Gameplay Loop, Tata Letak Hub, & Mekanik Utama
 
 ```mermaid
 flowchart LR
-    A["Sanctuary Plot (Safe Zone)"] -->|"Naik Kendaraan / Mount"| B["Training Dyno & Treadmill (+Speed)"]
-    A -->|"Beli / Upgrade Gear"| C["Lasso Shop & Vehicle Garage"]
-    B --> D["Masuk ke Hutan (5 Biome Berjenjang)"]
-    C --> D
-    D -->|"Cari Kotak Hewan Nyungsep"| E["Lasso Pull Mini-Mechanic (Power vs Berat Kotak)"]
-    E -->|"Kotak Terangkat -> Alarm Bunyi!"| F["Poacher & Boss Chase (Towing Crate ke Base)"]
-    F -->|"Selamat Sampai Plot"| G["Taruh di Kandang (Stall) -> Buka Kotak"]
-    G --> H["Hewan Menghasilkan Uang/detik + Bisa Ditunggangi"]
-    H -->|"3 Hewan Sama"| I["Fuse / Merge (Normal -> Golden -> Rainbow)"]
-    I --> A
+    A["Kandang Terbuka Pribadi (8 -> 20 Hewan Roaming)"] -->|"Hasilkan Uang/detik"| B["Upgrade Kapasitas Kandang, Treadmill, Lasso, & Trail"]
+    B -->|"Latihan di Treadmill + Trail Multiplier"| C["Speed Naik Drastis"]
+    C -->|"Naik Kendaraan ke 5 Zona"| D["Cari Kotak Hewan Nyungsep (63 Spesies Index)"]
+    D -->|"Tarik Pake Lasso (Power vs Resistance)"| E["Kotak Terangkat -> Alarm Poacher Bunyi!"]
+    E -->|"Kabur Dikejar Boss Poacher"| F["Bawa Masuk Safe Zone -> Buka di Kandang"]
+    F -->|"Roll Ukuran (Min-Max) + Roll Mutasi"| G["Index Menyala + Hewan Jalan-Jalan di Kandang"]
+    G --> A
 ```
 
-#### A. Sistem Lasso & Ekstraksi Hewan "Nyungsep" (*Dig / Pull Mechanic*)
-- Di setiap biome hutan, terdapat **Trapped Animal Crates** (kotak/kandang hewan yang setengah terkubur di lumpur, semak berduri, akar pohon, atau es).
+#### A. Tata Letak Sanctuary Base Hub (Shops, Machines, & 6 Open-Pen Plots)
+Semua fasilitas ditempatkan secara simetris di sepanjang **Boulevard Tengah** agar mudah dijangkau dari ke-6 plot pemain:
+
+```mermaid
+flowchart TD
+    subgraph HUB["SANCTUARY BASE HUB (SAFE ZONE)"]
+        direction TB
+        SPAWN["Spawn Plaza + Daily Reward Chest + Papan Global Leaderboard (Z = -110)"]
+        subgraph ROW1["Baris Kios Gear & Multiplier (Z = -55)"]
+            LSHOP["Kiri: LASSO GEAR SHOP (10 Tier: 150 s/d 750Qi Power)"]
+            TSHOP["Kanan: TRAIL MULTIPLIER SHOP (10 Tier Speed Trails: 1.25x s/d 750x)"]
+        end
+        subgraph ROW2["Baris Mesin & Garasi (Z = 0)"]
+            FUSE["Kiri: MUTATION & FUSE MACHINE (Gabung Hewan -> Golden/Diamond/Rainbow/Celestial)"]
+            VSHOP["Kanan: VEHICLE GARAGE (6 Tier Kendaraan Darat: ATV, Buggy, Jeep, Hovertruck)"]
+        end
+        subgraph ROW3["Baris Prestige & Utilitas (Z = +55)"]
+            REBIRTH["Kiri: REBIRTH SHRINE (Reset Koin & Speed utk Multiplier Permanen)"]
+            SELL["Kanan: ANIMAL MERCHANT (Jual / Auto-Filter Hewan Kecil & Kunci Hewan Langka)"]
+        end
+        PLOTS["Kiri (Plot 1-3) & Kanan (Plot 4-6): 6 KANDANG TERBUKA TANPA SEKAT (8 -> 20 Hewan Roaming) + Treadmill + Upgrade Board"]
+        GATE["GERBANG KELUAR SAFE ZONE (Z = +150) -> Masuk ke 5 Zona Hutan"]
+    end
+    SPAWN --> ROW1 --> ROW2 --> ROW3 --> GATE
+```
+
+#### B. Kandang Terbuka Tanpa Sekat (*Open-Pen Roaming Enclosure* — Kapasitas `8` -> `20`)
+- **Kapasitas Server Optimal (6 Pemain / Server):**
+  - Server dikunci pada **6 Pemain (`MaxPlayers = 6`)** dengan **6 Plot Permanen (`Plot_1` s/d `Plot_6`)** di kiri dan kanan Boulevard.
+- **Desain Kandang Tanpa Sekat (Mirip *Steal an Egg*):**
+  - Tidak menggunakan sekat-sekat kecil yang membuat hewan diam. Setiap plot memiliki **1 Kandang Besar Terbuka (`Open Roaming Paddock` berukuran `48 x 44 studs`)** yang dikelilingi pagar rendah.
+  - Seluruh hewan milik pemain dijadikan satu di dalam area kandang tersebut dan **bergerak/berkeliaran bebas (wandering, jalan-jalan, & melompat kecil)** memilih titik tujuan acak di dalam pagar kandang!
+- **Kapasitas & Progresi Upgrade Kandang:**
+  - **Kapasitas Awal:** **`8` hewan** di dalam kandang.
+  - **Full Upgrade:** **`20` hewan** maksimal (`8 -> 9 -> 10 ... -> 20` melalui 12 level upgrade menggunakan koin), di mana setiap level upgrade kandang juga memberikan bonus efisiensi `+10% Income`.
+- **Fasilitas di Depan Tiap Plot Kandang:**
+  1. **Crate Unbox Pad:** Tempat menaruh & membuka kotak hewan hasil tarikan dari hutan.
+  2. **Cash Collector Pad:** Injak untuk langsung mengklaim seluruh uang yang dihasilkan hewan di kandang, lengkap dengan papan indikator `Total Income/sec`.
+  3. **Pen Capacity Upgrade Stand:** Tombol untuk meng-upgrade kapasitas kandang (`8/20` s/d `20/20`).
+  4. **Personal Upgradeable Treadmill / Speed Track:** Tempat latihan kecepatan karakter/kendaraan yang levelnya bisa di-upgrade menggunakan koin (`UpgradeTreadmill`) + memunculkan *Tap Boost Orbs*.
+
+#### C. Sistem Lasso & Ekstraksi Hewan "Nyungsep" (*Dig / Pull Mechanic*)
+- Di setiap zona hutan, terdapat **Trapped Animal Crates** yang setengah terkubur di lumpur, semak berduri, pasir, atau es.
 - **Mekanik Tarik Lasso:**
-  1. Pemain mendekati kotak (`<= 16 studs`) dan menekan prompt/klik **Throw Lasso**.
-  2. Tali Lasso (`Beam` / `RopeConstraint` dengan efek tegang) mengikat kotak.
+  1. Pemain mendekati kotak (`<= LassoMaxRange`) dan menekan prompt/klik **Throw Lasso**.
+  2. Tali Lasso (`Beam` bercahaya sesuai tier Lasso) mengikat cincin atas kotak.
   3. **Progress Bar Tarikan:** Kecepatan menarik kotak keluar dari tanah dihitung dari rumus:
      `PullProgressPerSec = (LassoPower * VehicleTorqueMultiplier * TapBoostMultiplier) / CrateResistance`
   4. Saat menarik, muncul indikator **Sweet-Spot / Tap Rhythm** untuk bonus tarikan hingga `+35%`.
-  5. **Co-op Dual Lasso (Social Hook):** Jika 2 pemain menarik kotak berat yang sama, `LassoPower` digabung `+25%` bonus pertemanan, dan keduanya mendapat drop kotak!
+  5. **Co-op Dual Lasso:** Jika 2 pemain menarik kotak berat yang sama, `LassoPower` digabung `+25%` bonus pertemanan.
 
-#### B. Sistem Kendaraan Darat & Mount Hewan (*Surf & Rescue* + *Steal a Pet and Ride It*)
-- **Kendaraan Darat (Expedition Vehicles):** Digunakan untuk menerabas medan hutan dan menderek (*tow*) kotak hewan kembali ke Sanctuary:
-  - *Tier 1:* Safari ATV Quadbike (Starter — Gratis)
-  - *Tier 2:* Mud-Crawler Buggy (Tidak melambat di lumpur)
-  - *Tier 3:* Armored Rescue Jeep 4x4 (Tahan 1x tabrakan Poacher)
-  - *Tier 4:* Cyber-Ranger Hovertruck (Kecepatan tinggi + 2x Crate Towing Slot)
-- **Rideable Rescued Animals (Mount System):** Hewan yang sudah diselamatkan dan ditaruh di Zoo tidak hanya menghasilkan koin/detik, tetapi juga bisa **ditunggangi (`Ride`)** untuk memamerkan aura/rarity dan dipakai di area **Training Track** untuk menggandakan perolehan *Speed EXP*.
-- **Built-in "Precision Brake / Slow Mode" Button (QoL Resmi di UI):**
-  - Belajar dari masalah kontrol di *Steal a Pet and Ride It* saat speed pemain sudah ribuan/jutaan (karakter licin dan kelewatan kotak), kita sediakan tombol resmi **Brake / Slow Mode (`Shift` / Tombol Layar)** yang menurunkan kecepatan secara mulus saat mendekati kotak atau menata kandang di Base.
-
-#### C. Training, Speed, & Rebirth Loop
-- **Training Zone di Plot Pribadi:**
-  - Memiliki **Dyno Ramp / Speed Track** tempat pemain melatih *Speed Stat* menggunakan kendaraan atau hewan tunggangan.
-  - Saat latihan, muncul **Boost Orbs** berkala yang bisa diklik untuk bonus Speed/Koin.
-  - **Upgrade Training Station:** Meningkatkan multiplier Speed per detik menggunakan koin.
-- **Rebirth System:**
-  - Ketika mencapai syarat *Speed* dan *Koin*, pemain bisa **Rebirth** (mereset Speed & Koin, namun **menyimpan** Hewan Langka/Fuse, Game Pass, dan mendapatkan **Permanent Cash/Lasso Multiplier** + akses ke zona VIP/Rebirth).
-
-#### D. Sanctuary Zoo Plot, Unbox, Fuse & Merge (6 Pre-Allocated Plots)
-- **Kapasitas Server Optimal (6 Pemain / Server):**
-  - Server dikunci pada **6 Pemain (`MaxPlayers = 6`)** untuk menjaga **60 FPS stabil di Mobile & PC** meskipun setiap pemain memiliki puluhan hewan berpartikel dan kendaraan aktif.
-  - **6 Kandang Utama (Sanctuary Plots `Plot_1` s/d `Plot_6`) sudah tersedia secara permanen di Map** (3 di sisi kiri boulevard utama, 3 di sisi kanan) lengkap dengan papan nama pemilik, Dyno Track pribadi, dan slot kandang.
-  - Saat pemain masuk, `PlotService` langsung mengklaim 1 plot kosong tanpa perlu *spawn* geometri berat secara *runtime*.
-- **Fitur di Dalam Tiap Plot:**
-  - **Enclosure Stalls (Kandang Zoo):** Mulai dari 4 kandang aktif, bisa di-upgrade hingga 20 kandang (`UpgradePlot`).
-  - **Crate Unbox Timer:** Kotak yang berhasil dibawa pulang ditaruh di slot kandang, memiliki waktu buka singkat (5–60 detik sesuai rarity) sebelum hewan keluar.
-  - **Fuse & Merge Machine:**
-    - **Merge (3-in-1 Tier Evolution):** Gabungkan 3 hewan identik -> naik tier (**Normal** -> **Golden (2.5x Income)** -> **Rainbow (6x Income)** -> **Galactic (15x Income)**).
-    - **Fuse Machine (Cross-Combination):** Masukkan 3–5 hewan bebas untuk peluang mendapatkan hewan *Mutated / Secret Rarity*.
-  - **Animal Codex (Index Rewards):** Koleksi buku indeks hewan per biome; setiap menyelesaikan 1 set biome memberikan bonus permanen Speed/Lasso Power.
+#### D. Sistem Kendaraan Darat, Mount Hewan, & Tombol Slow Mode
+- **Kendaraan Darat (6 Tiers):** Digunakan untuk menerabas medan hutan dan menderek (*tow*) kotak hewan di belakang bumper mobil kembali ke Sanctuary (*Safari ATV*, *Ranger Dirt Bike*, *Mud-Crawler Buggy*, *Armored Jeep 4x4*, *Arctic Snowcat*, *Cyber-Ranger Hovertruck*).
+- **Rideable Rescued Animals (Mount System):** Hewan favorit di kandang juga bisa ditunggangi (`Ride`) untuk memamerkan ukuran raksasa/mutasinya dan menambah bonus latihan.
+- **Built-in "Precision Brake / Slow Mode" Button (`Shift` / Tombol HUD):** Menurunkan kecepatan secara mulus saat mendekati kotak di hutan atau saat menata kandang di Base agar tidak licin/kelewatan ketika Speed sudah sangat tinggi.
 
 #### E. Pengaturan Performa & Audio (Anti-Lag Client Settings & Sound Controls)
-Untuk mencegah *frame drop* saat semua kandang penuh dengan hewan berefek Golden/Rainbow, tersedia menu **Settings (Gear Icon di HUD)** yang tersimpan di DataStore:
+Menu **Settings (Gear Icon di HUD)** yang tersimpan di DataStore:
 1. **Audio Controls (`SoundService` SoundGroups):**
-   - **Toggle & Slider Music (BGM):** Mengatur atau mematikan musik latar per biome (`SoundService.BGMGroup`).
+   - **Toggle & Slider Music (BGM):** Mengatur atau mematikan musik latar (`SoundService.BGMGroup`).
    - **Toggle & Slider SFX:** Mengatur atau mematikan efek suara tarikan lasso, mesin kendaraan, koin, dan sirene Poacher (`SoundService.SFXGroup`).
 2. **Performance & Visibility Toggles (Client-Side Culling):**
-   - **Hide Other Players' Animals (`hideOtherAnimals`):** Menyembunyikan model 3D, animasi *idle*, *BillboardGui* penghasil uang, dan partikel aura hewan milik pemain lain di plot tetangga (hanya dijalankan di sisi klien lokal sehingga tidak memengaruhi pemain lain).
-   - **Hide My Own Animals (`hideOwnAnimals`):** Menyembunyikan visual 3D hewan di kandang sendiri (tetap menampilkan teks jumlah *income/sec* secara minimalis di papan slot) untuk *potato device* saat fokus *grinding* kecepatan/ekspedisi.
-   - **Reduce VFX / Low Graphics Mode (`lowVFX`):** Mematikan partikel debu kendaraan dan efek konfeti berlebih.
+   - **Hide Other Players' Animals (`hideOtherAnimals`):** Menyembunyikan model 3D, animasi roaming, dan partikel hewan di kandang pemain lain secara lokal di klien.
+   - **Hide My Own Animals (`hideOwnAnimals`):** Menyembunyikan visual 3D hewan di kandang sendiri (tetap menghitung uang/detik secara normal) untuk *potato device*.
+   - **Reduce VFX / Low Graphics Mode (`lowVFX`):** Mengurangi partikel aura mutasi dan debu kendaraan.
 
 ---
 
-### 3. Biomes, Tema Map, & AI Poacher / Boss Chase
+### 3. Desain 5 Zona Biome, Multi-Spesies (63 Animal Index), & AI Poacher Boss
 
-Map dirancang memanjang secara progresif dari **Sanctuary Hub (Z = 0)** menuju **5 Biome Hutan** yang semakin jauh dan berbahaya:
+Map dirancang memanjang dari **Sanctuary Hub (`Z = 0`)** menuju **5 Zona Hutan** dengan jumlah Index spesies yang semakin banyak di tiap zona (**Total 63 Spesies Hewan**):
 
-| Zona / Biome | Jarak dari Base | Medan & Hambatan | Musuh & Boss Pemburu Liar | Hewan yang Diselamatkan |
-| :--- | :---: | :--- | :--- | :--- |
-| **0. Sanctuary Base Hub** | `0–150 studs` | Aman (Safe Zone), Plot Zoo, Shop, Fuse Machine, Dyno Track | Tidak ada (Poacher tidak bisa masuk) | Tempat pamer & kandang |
-| **1. Whispering Pine Woods** | `150–450 studs` | Jalan tanah, semak ringan | **Rookie Poacher** (Patroli lambat) & **Boss: Net-Thrower Bob** | Rubah, Rusa, Rakun, Beruang Madu |
-| **2. Muddy Mangrove Swamp** | `450–800 studs` | Lumpur penghambat speed (`-40%` tanpa Buggy), jembatan kayu | **Swamp Tracker** & **Boss: Gator-Truck Gus** | Kapibara, Buaya Putih, Flamingo, Kura-kura Emas |
-| **3. Savanna Poacher Camp** | `800–1200 studs` | Padang rumput terbuka, barikade kawat berduri, menara pantau | **Jeep Poacher** & **Boss: Warden Bulldozer** | Singa, Zebra Langka, Gajah Kecil, Cheetah |
-| **4. Frostbite Alpine Peaks** | `1200–1650 studs` | Es licin, batu longsor, jurang sempit | **Snowmobile Hunter** & **Boss: Yeti Poacher Mech** | Macan Tutul Salju, Serigala Kutub, Penguin Kaisar, Mammoth |
-| **5. Volcanic Obsidian Jungle** | `1650–2200 studs` | Sungai lava, geyser api, jebakan laser pemburu | **Elite Drone Hunter** & **Apex Boss: Ironclad Poacher Tank** | Harimau Putih Mythic, Komodo Naga, Gorilla Emas, Phoenix |
+| Zona / Biome | Jarak (`Z`) | Jumlah Index Spesies | Musuh & Boss Pemburu Liar | Bonus Jika Index Zona 100% Lengkap |
+| :--- | :---: | :---: | :--- | :--- |
+| **0. Sanctuary Base Hub** | `-140–150` | Safe Zone | Aman (Poacher tidak bisa masuk) | Tempat 6 Kandang, Shop, & Mesin |
+| **1. Whispering Pine Woods** | `150–450` | **10 Spesies (`#01–#10`)** | **Rookie Poacher** & **Boss: Net-Thrower Bob** | Permanen `+15% Speed` & `+10% Cash` |
+| **2. Muddy Mangrove Swamp** | `450–800` | **12 Spesies (`#11–#22`)** | **Swamp Tracker** & **Boss: Gator-Truck Gus** | Permanen `+25% Lasso Power` |
+| **3. Savanna Poacher Camp** | `800–1200` | **12 Spesies (`#23–#34`)** | **Jeep Poacher** & **Boss: Warden Bulldozer** | Permanen `+35% Cash` & `+1 Kapasitas Kandang` |
+| **4. Frostbite Alpine Peaks** | `1200–1650` | **14 Spesies (`#35–#48`)** | **Snowmobile Hunter** & **Boss: Yeti Poacher Mech** | Permanen `+50% Speed` & `+50% Lasso Power` |
+| **5. Volcanic Obsidian Jungle** | `1650–2150` | **15 Spesies (`#49–#63`)** | **Elite Drone Hunter** & **Apex Boss: Ironclad Poacher Tank** | Permanen `+100% All Stats` & Title *Apex Ranger* |
 
-- **Mekanik Kejaran (Chase State):**
-  - Saat berjalan biasa tanpa membawa kotak, Poacher hanya berpatroli dengan radius deteksi pendek.
-  - **Begitu pemain selesai menarik kotak dengan Lasso**, sirene kamp pemburu berbunyi! Boss Biome dan Poacher terdekat masuk ke mode **Aggro Pursuit** mengejar pemain sampai ke garis batas Safe Zone.
-  - Jika tertangkap Poacher: pemain **tidak mati permanen**, melainkan terpental ke pos pemeriksaan terakhir dan kotak hewan terlepas kembali (tetap ramah anak usia 9–17 tahun tanpa rasa frustrasi berlebihan).
+#### Daftar Lengkap 63 Spesies Hewan per Zona (Animal Index `#01` s/d `#63`)
+1. **Zona 1 — Whispering Pine Woods (10 Index: `#01–#10`):**
+   - *Common:* `#01 Rusty Fox`, `#02 Pine Squirrel`, `#03 Hedgehog Scout`, `#04 Badger Digger`
+   - *Uncommon:* `#05 Acorn Raccoon`, `#06 Spotted Owl`, `#07 Red Boar`
+   - *Rare:* `#08 Antler Stag`, `#09 Timber Lynx`
+   - *Epic / Legendary:* `#10 Sylvan Spirit Wolf`
+2. **Zona 2 — Muddy Mangrove Swamp (12 Index: `#11–#22`):**
+   - *Common:* `#11 Chill Capybara`, `#12 Mud Frog`, `#13 Marsh Duck`, `#14 Swamp Otter`
+   - *Uncommon:* `#15 Pink Flamingo`, `#16 Poison Dart Toad`, `#17 Mangrove Crab`
+   - *Rare:* `#18 Mossy Snapper`, `#19 Electric Eel`, `#20 Anaconda Striker`
+   - *Epic:* `#21 Albino Gator`
+   - *Legendary:* `#22 Swamp Hydra Frog`
+3. **Zona 3 — Savanna Poacher Camp (12 Index: `#23–#34`):**
+   - *Common:* `#23 Dashing Meerkat`, `#24 Savanna Hare`, `#25 Warthog Charger`
+   - *Uncommon:* `#26 Blitz Zebra`, `#27 Ostrich Sprinter`, `#28 Spotted Hyena`, `#29 Gazelle Leaper`
+   - *Rare:* `#30 Baby Savanna Elephant`, `#31 Armored Rhino`, `#32 Towering Giraffe`
+   - *Epic:* `#33 Turbo Cheetah`
+   - *Legendary:* `#34 Solar Mane Lion`
+4. **Zona 4 — Frostbite Alpine Peaks (14 Index: `#35–#48`):**
+   - *Common:* `#35 Emperor Puffin`, `#36 Lemming Jumper`, `#37 Snow Ptarmigan`, `#38 Mountain Goat`
+   - *Uncommon:* `#39 Arctic Snow Hare`, `#40 Ice Seal`, `#41 Snowy Owl`, `#42 Bighorn Ram`
+   - *Rare:* `#43 Frost Fang Wolf`, `#44 Walrus Tusker`, `#45 Caribou Monarch`
+   - *Epic:* `#46 Ghost Snow Leopard`, `#47 Polar Bear Juggernaut`
+   - *Legendary:* `#48 Glacier Woolly Mammoth`
+5. **Zona 5 — Volcanic Obsidian Jungle (15 Index: `#49–#63`):**
+   - *Common:* `#49 Magma Gecko`, `#50 Ash Scorpion`, `#51 Ember Beetle`, `#52 Lava Salamander`
+   - *Uncommon:* `#53 Cinder Tusk Boar`, `#54 Obsidian Panther`, `#55 Pyro Toucan`, `#56 Basalt Armadillo`
+   - *Rare:* `#57 Komodo Fire Drake`, `#58 Magma Wyvern`, `#59 Hellhound Stalker`
+   - *Epic:* `#60 Obsidian Silverback Titan`, `#61 Molten Cerberus`
+   - *Legendary:* `#62 Inferno Phoenix`
+   - *Mythic:* `#63 Mythic White Tiger`
 
-#### Gaya Visual Map & Pipeline Aset (*Blocky Studded Style* seperti *Steal an Egg* + Creator Store Assets)
-- **Dilarang Menggunakan Default Smooth Terrain Polos:**
-  - Map **tidak** menggunakan *Smooth Voxel Terrain* bawaan Roblox yang berat dan generik, melainkan **Stylized Blocky / Layered Studded Terrain** (susunan balok bertingkat dengan permukaan *Studs* klasik, garis batas zona warna-warni yang kontras, tebing berundak kotak-kotak, dan *hazard tiles* ala *Steal an Egg* & *Steal a Pet and Ride It*).
-- **Kombinasi Pipeline Aset (Marketplace + AI Generator + Custom MaterialVariant):**
-  1. **Creator Store / Marketplace Asset Discovery (`search_asset` & `insert_asset`):** Mencari dan mengkurasi model hewan low-poly/blocky, kendaraan off-road, pagar kandang, peti kayu (*crates*), dan properti per biome langsung dari katalog aset Roblox Studio.
-  2. **AI 3D Mesh & Custom Material (`generate_mesh`, `generate_material`, `generate_procedural_model`):** Membuat variasi material permukaan kotak-kotak (*studded grass, blocky mud, icy studs, volcanic basalt blocks*) serta properti unik (mesin Fuse, gerbang Biome, perangkap Poacher).
-  3. **Optimasi Collision & Anchoring:** Seluruh blok dekorasi tebing dan pohon disetel `Anchored = true`, `CanQuery = false`, dan `CanTouch = false` (kecuali zona interaktif) agar fisika kendaraan dan *raycast* Lasso super ringan.
+#### UI Animal Index (Koleksi Menyala & Klaim Reward)
+- **Tampilan Grid per Zona:** Menampilkan kartu `#01` s/d `#63` yang dikelompokkan per Zona (dengan tab filter mutasi: *Normal, Albino, Golden, Diamond, Neon, Rainbow, Celestial*).
+- **State Belum Didapat:** Kartu tampil berupa **siluet gelap (`???`)** dengan petunjuk lokasi Zona & Rarity.
+- **State Sudah Didapat (Index Menyala):** Kartu **menyala penuh warna**, menampilkan badge **Rekor Ukuran Terbesar (`Max Size Ratio / kg`)** yang pernah dibuka pemain, serta tombol **`Claim Index Reward`** (atau `Claim All Index Rewards`).
 
 ---
 
-### 4. Desain Target Objek (Kotak & Hewan), Variasi Spesies, Sistem Grab/Towing, & Animasi
+### 4. Variasi Ukuran Acak (`Min–Max Size Ratio`), Mutasi Langka, & Rumus Income/sec
 
-Bagian ini mendefinisikan secara detail objek utama yang menjadi incaran pemain mulai dari saat terkubur di hutan hingga dipajang atau ditunggangi di Sanctuary.
+#### A. Sistem Ukuran Acak (`sizeRatio` — Min, Max, & Rasio Gedenya)
+Saat kotak hewan dibuka di kandang, server melakukan roll ukuran acak dari `0.70x` hingga `3.50x` (dan skala model 3D hewan di dalam kandang benar-benar membesar sesuai angka ini!):
 
-#### A. Siklus Visual 2-Tahap (*Trapped Crate* -> *Rescued Animal*)
-1. **Tahap 1 — Saat "Nyungsep" di Hutan (*Buried Poacher Crate*):**
-   - Objek di hutan berbentuk **Kerangkeng/Kotak Kayu & Besi Pemburu** yang tertancap miring (`15°–35°`) di dalam lumpur, semak, pasir, atau es.
-   - **Visual Hint per Rarity:**
-     - *Common:* Kotak kayu pinus berlumut.
-     - *Uncommon:* Kotak kayu diperkuat sabuk besi hitam.
-     - *Rare:* Kerangkeng baja biru dengan lampu suar berkedip.
-     - *Epic:* Peti ungu berlapis rantai energi.
-     - *Legendary / Mythic:* Kerangkeng emas/neon raksasa dengan pancaran cahaya (*Light Beam*) ke langit agar terlihat dari jauh!
-   - **Siluet/Bagian Hewan Mengintip:** Di sela-sela jeruji kotak tampak mata yang berkedip atau telinga/ekor hewan yang bergoyang, ditambah balon teks kecil (`"Tolong!"`, `"Grrr!"`, `"..."`) dan label **Nama Kotak + Rarity + Berat Tarikan (Resistance)**.
-2. **Tahap 2 — Saat Dibuka di Kandang (*Rescued Blocky Animal*):**
-   - Begitu timer unbox di kandang selesai, pintu kotak terpental terbuka dengan efek konfeti dan memunculkan **Hewan Gaya Blocky/Stylized Cute** (seperti *Steal a Pet and Ride It* / *Crossy Road* / *Adopt Me blocky pets*).
+| Kategori Ukuran | Rentang `sizeRatio` | Peluang Roll | Multiplier Income (`sizeRatio^1.5`) |
+| :--- | :---: | :---: | :---: |
+| **Tiny** | `0.70x – 0.89x` | `20.0%` | `0.58x – 0.84x` |
+| **Normal** | `0.90x – 1.25x` | `55.0%` | `0.85x – 1.40x` |
+| **Big / Chubby** | `1.26x – 1.75x` | `18.0%` | `1.41x – 2.31x` |
+| **Giant** | `1.76x – 2.40x` | `5.5%` | `2.33x – 3.72x` |
+| **Titanic / Behemoth** | `2.41x – 3.50x` | `1.5%` | `3.74x – 6.55x` |
 
-#### B. Katalog 25 Spesies Hewan (5 Biome x 5 Rarity) + Sistem Trait & Evolusi
-Setiap biome memiliki 5 spesies unik dengan progresi *Income/detik* dan *Training Speed Multiplier* saat ditunggangi:
+#### B. Sistem Mutasi Hewan (`mutation` — 7 Tingkatan Kelangkaan)
+Setiap hewan yang dibuka (atau dimasukkan ke *Mutation & Fuse Machine*) memiliki peluang memperoleh mutasi langka:
 
-| Biome | Common (`55%`) | Uncommon (`27%`) | Rare (`12%`) | Epic (`4.5%`) | Legendary / Mythic (`1.5%`) |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **1. Whispering Pine Woods** | **Rusty Fox** (*Rubah Merah*) | **Acorn Raccoon** (*Rakun Bandit*) | **Antler Stag** (*Rusa Tanduk Emas*) | **Honey Grizzly** (*Beruang Madu*) | **Sylvan Spirit Wolf** (*Serigala Hutan Bersinar*) |
-| **2. Muddy Mangrove Swamp** | **Chill Capybara** (*Kapibara Santuy*) | **Pink Flamingo** (*Flamingo Jangkung*) | **Mossy Snapper** (*Kura-Kura Lumut*) | **Albino Gator** (*Buaya Putih*) | **Swamp Hydra Frog** (*Katak Raja Berkepala Tiga*) |
-| **3. Savanna Poacher Camp** | **Dashing Meerkat** (*Meerkat Pengintai*) | **Blitz Zebra** (*Zebra Petir*) | **Tusked Baby Elephant** (*Gajah Kecil*) | **Turbo Cheetah** (*Cheetah Jet*) | **Solar Mane Lion** (*Singa Mahkota Surya*) |
-| **4. Frostbite Alpine Peaks** | **Emperor Puffin** (*Penguin Kaisar*) | **Arctic Hare** (*Kelinci Salju*) | **Frost Fang Wolf** (*Serigala Es*) | **Ghost Snow Leopard** (*Macan Tutul Salju*) | **Glacier Woolly Mammoth** (*Mammoth Purba Es*) |
-| **5. Volcanic Obsidian Jungle** | **Magma Gecko** (*Tokek Api*) | **Cinder Boar** (*Babi Hutan Bara*) | **Komodo Drake** (*Komodo Naga*) | **Silverback Titan** (*Gorilla Baja*) | **Mythic White Tiger** & **Inferno Phoenix** |
+| Mutasi | Peluang Roll | Multiplier Income | Efek Visual pada Hewan di Kandang |
+| :--- | :---: | :---: | :--- |
+| **Normal (`None`)** | `72.0%` | `1.0x` | Warna asli spesies |
+| **Albino** | `12.0%` | `1.8x` | Warna putih bersih kontras + mata menyala |
+| **Golden** | `8.0%` | `3.5x` | Material `Foil/Metal` emas berkilau + partikel koin |
+| **Diamond / Crystal** | `4.5%` | `7.5x` | Material `Glass/Ice` biru kristal transparan |
+| **Neon / Electric** | `2.2%` | `16.0x` | Material `Neon` menyala terang + kilatan listrik |
+| **Rainbow** | `1.0%` | `35.0x` | Siklus warna pelangi dinamis (*Hue-Cycling*) |
+| **Celestial / Void** | `0.3%` | `85.0x` | Tekstur kosmik ungu-emas + aura bintang mengorbit |
 
-- **Variasi Sifat Acak (*Trait Roll* saat Unbox):**
-  Setiap hewan yang keluar dari kotak mendapat 1 *Trait* acak agar pemain terus berburu meskipun sudah punya spesies tersebut:
-  - `Normal` (70%) — Ukuran & stat standar
-  - `Chubby / Giant` (10%) — Ukuran 1.35x lebih besar, `+20% Cash/sec`
-  - `Zoomer` (10%) — `+20% Speed Bonus` saat ditunggangi
-  - `Magnet` (7%) — `+15% Lasso Pull Power` saat dibawa sebagai companion
-  - `Shiny / Lucky` (3%) — Efek kilau bintang + `+25% Cash & Speed`
-- **4 Tier Evolusi (Merge & Fuse):**
-  - **Tier 1: Normal** (`1x Income`, warna asli)
-  - **Tier 2: Golden** (`2.5x Income`, tekstur emas mengilap + partikel koin)
-  - **Tier 3: Rainbow** (`6x Income`, warna siklus pelangi dinamis + jejak pelangi)
-  - **Tier 4: Galactic** (`15x Income`, tekstur neon kosmik ungu/bintang dari Fuse Machine)
-
-#### C. Sistem Grab, Tarik ("Nyungsep"), & Towing (Kendaraan vs. Jalan Kaki)
-```mermaid
-sequenceDiagram
-    participant P as Player (Client)
-    participant S as LassoRescueSystem (Server)
-    participant C as Buried Crate (Workspace)
-    participant AI as Poacher Boss AI
-
-    P->>S: 1. RequestStartPull(crateId)
-    S->>S: Validasi jarak (<= Range) & status kotak
-    S-->>P: Pasang tali Beam Lasso & tampilkan Pull Bar + Sweet-Spot UI
-    loop Setiap Tick Tarikan (0% -> 100%)
-        P->>S: TapBoost / Rhythm Input (opsional)
-        S->>C: Update PullProgress & angkat posisi kotak perlahan dari tanah
-    end
-    S->>C: 2. Kotak Terangkat 100%! Masuk state "Towed/Grabbed"
-    S->>AI: 3. Trigger Alarm Biome -> Poacher & Boss mengejar Player!
-    S-->>P: Ikat kotak di belakang Kendaraan (Tow Mode) / di atas kepala (Carry Mode)
-    P->>S: 4. Masuk Safe Zone Sanctuary Plot -> PlaceCrate(stallIndex)
-    S->>S: Validasi kecepatan tempuh (Anti-Teleport) & mulai Unbox Timer
+#### C. Rumus Penghasilan Uang per Detik (`Income / sec`)
+Setiap hewan yang bergerak di dalam kandang menghasilkan uang per detik berdasarkan **Rarity Spesies + Ukuran (`sizeRatio`) + Mutasi**:
+```text
+AnimalIncomePerSec = SpeciesBaseIncome * (sizeRatio ^ 1.5) * MutationMultiplier
+TotalPlotIncomePerSec = Sum(AnimalIncomePerSec) * PenUpgradeMultiplier * RebirthMultiplier * VIPMultiplier * ServerEventMultiplier
 ```
-
-1. **Fase 1: Hook & Dig-Out (Menarik Kotak yang Nyungsep):**
-   - Saat Lasso menancap ke cincin kotak, tali `Beam` merentang kencang dari tangan/winch kendaraan ke kotak.
-   - Selama progres naik dari `0%` ke `100%`, kotak **bergetar hebat (CFrame jitter)**, mengeluarkan semburan partikel lumpur/tanah, dan posisinya perlahan **tercabut naik keluar dari lubang** hingga berdiri tegak di permukaan tanah.
-2. **Fase 2: Grab & Tow System (Saat Membawa Kabur ke Base):**
-   - **Mode Kendaraan (*Winch Towing* — ala *Surf and Rescue*):**
-     - Kotak terhubung dengan tali derek di belakang kendaraan (berjarak `8 studs` di belakang bumper).
-     - Menggunakan *Smooth Spring Lerp* sehingga saat kendaraan berbelok tajam atau melompati gundukan, kotak di belakangnya **ikut mengayun dan miring secara realistis** tanpa membebani fisika `Humanoid`/roda kendaraan!
-     - Jika memiliki *Dual Tow Hook Game Pass*, kotak ke-2 otomatis berbaris di belakang kotak ke-1 (`15 studs` di belakang mobil).
-   - **Mode Jalan Kaki / Naik Hewan (*Overhead Carry* — ala *Steal a Pet and Ride It*):**
-     - Jika pemain tidak sedang di mobil, kotak diangkat di atas kepala/punggung karakter menggunakan *Kinematic CFrame Offset* dengan pose tangan mengangkat.
-3. **Fase 3: Drop / Knockback (Jika Tertangkap Poacher):**
-   - Jika Poacher menyentuh pemain sebelum masuk garis *Safe Zone*, tali Lasso putus (efek suara *"SNAP!"*), pemain terpental sedikit ke arah aman, dan kotak jatuh memantul kembali ke spot asalnya di biome tersebut.
-
-#### D. Sistem Animasi Ringan (Zero-Humanoid Procedural Animator)
-> [!IMPORTANT]
-> Agar server berisi 6 pemain x 20 kandang (**120 hewan aktif**) + puluhan kotak di hutan **tetap 60 FPS tanpa lag**, seluruh hewan di kandang dan di hutan **TIDAK menggunakan `Humanoid` atau `Animator` server**.
-
-Semua gerakan dianimasikan secara matematis di sisi klien (`Client Procedural CFrame Animator`) menggunakan gelombang sinus (`math.sin` / `math.cos`):
-1. **Animasi Kotak Nyungsep (`CrateStruggle`):**
-   - Setiap `1.8 detik`, kotak yang terkubur melakukan *double-shake* (`±5°` rotasi Z) disertai efek partikel debu kecil seolah hewan di dalamnya minta dikeluarkan.
-2. **Animasi Hewan di Kandang Zoo (`StallIdle` & `CoinJump`):**
-   - **Idle Breathing & Look-At:** Badan hewan membal-membal halus naik-turun (`sin(t * 3) * 0.15 studs`) dan kepala/badannya menoleh halus menghadap pemilik kandang saat didekati.
-   - **Happy Coin Hop:** Setiap kali siklus penghasil uang berdetak (misal tiap 3 detik), hewan melompat kecil berputar `15°` sambil memunculkan teks pop-up `+$250` yang melayang ke atas.
-3. **Animasi Saat Ditunggangi (`MountGallop`):**
-   - Saat pemain klik `Ride` pada hewan, karakter duduk di punggung hewan.
-   - Ketika bergerak, hewan melakukan animasi *Hop-and-Tilt* (melompat maju sambil mengayunkan tubuh depan-belakang `±8°` mengikuti kecepatan lari), lengkap dengan partikel jejak kaki.
-4. **Integrasi Penuh dengan Toggle `Hide Animals`:**
-   - Saat pemain mengaktifkan toggle **Hide Other Players' Animals** atau **Hide My Own Animals**, klien langsung menghentikan perhitungan animasi (`0% beban CPU/GPU`) untuk hewan yang disembunyikan.
+Uang yang dihasilkan digunakan untuk:
+1. **Upgrade Kapasitas Kandang** (`8` awal -> `20` maksimal + bonus efisiensi kandang),
+2. **Upgrade Treadmill Level** (mempercepat perolehan *Speed/sec*),
+3. **Membeli 10 Tier Lasso**, dan
+4. **Membeli 10 Tier Speed Trail** serta **Kendaraan Ekspedisi**.
 
 ---
 
-### 5. Equipment & Gear Progression
+### 5. Progresi Gear: 10 Tier Lasso (`K, M, B, T, Qa, Qi, Sx, Sp`) & 10 Tier Trail
 
-1. **Lasso Gear (8 Tiers):**
-   - *Rope Lasso* (Starter) -> *Reinforced Hemp Lasso* -> *Steel-Core Cable* -> *Hydraulic Winch Lasso* -> *Magnetic Grapple* -> *Plasma Tether* -> *Quantum Tractor Lasso* -> *Titan Rescue Hook*.
-   - Stat per Lasso: `PullPower`, `MaxRange` (`16–28 studs`), `SweetSpotWidth`, dan visual `Beam` unik.
-2. **Vehicles (6 Tiers):**
-   - Stat per Kendaraan: `BaseSpeedBonus`, `TowWeightCapacity` (mencegah penalti berat saat menderek kotak besar), `TerrainResistanceIgnore`, dan `ArmorShieldHits`.
-3. **Trails & Ranger Backpacks:**
-   - Memberikan multiplier koin & kecepatan latihan.
+Format angka di `FormatUtil.luau` mendukung singkatan penuh: **`K`, `M`, `B`, `T`, `Qa`, `Qi`, `Sx`, `Sp`, `Oc`, `No`, `Dc`**.
+
+#### A. 10 Tingkatan Lasso (Untuk Menarik Kotak Hewan)
+| Tier | ID Lasso | Nama Lasso | Kekuatan Tarik (`Pull Power`) | Harga Beli (`Coins`) | Warna Beam Lasso |
+| :---: | :--- | :--- | :---: | :---: | :--- |
+| **1** | `RopeLasso` | **Starter Hemp Lasso** | `150` | **Gratis** | Cokelat Tambang |
+| **2** | `IronRopeLasso` | **Reinforced Iron Rope** | `3.5K` (`3.5e3`) | `2.5K` | Abu-abu Baja |
+| **3** | `TaserTether` | **High-Volt Taser Tether** | `120K` (`1.2e5`) | `85K` | Kuning Listrik |
+| **4** | `HydraulicWinch` | **Hydraulic Winch Cable** | `5.5M` (`5.5e6`) | `3.8M` | Oranye Hidrolik |
+| **5** | `TitaniumGrapple` | **Titanium Mag-Grapple** | `320M` (`3.2e8`) | `220M` | Biru Kobalt |
+| **6** | `PlasmaLasso` | **Plasma Core Lasso** | `18B` (`1.8e10`) | `12B` | Ungu Plasma |
+| **7** | `DarkMatterWhip` | **Dark-Matter Whip** | `1.2T` (`1.2e12`) | `850B` | Merah Kirmizi Neon |
+| **8** | `QuantumTether` | **Quantum Singularity Tether** | `95T` (`9.5e13`) | `65T` | Cyan Kuantum |
+| **9** | `CelestialChain` | **Celestial Star-Chain** | `8.5Qa` (`8.5e15`) | `5.5Qa` | Emas Bintang |
+| **10** | `OmniverseLasso` | **Omniverse Apex Lasso** | `750Qi` (`7.5e17`) *(Upgradeable s/d `Sx` & `Sp`)* | `480Qi` | Pelangi Kosmik |
+
+#### B. 10 Tingkatan Trail di Trail Shop (Multiplier Speed & Cash)
+Menggunakan instance `Trail` ringan pada karakter (tanpa membebani mesh karakter):
+| Tier | ID Trail | Nama Trail | Speed Multiplier | Bonus Cash | Harga Beli (`Coins`) |
+| :---: | :--- | :--- | :---: | :---: | :---: |
+| **1** | `BreezeTrail` | **Wind Breeze Trail** | `1.25x` | `+0%` | **Gratis** |
+| **2** | `LeafTrail` | **Forest Leaf Trail** | `1.75x` | `+5%` | `1.2K` |
+| **3** | `SparkTrail` | **Amber Spark Trail** | `2.80x` | `+10%` | `45K` |
+| **4** | `HydroTrail` | **Hydro Wave Trail** | `5.00x` | `+15%` | `1.5M` |
+| **5** | `VoltTrail` | **Volt Lightning Trail** | `10.0x` | `+20%` | `80M` |
+| **6** | `PlasmaTrail` | **Plasma Ribbon Trail** | `22.0x` | `+30%` | `4.2B` |
+| **7** | `CrimsonTrail` | **Crimson Flame Trail** | `50.0x` | `+40%` | `260B` |
+| **8** | `FrostTrail` | **Frost Nova Trail** | `120x` | `+55%` | `18T` |
+| **9** | `StarlightTrail` | **Celestial Starlight Trail** | `300x` | `+75%` | `1.4Qa` |
+| **10** | `RainbowTrail` | **Omniverse Rainbow Trail** | `750x` | `+100%` | `110Qi` |
 
 ---
 
-### 6. Ethical Monetization & Retention Design (`agency-roblox-experience-designer`)
+### 6. Sistem Admin Panel & "Admin Abuse" Live Event System
 
-> [!TIP]
-> Sesuai aturan **Roblox Experience Designer**, seluruh item berbayar **bukan pay-to-win yang mematikan pemain gratis**. Seluruh biome, hewan, dan Fuse Machine dapat diakses 100% gratis; Game Pass berfungsi sebagai akselerator kenyamanan, kapasitas, dan kosmetik.
+Untuk memudahkan kontrol penuh atas game, moderasi pemain, penyesuaian ekonomi langsung (*live tuning*), serta mengadakan event seru ala **"Admin Abuse"** yang disukai komunitas Roblox, tersedia **Admin Control Panel (`F2` / Tombol `[ADMIN]` di HUD)**.
+
+#### A. Sistem Hak Akses Berlapis (Server-Verified RBAC)
+Seluruh request Admin divalidasi 100% di sisi server melalui `AdminService.luau` + `AdminConfig.luau` (`game.CreatorId`, Studio Tester, dan daftar `UserId` Admin/Moderator di DataStore):
+- **Rank 3 — Owner / SuperAdmin:** Akses penuh ke seluruh fitur, kelola daftar Admin/Moderator, Wipe/Edit Data, dan Global Events.
+- **Rank 2 — Admin / Event Host:** Menjalankan event *Admin Abuse*, Spawn Hewan/Kotak kustom, Give Coins/Speed, dan Global Broadcast.
+- **Rank 1 — Moderator:** Kick, Temp/Perm Ban pemain (`BanStore_v1`), Freeze/Bring/Teleport ke pemain, dan cek log anti-cheat.
+
+#### B. 5 Tab Fitur Utama di Admin Panel UI
+1. **Tab 1: Moderation & Player Control (`Ban / Kick / Inspect`):**
+   - Pilih pemain di server atau ketik `UserId` -> **`Kick`**, **`Temp Ban (1h / 24h / 7d)`**, **`Permanent Ban`** (tersimpan di DataStore `BanStore_v1` + alasan ban), **`Unban`**.
+   - Tombol cepat: **`Teleport To`**, **`Bring to Me`**, **`Freeze / Unfreeze`**, dan **`Inspect Kandang & Inventory`**.
+2. **Tab 2: Economy & Live Value Tuner (`Give Stats / Edit Values`):**
+   - **Give / Set Stat Pemain:** Tambah atau atur `Coins` (mendukung input singkat seperti `50M`, `10B`, `5Qa`), `Speed Stat`, `Rebirths`, `Pen Capacity (8–20)`, `Treadmill Level`, atau tombol **`Unlock All Gear & Full Index`**.
+   - **Live Value Multiplier:** Ubah multiplier `Global Cash Rate`, `Global Speed Rate`, `Poacher WalkSpeed`, atau `Crate Resistance` secara langsung tanpa restart server!
+3. **Tab 3: Custom Animal & Crate Spawner (`Direct Spawn`):**
+   - **Spawn Hewan ke Kandang:** Pilih `Spesies (#01–#63)` + Pilih `Mutasi (Normal / Albino / Golden / Diamond / Neon / Rainbow / Celestial)` + Atur `SizeRatio (0.7x s/d 10.0x Raksasa!)` -> langsung masuk dan jalan-jalan di kandang pemain yang dipilih!
+   - **Spawn Kotak di Map:** Munculkan kotak *Mythic / Celestial* tepat di depan Admin atau di zona tertentu.
+4. **Tab 4: "Admin Abuse" & Server-Wide Live Events (One-Click Chaos & Party!):**
+   - Memicu event seluruh server lengkap dengan **Banner Pengumuman Layar Penuh + Efek Langit/Suara**:
+     - **Crate Rain (Hujan Kotak Langka):** Menjatuhkan 25 kotak *Epic/Legendary/Mythic* dari langit di seluruh map!
+     - **100x Rainbow & Celestial Mutation Party:** Meningkatkan peluang mutasi langka & ukuran *Titanic* secara drastis selama durasi event!
+     - **Golden Fever (25x / 100x Cash & Speed):** Mengalikan pendapatan uang kandang dan perolehan speed treadmill seluruh pemain!
+     - **Titanic Zoo Mode (Giant Animals):** Membuat semua hewan yang sedang jalan-jalan di kandang berubah ukuran menjadi raksasa sementara!
+     - **Zero Resistance Mode (Instant Lasso Pull):** Semua pemain bisa mencabut kotak seberat apa pun dalam 1 detik!
+     - **Hyper Poacher Stampede:** Boss Poacher berubah ukuran jadi raksasa dan berlari 3x lebih cepat (mode tantangan berhadiah koin besar!).
+     - **Global Server Broadcast:** Kirim teks pengumuman kustom ke layar seluruh pemain.
+5. **Tab 5: Admin Self-Tools (`Quick Toggles`):**
+   - `God Mode (Poacher Ignore Admin)`, `Instant Lasso Pull`, `Instant Unbox`, `Super Speed`, dan `Respawn All Crates`.
+
+---
+
+### 7. Ethical Monetization & Retention Design (`agency-roblox-experience-designer`)
 
 #### A. Game Passes (Permanent Benefits — `MarketplaceService:UserOwnsGamePassAsync`)
 | Game Pass | Harga (Robux) | Manfaat Permanen |
 | :--- | :---: | :--- |
-| **VIP Ranger Pass** | `299 R$` | `+50%` Cash Income, VIP Golden Name Tag, Akses VIP Lounge Dyno (`1.5x` Training), & Golden Safari Jeep |
-| **2x Speed Training** | `199 R$` | Menggandakan perolehan *Speed EXP* saat latihan di Dyno/Treadmill |
+| **VIP Ranger Pass** | `299 R$` | `+50%` Cash Income, VIP Golden Name Tag, `1.5x` Treadmill Speed, & Golden Safari Jeep |
+| **2x Speed Training** | `199 R$` | Menggandakan perolehan *Speed* saat latihan di Treadmill |
 | **2x Lasso Pull Power** | `249 R$` | Menggandakan kekuatan tarik Lasso (ekstraksi kotak 2x lebih cepat) |
 | **Dual Tow Hook (Carry +1 Crate)** | `349 R$` | Bisa menarik dan menderek **2 kotak hewan sekaligus** dalam satu perjalanan |
-| **Auto-Unbox & Instant Collect** | `149 R$` | Otomatis mengumpulkan koin dari kandang Zoo & otomatis membuka kotak saat timer selesai |
-| **Extra Zoo Capacity (+6 Stalls & +50 Storage)** | `199 R$` | Menambah batas maksimum slot kandang aktif & penyimpanan hewan |
+| **Auto-Unbox & Auto-Collect** | `149 R$` | Otomatis mengumpulkan uang kandang & otomatis membuka kotak yang ditaruh di kandang |
+| **Extra Pen Capacity (+5 Max Animals)** | `199 R$` | Menambah batas maksimum hewan di kandang terbuka (`20 -> 25` hewan aktif) & `+50` slot tas |
 
 #### B. Developer Products (Consumables — `MarketplaceService.ProcessReceipt`)
-- **Starter Ranger Pack (One-Time Offer, Honest Framing):** `99 R$` — *Electric Lasso Tier 3 + Mud Buggy + 5.000 Coins* (nilai hemat 3x, tanpa *fake countdown timer* yang menekan anak-anak).
-- **Crate Luck Boost (15 Menit Server-Wide Party Boost):** `75 R$` — Meningkatkan peluang spawn kotak Epic/Legendary untuk **seluruh pemain di server** (mendorong *social gratitude* & retensi grup!).
-- **Instant Fuse / Skip Unbox Timer:** `25 R$` – `49 R$`.
-- **Coin Bundles:** Tier harga standar (`49 R$`, `149 R$`, `399 R$`, `999 R$`) yang diskalakan dengan *Rebirth Multiplier* pemain agar selalu terasa bernilai.
-
-#### C. Onboarding & Retention Funnel (D1 / D7 / D30)
-- **60 Detik Pertama:** Pemain spawn langsung di depan **Starter ATV**, melihat **1 Kotak Anak Rubah** yang terjebak tepat di luar gerbang Sanctuary (tanpa Poacher), menariknya dalam 3 detik dengan Lasso, menaruhnya di kandang pertama, dan langsung mendapat koin + efek konfeti!
-- **5 Menit Pertama:** Menyelesaikan misi *"Selamatkan 3 Hewan Pertama & Upgrade Lasso ke Tier 2"*, membuka fitur **Ride Animal** dan **Merge 3-in-1**.
-- **15 Menit Pertama:** Masuk ke Biome 2, menyelesaikan **1x Merge Golden Animal**, dan muncul prompt halus *"Suka menyelamatkan hewan? Tambahkan ke Favorites & klaim Daily Streak Hari ke-1!"*
-- **7-Day Daily Reward Ladder & Friend Boost:** `+10%` Cash & `+10%` Pull Power untuk setiap teman yang bermain di server yang sama (`Players:GetFriendsAsync()`).
+- **Starter Ranger Pack:** `99 R$` — *High-Volt Taser Tether (Tier 3) + Mud-Crawler Buggy + Amber Spark Trail + 100K Coins*.
+- **Server-Wide 10x Mutation Luck Party (15 Menit):** `75 R$`.
+- **Instant Unbox / Instant Fuse:** `25 R$` – `49 R$`.
+- **Coin Bundles:** Tier harga standar (`49 R$`, `149 R$`, `399 R$`, `999 R$`) yang diskalakan dengan progresi pemain.
 
 ---
 
-### 7. Security & Anti-Exploit Architecture
-
-Arsitektur menutup celah auto-farm umum sejak awal:
+### 8. Security & Anti-Exploit Architecture
 
 1. **Anti-Teleport & Towing Velocity Envelope:**
-   - Server mencatat posisi dan waktu saat pemain berhasil mengangkat kotak (`CrateHookedTimestamp`, `OriginPosition`).
-   - Jika pemain sampai di Sanctuary Plot lebih cepat dari batas fisik maksimum (`deltaDistance / deltaTime > MaxAllowedVehicleSpeed * 1.25`), server menolak penempatan kotak dan mengembalikan pemain ke posisi valid terakhir.
-2. **Server-Authoritative Lasso Pull State Machine:**
-   - Klien **tidak bisa** mengirim remote `InstantCaptureCrate`.
-   - Klien hanya mengirim `RequestStartPull(crateId)` -> Server memvalidasi jarak (`<= LassoMaxRange + 4 studs`) dan memulai perhitungan progres di server setiap `Heartbeat` / tick.
-   - Untuk *Tap Sweet-Spot Boost*, server membatasi frekuensi maksimal 3x klik per detik dengan *window validasi* di server.
+   - Server mencatat posisi dan waktu saat pemain berhasil mengangkat kotak (`CrateHookedTimestamp`, `OriginPosition`). Jika pemain sampai di Sanctuary Plot lebih cepat dari batas fisik maksimum, server menolak penempatan kotak.
+2. **Server-Authoritative Lasso Pull & Admin Validation:**
+   - Klien hanya mengirim `RequestStartPull(crateId)` -> Server memvalidasi jarak dan menghitung progres tarikan sesuai `LassoPower` milik pemain.
+   - Seluruh remote `AdminCommand` memverifikasi `AdminService.GetAdminRank(player.UserId) >= requiredRank` di sisi server; pemain biasa yang mencoba memanggil remote Admin langsung ditolak dan dicatat di log moderasi.
 3. **Server-Side Poacher Hit Detection:**
-   - Tabrakan antara Poacher/Boss dan pemain dihitung berdasarkan jarak horizontal (`XZ-plane`) di server, sehingga *Noclip* atau melayang sedikit di atas tanah tidak membuat pemain kebal dari tangkapan Poacher.
-4. **Rate Limiting & Sanity Checks pada RemoteEvents:**
-   - Seluruh `RemoteEvent` / `RemoteFunction` memiliki *per-player token bucket rate limiter* dan validasi tipe argumen (`typeof(arg)`).
+   - Tabrakan antara Poacher/Boss dan pemain dihitung berdasarkan jarak horizontal (`XZ-plane`) di server (kecuali Admin yang menyalakan toggle *God Mode*).
 
 ---
 
-### 8. DataStore Schema & Progression Safety
-
-Menggunakan **1 DataStore terpadu (`PlayerData_v1`)** untuk pemain gratis maupun VIP, dilengkapi *session locking*, *auto-save setiap 120 detik*, *retry + exponential backoff*, dan *schema migration*:
+### 9. DataStore Schema & Progression Safety (`PlayerData_v2` & `BanStore_v1`)
 
 ```luau
+export type AnimalMutation = "None" | "Albino" | "Golden" | "Diamond" | "Neon" | "Rainbow" | "Celestial"
+
 export type AnimalInstance = {
-	uid: string,          -- GUID unik
-	speciesId: string,    -- Contoh: "WhiteTiger", "Capybara"
-	tier: number,         -- 1 = Normal, 2 = Golden, 3 = Rainbow, 4 = Galactic
-	level: number,
+	uid: string,               -- GUID unik
+	speciesId: string,         -- Contoh: "RustyFox", "MythicWhiteTiger" (#01 s/d #63)
+	sizeRatio: number,         -- 0.70 s/d 3.50+ (menentukan skala 3D & multiplier uang)
+	weightKg: number,          -- Berat proporsional untuk ditampilkan di UI & Index
+	mutation: AnimalMutation,  -- "None" | "Albino" | "Golden" | "Diamond" | "Neon" | "Rainbow" | "Celestial"
+	locked: boolean,           -- Mencegah terjual/ter-fuse tidak sengaja
 	acquiredAt: number,
 }
 
-export type CrateInstance = {
-	uid: string,
-	crateType: string,    -- Contoh: "Biome1_Common", "Biome3_Legendary"
-	unlockAt: number,     -- Timestamp os.time() saat kotak siap dibuka
-	stallIndex: number,
-}
-
 export type PlayerProfileSchema = {
-	schemaVersion: number, -- v1 (mendukung migrasi otomatis ke v2+)
+	schemaVersion: number,
 	coins: number,
 	gems: number,
 	speedStat: number,
 	rebirths: number,
 
+	-- Kandang & Treadmill Upgrades
+	penCapacity: number,       -- Mulai dari 8, upgradeable s/d 20 (atau 25 dgn Pass)
+	penUpgradeLevel: number,   -- Level 1 s/d 13
+	treadmillLevel: number,    -- Level 1+ untuk multiplier latihan speed
+	unclaimedPenCoins: number, -- Uang yang terakumulasi di Cash Collector Pad kandang
+
+	-- Gear & Trails
 	equippedLasso: string,
 	ownedLassos: { [string]: boolean },
-
+	equippedTrail: string,
+	ownedTrails: { [string]: boolean },
 	equippedVehicle: string,
 	ownedVehicles: { [string]: boolean },
 
-	unlockedStalls: number,
-	activeStallAnimals: { [string]: string }, -- stallIndex -> animalUid
-	pendingCrates: { [string]: CrateInstance },
+	-- Hewan di Kandang Terbuka & Tas
+	roamingAnimalUids: { string },                -- Daftar UID hewan yang sedang jalan-jalan di kandang (maks penCapacity)
 	inventoryAnimals: { [string]: AnimalInstance },
-	discoveredCodex: { [string]: boolean },   -- speciesId -> true
+	pendingCrates: { [string]: CrateInstance },
+
+	-- Animal Index (63 Spesies)
+	discoveredIndex: { [string]: {
+		count: number,
+		maxSizeRatio: number,
+		mutationsFound: { [string]: boolean },
+		rewardClaimed: boolean,
+	} },
 
 	dailyReward: {
 		lastClaimTime: number,
@@ -325,12 +359,12 @@ export type PlayerProfileSchema = {
 	},
 	settings: {
 		musicEnabled: boolean,
-		musicVolume: number,      -- 0.0 s/d 1.0
+		musicVolume: number,
 		sfxEnabled: boolean,
-		sfxVolume: number,        -- 0.0 s/d 1.0
-		hideOtherAnimals: boolean,-- Sembunyikan hewan player lain (Anti-Lag)
-		hideOwnAnimals: boolean,  -- Sembunyikan hewan sendiri (Mode Fokus/Potato)
-		lowVFX: boolean,          -- Kurangi partikel aura/debu
+		sfxVolume: number,
+		hideOtherAnimals: boolean,
+		hideOwnAnimals: boolean,
+		lowVFX: boolean,
 	},
 	analyticsMeta: {
 		firstJoinTime: number,
@@ -342,7 +376,7 @@ export type PlayerProfileSchema = {
 
 ---
 
-### 9. Rencana Struktur Direktori Proyek (Rojo + Studio Automation)
+### 10. Struktur Direktori Proyek (Rojo + Studio Automation)
 
 ```text
 StealStealan/
@@ -351,57 +385,50 @@ StealStealan/
 │   ├── instruction.md
 │   └── GAME_DESIGN_AND_ARCHITECTURE.md
 ├── .agents/
-│   ├── rules/
-│   │   └── project-instructions.md
 │   └── skills/
 │       └── agency-roblox-experience-designer/
-├── generators/                        # Script semi-automasi AI untuk generate Blocky Studded Map, 6 Plot Kandang, & Kurasi Asset Marketplace
-│   ├── BlockyMapBiomeGenerator.luau
-│   ├── SanctuarySixPlotGenerator.luau
-│   └── MarketplaceAssetCurator.luau
+├── generators/
+│   ├── BlockyMapBiomeGenerator.luau   # Generator 5 Zona Blocky Studded + Creator Store Decor
+│   └── SanctuarySixPlotGenerator.luau # Generator Hub + Shop/Mesin + 6 Kandang Terbuka Tanpa Sekat (8->20)
 └── src/
     ├── ReplicatedStorage/
     │   ├── Config/
-    │   │   ├── GameConfig.luau        # Tuning ekonomi, MaxPlayers=6, kecepatan, & konstanta global
-    │   │   ├── LassoConfig.luau       # Data 8 tier Lasso
-    │   │   ├── VehicleConfig.luau     # Data 6 tier Kendaraan Darat
-    │   │   ├── AnimalConfig.luau      # Data spesies hewan, income/sec, & tier Fuse/Merge
-    │   │   ├── BiomeConfig.luau       # Data 5 Biome, Crate resistance, & Poacher stats
-    │   │   ├── SoundConfig.luau       # Daftar AssetId BGM per biome & SFX
-    │   │   └── MonetizationConfig.luau# ID Game Pass & Developer Products terpusat
+    │   │   ├── GameConfig.luau        # Konstanta global, ukuran (sizeRatio), mutasi, & rumus ekonomi
+    │   │   ├── LassoConfig.luau       # 10 Tier Lasso (150 s/d 750Qi Power)
+    │   │   ├── TrailConfig.luau       # 10 Tier Trail Multiplier (1.25x s/d 750x Speed)
+    │   │   ├── VehicleConfig.luau     # 6 Tier Kendaraan Darat
+    │   │   ├── AnimalConfig.luau      # 63 Spesies Hewan (Zona 1: 10, Zona 2: 12, Zona 3: 12, Zona 4: 14, Zona 5: 15)
+    │   │   ├── BiomeConfig.luau       # Data 5 Zona Biome, Crate Resistance, & Boss Poacher
+    │   │   ├── AdminConfig.luau       # Daftar UserId Owner/Admin/Moderator & daftar preset Admin Abuse Event
+    │   │   ├── SoundConfig.luau       # Konfigurasi SoundGroup BGM & SFX
+    │   │   └── MonetizationConfig.luau# ID Game Pass & Developer Products
     │   ├── Shared/
     │   │   ├── Types.luau             # Definisi tipe Luau (--!strict)
-    │   │   └── Remotes.luau           # Inisialisasi & kontrak RemoteEvents/RemoteFunctions
+    │   │   └── Remotes.luau           # Kontrak RemoteEvents (Gameplay + Index + Trail + Admin Panel)
     │   └── Modules/
-    │       └── FormatUtil.luau        # Format angka (1.5K, 2.4M, dll.)
+    │       ├── FormatUtil.luau        # Formatter angka (K, M, B, T, Qa, Qi, Sx, Sp, Oc, No, Dc)
+    │       └── AnimalVisualBuilder.luau# Builder model 3D hewan blocky + skala sizeRatio + material/aura mutasi
     ├── ServerScriptService/
     │   ├── Services/
-    │   │   ├── DataService.luau       # DataStore v1 + Retry + Session Lock + Migration + Settings persistence
-    │   │   ├── PlotService.luau       # Alokasi 6 Sanctuary Zoo Plots, Stalls, & Passive Income
-    │   │   ├── EconomyService.luau    # Shop Lasso, Kendaraan, Upgrade, & Rebirth
+    │   │   ├── DataService.luau       # DataStore PlayerData_v2 & BanStore_v1 + Session Lock
+    │   │   ├── PlotService.luau       # 6 Open-Pen Plots, Roaming Animals, Income/sec, & Upgrade Kandang (8->20)
+    │   │   ├── EconomyService.luau    # Shop 10 Lasso, 10 Trail, 6 Kendaraan, Treadmill Upgrade, Index Claim, & Rebirth
+    │   │   ├── AdminService.luau      # Server RBAC, Ban/Kick, Live Value Tuner, Spawner, & "Admin Abuse" Live Events
     │   │   ├── PassManager.luau       # Game Pass, Developer Products, & Daily Rewards
-    │   │   └── AnalyticsTracker.luau  # AnalyticsService Funnel (Onboarding, Retention, Economy)
+    │   │   └── AnalyticsTracker.luau  # AnalyticsService Funnel
     │   └── Systems/
-    │       ├── LassoRescueSystem.luau # Server-authoritative Crate Spawner, Lasso Pull, & Towing Anti-Cheat
-    │       ├── PoacherAISystem.luau   # Patroli & Aggro Chase Poacher/Boss per Biome
-    │       ├── TrainingSystem.luau    # Dyno/Treadmill Speed Training & Tap Boost Validator
-    │       └── FuseMergeSystem.luau   # 3-in-1 Merge (Golden/Rainbow) & Cross-Fuse Machine
+    │       ├── LassoRescueSystem.luau # Crate Spawner, Lasso Pull (K-Sp Power), & Towing Anti-Cheat
+    │       ├── PoacherAISystem.luau   # Patroli & Aggro Chase Poacher/Boss per Zona
+    │       ├── TrainingSystem.luau    # Treadmill Speed Training + Trail Multiplier + Tap Boost
+    │       └── FuseMergeSystem.luau   # Mesin Fuse & Evolusi Mutasi Hewan
     ├── StarterPlayer/
     │   └── StarterPlayerScripts/
-    │       ├── RescueClient.client.luau          # Visual tali Lasso, UI Tarik Kotak, & Tombol Slow Mode/Brake
-    │       ├── VehicleClient.client.luau         # Kontrol Kendaraan Darat & Rideable Animal Mount
-    │       ├── SettingsAndAudioClient.client.luau# Kontrol BGM/SFX & Client Culling (Hide Other/Own Animals)
-    │       └── OnboardingArrow.client.luau       # Beam penunjuk arah untuk 60 detik pertama
+    │       ├── RescueClient.client.luau          # Visual Beam Lasso, UI Tarik Kotak, & Tombol Slow Mode
+    │       ├── RoamingPenClient.client.luau      # Animasi Hewan Jalan-Jalan Bebas di Kandang Terbuka + Size & Mutasi VFX
+    │       ├── VehicleAndTrailClient.client.luau # Kontrol Kendaraan, Ride Animal, & Efek Trail Karakter
+    │       └── SettingsAndAudioClient.client.luau# Kontrol BGM/SFX & Toggle Hide Other/Own Animals
     └── StarterGui/
         └── UI/
-            └── MainHUD.client.luau    # HUD Koin, Speed, Slow Mode, Settings Toggle (Audio/Hide Animal), Zoo, Fuse, & Shop
+            ├── MainHUD.client.luau    # HUD Utama, Index UI (63 Hewan Menyala), Shop Lasso/Trail, Fuse, & Settings
+            └── AdminPanel.client.luau # UI Admin Panel 5-Tab (Moderation, Economy, Spawner, Admin Abuse Events, Tools)
 ```
-
----
-
-## Poin Diskusi & Keputusan Sebelum Masuk ke Phase 3 (Implementation)
-
-1. **Nama Game & Tema Visual:** Apakah tema **"Wild Rescue: Escape the Poachers"** dengan 5 biome (*Pine Woods, Mangrove Swamp, Savanna Camp, Alpine Peaks, Volcanic Jungle*) sudah pas, atau ada biome/hewan spesifik yang ingin dimasukkan?
-2. **Mekanik Tarik Lasso ("Nyungsep"):** Apakah Anda lebih suka mekanik tariknya berupa **Auto-Pull berdasarkan Power + Klik/Tap Rhythm Boost** (seperti kombinasi *Surf and Rescue* + *Break and Steal*), atau **Tahan Tombol + Jaga Tension Bar**?
-3. **Mekanik Kendaraan vs. Tunggangan Hewan:** Apakah kendaraan dipakai khusus untuk pergi ke hutan & menarik kotak, sedangkan hewan dipakai untuk dipajang di Zoo + ditunggangi di area Base/Training, atau hewan yang sudah di-Fuse juga bisa dipakai lari ke hutan?
-4. **Persetujuan Tahap Implementasi Pertama:** Jika konsep ini sudah disetujui, apakah kita mulai **Phase 3 — Batch 1** dari membangun **Konfigurasi Data + Generator Map 5 Biome & Sanctuary Zoo Plots** langsung di Roblox Studio Anda?

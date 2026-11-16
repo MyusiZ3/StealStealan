@@ -3,15 +3,15 @@
 -- Shared type definitions for Wild Rescue: Poacher Run (StealStealan)
 
 export type AnimalRarity = "Common" | "Uncommon" | "Rare" | "Epic" | "Legendary" | "Mythic"
-export type AnimalTrait = "Normal" | "Chubby" | "Zoomer" | "Magnet" | "Shiny"
-export type EvolutionTier = number -- 1=Normal, 2=Golden, 3=Rainbow, 4=Galactic
+export type AnimalMutation = "None" | "Albino" | "Golden" | "Diamond" | "Neon" | "Rainbow" | "Celestial"
 
 export type AnimalInstance = {
 	uid: string,
 	speciesId: string,
-	tier: EvolutionTier,
-	trait: AnimalTrait,
-	level: number,
+	sizeRatio: number,
+	weightKg: number,
+	mutation: AnimalMutation,
+	locked: boolean,
 	acquiredAt: number,
 }
 
@@ -21,7 +21,13 @@ export type CrateInstance = {
 	rarity: AnimalRarity,
 	speciesId: string,
 	unlockAt: number,
-	stallIndex: number,
+}
+
+export type IndexEntry = {
+	count: number,
+	maxSizeRatio: number,
+	mutationsFound: { [string]: boolean },
+	rewardClaimed: boolean,
 }
 
 export type PlayerSettings = {
@@ -41,17 +47,23 @@ export type PlayerProfileSchema = {
 	speedStat: number,
 	rebirths: number,
 
+	penCapacity: number,
+	penUpgradeLevel: number,
+	treadmillLevel: number,
+	unclaimedPenCoins: number,
+
 	equippedLasso: string,
 	ownedLassos: { [string]: boolean },
-
+	equippedTrail: string,
+	ownedTrails: { [string]: boolean },
 	equippedVehicle: string,
 	ownedVehicles: { [string]: boolean },
 
-	unlockedStalls: number,
-	activeStallAnimals: { [string]: string },
-	pendingCrates: { [string]: CrateInstance },
+	roamingAnimalUids: { string },
 	inventoryAnimals: { [string]: AnimalInstance },
-	discoveredCodex: { [string]: boolean },
+	pendingCrates: { [string]: CrateInstance },
+	discoveredIndex: { [string]: IndexEntry },
+	zoneIndexBonusesClaimed: { [string]: boolean },
 
 	dailyReward: {
 		lastClaimTime: number,
@@ -77,12 +89,13 @@ export type BiomeDefinition = {
 	cliffColor: Color3,
 	materialName: Enum.Material,
 	materialVariant: string,
-	speedPenalty: number, -- 0.0 = none, 0.4 = 40% slower without terrain vehicle
+	speedPenalty: number,
 	bossName: string,
 	bossSpeed: number,
 	poacherSpeed: number,
 	crateBaseResistance: number,
 	recommendedSpeed: number,
+	indexCount: number,
 }
 
 export type LassoDefinition = {
@@ -94,6 +107,18 @@ export type LassoDefinition = {
 	maxRange: number,
 	sweetSpotWidth: number,
 	beamColor: Color3,
+	description: string,
+}
+
+export type TrailDefinition = {
+	id: string,
+	tier: number,
+	name: string,
+	cost: number,
+	speedMultiplier: number,
+	cashBonus: number,
+	colorPrimary: Color3,
+	colorSecondary: Color3,
 	description: string,
 }
 
@@ -112,16 +137,17 @@ export type VehicleDefinition = {
 }
 
 export type AnimalSpeciesDefinition = {
+	indexNumber: number,
 	id: string,
 	name: string,
 	biomeId: string,
 	rarity: AnimalRarity,
 	baseIncomePerSec: number,
-	mountSpeedBonus: number,
+	baseWeightKg: number,
 	bodyColor: Color3,
 	secondaryColor: Color3,
 	eyeColor: Color3,
-	scale: number,
+	shapeStyle: "Canine" | "Bear" | "Bird" | "Reptile" | "Hooved" | "Feline" | "Critter",
 }
 
 return {}

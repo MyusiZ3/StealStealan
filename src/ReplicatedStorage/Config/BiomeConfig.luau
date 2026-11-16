@@ -1,6 +1,6 @@
 --!strict
 -- BiomeConfig.luau
--- 5 Stylized Blocky Biomes + Sanctuary Safe Hub
+-- 5 Stylized Blocky Biomes with Crate Resistances aligned to the 10-Tier (K-Sp) Lasso Curve
 
 local Types = require(script.Parent.Parent.Shared.Types)
 
@@ -9,7 +9,7 @@ local BiomeConfig: { Types.BiomeDefinition } = {
 		id = "PineWoods",
 		order = 1,
 		name = "Whispering Pine Woods",
-		subtitle = "Rookie Poacher Territory",
+		subtitle = "10 Animal Index | Rookie Poacher Territory",
 		zStart = 150,
 		zEnd = 450,
 		groundColor = Color3.fromRGB(86, 158, 74),
@@ -21,14 +21,15 @@ local BiomeConfig: { Types.BiomeDefinition } = {
 		bossName = "Net-Thrower Bob",
 		bossSpeed = 24,
 		poacherSpeed = 19,
-		crateBaseResistance = 30,
+		crateBaseResistance = 320,
 		recommendedSpeed = 18,
+		indexCount = 10,
 	},
 	{
 		id = "MangroveSwamp",
 		order = 2,
 		name = "Muddy Mangrove Swamp",
-		subtitle = "Boggy Mud Slows Foot Travel (-40%)",
+		subtitle = "12 Animal Index | Mud Slows Foot Travel (-40%)",
 		zStart = 450,
 		zEnd = 800,
 		groundColor = Color3.fromRGB(92, 74, 52),
@@ -40,14 +41,15 @@ local BiomeConfig: { Types.BiomeDefinition } = {
 		bossName = "Gator-Truck Gus",
 		bossSpeed = 34,
 		poacherSpeed = 26,
-		crateBaseResistance = 95,
+		crateBaseResistance = 240000, -- 240K
 		recommendedSpeed = 45,
+		indexCount = 12,
 	},
 	{
 		id = "SavannaCamp",
 		order = 3,
 		name = "Savanna Poacher Camp",
-		subtitle = "Barricaded Plains & Watchtowers",
+		subtitle = "12 Animal Index | Barricaded Plains & Watchtowers",
 		zStart = 800,
 		zEnd = 1200,
 		groundColor = Color3.fromRGB(214, 174, 88),
@@ -57,16 +59,17 @@ local BiomeConfig: { Types.BiomeDefinition } = {
 		materialVariant = "BlockyStudSavanna",
 		speedPenalty = 0.15,
 		bossName = "Warden Bulldozer",
-		bossSpeed = 46,
+		bossSpeed = 48,
 		poacherSpeed = 36,
-		crateBaseResistance = 240,
-		recommendedSpeed = 85,
+		crateBaseResistance = 480000000, -- 480M
+		recommendedSpeed = 90,
+		indexCount = 12,
 	},
 	{
 		id = "AlpinePeaks",
 		order = 4,
 		name = "Frostbite Alpine Peaks",
-		subtitle = "Slippery Glaciers & Yeti Mechs",
+		subtitle = "14 Animal Index | Slippery Glaciers & Yeti Mechs",
 		zStart = 1200,
 		zEnd = 1650,
 		groundColor = Color3.fromRGB(224, 240, 250),
@@ -76,16 +79,17 @@ local BiomeConfig: { Types.BiomeDefinition } = {
 		materialVariant = "BlockyStudSnow",
 		speedPenalty = 0.30,
 		bossName = "Yeti Poacher Mech",
-		bossSpeed = 62,
-		poacherSpeed = 48,
-		crateBaseResistance = 580,
+		bossSpeed = 66,
+		poacherSpeed = 50,
+		crateBaseResistance = 2400000000000, -- 2.4T
 		recommendedSpeed = 140,
+		indexCount = 14,
 	},
 	{
 		id = "VolcanicJungle",
 		order = 5,
 		name = "Volcanic Obsidian Jungle",
-		subtitle = "Apex Poacher Stronghold",
+		subtitle = "15 Animal Index | Apex Poacher Stronghold",
 		zStart = 1650,
 		zEnd = 2150,
 		groundColor = Color3.fromRGB(54, 46, 58),
@@ -95,10 +99,11 @@ local BiomeConfig: { Types.BiomeDefinition } = {
 		materialVariant = "BlockyStudVolcanic",
 		speedPenalty = 0.25,
 		bossName = "Ironclad Poacher Tank",
-		bossSpeed = 82,
-		poacherSpeed = 64,
-		crateBaseResistance = 1350,
+		bossSpeed = 88,
+		poacherSpeed = 68,
+		crateBaseResistance = 15000000000000000, -- 15Qa
 		recommendedSpeed = 200,
+		indexCount = 15,
 	},
 }
 

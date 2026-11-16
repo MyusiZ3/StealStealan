@@ -1,6 +1,6 @@
 --!strict
 -- MonetizationConfig.luau
--- Centralized Game Pass & Developer Product IDs (replace 0s with live IDs after Creator Dashboard / Open Cloud publish)
+-- Centralized Game Pass & Developer Product IDs
 
 local MonetizationConfig = {
 	GAME_PASSES = {
@@ -8,13 +8,13 @@ local MonetizationConfig = {
 			id = 0,
 			name = "VIP Ranger Pass",
 			priceRobux = 299,
-			description = "+50% Cash Income, Golden Name Tag, VIP Dyno Lounge (1.5x Speed), & Golden Safari Jeep.",
+			description = "+50% Cash Income, VIP Golden Name Tag, 1.5x Treadmill Speed, & Golden Safari Jeep.",
 		},
 		DoubleSpeed = {
 			id = 0,
 			name = "2x Speed Training",
 			priceRobux = 199,
-			description = "Permanently doubles Speed EXP gained from Dyno & Mount training.",
+			description = "Permanently doubles Speed gained from Treadmill training.",
 		},
 		DoublePull = {
 			id = 0,
@@ -32,13 +32,13 @@ local MonetizationConfig = {
 			id = 0,
 			name = "Auto-Unbox & Collect",
 			priceRobux = 149,
-			description = "Automatically collects zoo stall coins and opens finished crates.",
+			description = "Automatically collects zoo pen coins and opens finished crates.",
 		},
 		ExtraZooCapacity = {
 			id = 0,
-			name = "Extra Zoo Capacity",
+			name = "Extra Pen Capacity (+5 Max Animals)",
 			priceRobux = 199,
-			description = "Unlocks +6 maximum Zoo enclosure stalls and +50 storage slots.",
+			description = "Increases max roaming pen capacity from 20 to 25 and +50 storage slots.",
 		},
 	},
 
@@ -48,24 +48,24 @@ local MonetizationConfig = {
 			name = "Starter Ranger Pack",
 			priceRobux = 99,
 			oneTime = true,
-			description = "Steel-Core Cable Lasso + Mud-Crawler Buggy + 5,000 Coins!",
+			description = "High-Volt Taser Tether + Mud-Crawler Buggy + Amber Trail + 100K Coins!",
 		},
 		ServerLuckBoost = {
 			id = 0,
-			name = "Server Crate Luck Boost (15m)",
+			name = "Server Mutation Luck Boost (15m)",
 			priceRobux = 75,
 			durationSeconds = 900,
-			description = "Boosts Rare/Epic/Legendary crate spawn chances for EVERYONE in the server!",
+			description = "Boosts Rare/Epic/Legendary & Mutation chances for EVERYONE in the server!",
 		},
 		InstantUnbox = {
 			id = 0,
 			name = "Instant Unbox Crate",
 			priceRobux = 25,
-			description = "Immediately open a pending crate in your sanctuary stall.",
+			description = "Immediately open a pending crate in your sanctuary pen.",
 		},
-		CoinsSmall = { id = 0, name = "Pocket of Coins", priceRobux = 49, baseCoins = 2500 },
-		CoinsMedium = { id = 0, name = "Ranger Crate of Coins", priceRobux = 149, baseCoins = 12000 },
-		CoinsLarge = { id = 0, name = "Sanctuary Vault of Coins", priceRobux = 399, baseCoins = 45000 },
+		CoinsSmall = { id = 0, name = "Pocket of Coins", priceRobux = 49, baseCoins = 50000 },
+		CoinsMedium = { id = 0, name = "Ranger Crate of Coins", priceRobux = 149, baseCoins = 500000 },
+		CoinsLarge = { id = 0, name = "Sanctuary Vault of Coins", priceRobux = 399, baseCoins = 5000000 },
 	},
 }
 
