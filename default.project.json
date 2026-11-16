@@ -1,0 +1,45 @@
+{
+  "name": "StealStealan",
+  "servePlaceIds": [
+    96456244910807
+  ],
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Shared": {
+        "$path": "src/ReplicatedStorage/Shared"
+      },
+      "Config": {
+        "$path": "src/ReplicatedStorage/Config"
+      },
+      "Modules": {
+        "$path": "src/ReplicatedStorage/Modules"
+      }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "Services": {
+        "$path": "src/ServerScriptService/Services"
+      },
+      "Systems": {
+        "$path": "src/ServerScriptService/Systems"
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "Client": {
+          "$path": "src/StarterPlayer/StarterPlayerScripts"
+        }
+      }
+    },
+    "StarterGui": {
+      "$className": "StarterGui",
+      "UI": {
+        "$path": "src/StarterGui/UI"
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+# Roblox Studio files
+*.rbxl.lock
+*.rbxlx.lock
+
+# Rojo / Tooling build artifacts
+build.rbxl
+build.rbxlx
+sourcemap.json
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
