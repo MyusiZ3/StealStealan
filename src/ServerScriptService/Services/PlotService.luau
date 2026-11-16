@@ -141,6 +141,32 @@ function PlotService.RefreshPlotBoardVisuals(player: Player)
 	local incomePerSec = PlotService.ComputePlayerIncomePerSec(player, profile)
 	local maxCap = PlotService.GetMaxPenCapacity(player, profile)
 
+	-- Keep Roblox Top-Right PlayerList (leaderstats: Cash/s & Speed) synced
+	local ls = player:FindFirstChild("leaderstats")
+	if not ls then
+		local folder = Instance.new("Folder")
+		folder.Name = "leaderstats"
+		folder.Parent = player
+		ls = folder
+	end
+	local cashStat = ls:FindFirstChild("Cash/s")
+	if not cashStat or not cashStat:IsA("StringValue") then
+		local sv = Instance.new("StringValue")
+		sv.Name = "Cash/s"
+		sv.Parent = ls
+		cashStat = sv
+	end
+	(cashStat :: StringValue).Value = FormatUtil.Number(incomePerSec)
+
+	local speedStat = ls:FindFirstChild("Speed")
+	if not speedStat or not speedStat:IsA("StringValue") then
+		local sv = Instance.new("StringValue")
+		sv.Name = "Speed"
+		sv.Parent = ls
+		speedStat = sv
+	end
+	(speedStat :: StringValue).Value = FormatUtil.Number(profile.speedStat)
+
 	local signBoard = model:FindFirstChild("OwnerSignBoard")
 	updateSignGui(signBoard, player.DisplayName .. "'s ZOO", string.format("Open-Pen (%d/%d Animals)", #profile.roamingAnimalUids, profile.penCapacity))
 
@@ -554,17 +580,15 @@ function PlotService.Init()
 		Remotes.Get("NotifyClient"):FireClient(player, string.format("Riding %s (+%d Speed)!", spec.name, speedBonus), Color3.fromRGB(84, 245, 148))
 	end)
 
-	-- Income accumulation + auto-unbox + 3D Leaderboard update loop
+	-- Income accumulation + auto-unbox loop
 	task.spawn(function()
 		while true do
 			task.wait(GameConfig.ECONOMY.INCOME_TICK_SECONDS)
 			local now = os.time()
-			local boardEntries: { { name: string, income: number, speed: number } } = {}
 			for _, player in ipairs(Players:GetPlayers()) do
 				local profile = DataService.GetProfile(player)
 				if profile then
 					local perSec = PlotService.ComputePlayerIncomePerSec(player, profile)
-					table.insert(boardEntries, { name = player.DisplayName, income = perSec, speed = profile.speedStat })
 					if perSec > 0 then
 						local gain = perSec * GameConfig.ECONOMY.INCOME_TICK_SECONDS
 						if PassManager.OwnsPass(player, "AutoUnboxCollect") then
@@ -586,20 +610,6 @@ function PlotService.Init()
 					DataService.SyncProfile(player)
 				end
 			end
-
-			table.sort(boardEntries, function(a, b) return a.income > b.income end)
-			local gw = Workspace:FindFirstChild("GameWorld")
-			local hub = if gw then gw:FindFirstChild("SanctuaryHub") else nil
-			local lbBoard = if hub then hub:FindFirstChild("LeaderboardBoard") else nil
-			if lbBoard and lbBoard:IsA("BasePart") then
-				local lines = {}
-				for i = 1, math.min(5, #boardEntries) do
-					local e = boardEntries[i]
-					table.insert(lines, string.format("#%d %s: $%s/s | %s SPD", i, e.name, FormatUtil.Number(e.income), FormatUtil.Number(e.speed)))
-				end
-				updateSignGui(lbBoard, "🏆 TOP RANGERS", if #lines > 0 then table.concat(lines, "\n") else "Join & Rescue Animals!")
-			end
-			Remotes.Get("LeaderboardSync"):FireAllClients(boardEntries)
 		end
 	end)
 end

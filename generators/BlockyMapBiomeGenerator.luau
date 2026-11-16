@@ -138,7 +138,7 @@ local function placeDecorProp(template: Instance?, pos: Vector3, yawRad: number,
 		clone.Parent = parent
 		local cf, size = clone:GetBoundingBox()
 		local currentBottomY = cf.Position.Y - size.Y * 0.5
-		clone:PivotTo(clone:GetPivot() + Vector3.new(0, -0.1 - currentBottomY, 0))
+		clone:PivotTo(clone:GetPivot() + Vector3.new(0, pos.Y - 0.1 - currentBottomY, 0))
 	elseif clone:IsA("BasePart") then
 		clone.Anchored = true
 		clone.CanQuery = false
@@ -189,6 +189,183 @@ local function getBiomeTemplates(biomeId: string): { Instance }
 		addPath({ "Pack_K3LLo29_Nature", "LowPolyNaturePack", "Rock2" })
 	end
 	return list
+end
+
+local function buildBlockyTree(pos: Vector3, scale: number, leafCol: Color3, snowyCap: boolean, parent: Instance)
+	local m = Instance.new("Model")
+	m.Name = "BlockySkylineTree"
+	m.Parent = parent
+
+	local trunkH = 9 * scale
+	makeBlock({
+		name = "Trunk",
+		size = Vector3.new(2.6 * scale, trunkH, 2.6 * scale),
+		cframe = CFrame.new(pos + Vector3.new(0, trunkH * 0.5 - 0.1, 0)),
+		color = Color3.fromRGB(118, 62, 42),
+		material = Enum.Material.Wood,
+		studded = false,
+		canQuery = false,
+		parent = m,
+	})
+	makeBlock({
+		name = "CanopyBase",
+		size = Vector3.new(9 * scale, 5.2 * scale, 9 * scale),
+		cframe = CFrame.new(pos + Vector3.new(0, trunkH + 2.2 * scale, 0)),
+		color = leafCol,
+		material = Enum.Material.Grass,
+		studded = true,
+		canQuery = false,
+		parent = m,
+	})
+	local topCol = if snowyCap then Color3.fromRGB(244, 248, 255) else leafCol:Lerp(Color3.new(1, 1, 1), 0.14)
+	makeBlock({
+		name = "CanopyTop",
+		size = Vector3.new(6.2 * scale, 3.6 * scale, 6.2 * scale),
+		cframe = CFrame.new(pos + Vector3.new(0, trunkH + 5.8 * scale, 0)),
+		color = topCol,
+		material = if snowyCap then Enum.Material.Snow else Enum.Material.Grass,
+		studded = true,
+		canQuery = false,
+		parent = m,
+	})
+end
+
+local function buildStepPyramid(pos: Vector3, scale: number, parent: Instance)
+	local m = Instance.new("Model")
+	m.Name = "DesertStepPyramid"
+	m.Parent = parent
+	local sandCol = Color3.fromRGB(218, 186, 114)
+	for tier = 0, 5 do
+		local w = (36 - tier * 5.2) * scale
+		local h = 3.2 * scale
+		makeBlock({
+			name = "Tier_" .. tier,
+			size = Vector3.new(w, h, w),
+			cframe = CFrame.new(pos + Vector3.new(0, (tier * h) + h * 0.5 - 0.1, 0)),
+			color = if tier % 2 == 0 then sandCol else sandCol:Lerp(Color3.fromRGB(168, 128, 72), 0.15),
+			material = Enum.Material.Sandstone,
+			studded = true,
+			canQuery = false,
+			parent = m,
+		})
+	end
+end
+
+local function buildBlockyCactus(pos: Vector3, scale: number, parent: Instance)
+	local m = Instance.new("Model")
+	m.Name = "BlockyCactus"
+	m.Parent = parent
+	local col = Color3.fromRGB(68, 198, 74)
+	makeBlock({
+		name = "Stem",
+		size = Vector3.new(2.4 * scale, 9.5 * scale, 2.4 * scale),
+		cframe = CFrame.new(pos + Vector3.new(0, 4.7 * scale, 0)),
+		color = col,
+		studded = true,
+		canQuery = false,
+		parent = m,
+	})
+	makeBlock({
+		name = "ArmL",
+		size = Vector3.new(4.2 * scale, 2.0 * scale, 2.0 * scale),
+		cframe = CFrame.new(pos + Vector3.new(-2.4 * scale, 5.4 * scale, 0)),
+		color = col,
+		studded = true,
+		canQuery = false,
+		parent = m,
+	})
+	makeBlock({
+		name = "ArmLUp",
+		size = Vector3.new(2.0 * scale, 3.6 * scale, 2.0 * scale),
+		cframe = CFrame.new(pos + Vector3.new(-3.5 * scale, 7.2 * scale, 0)),
+		color = col,
+		studded = true,
+		canQuery = false,
+		parent = m,
+	})
+	makeBlock({
+		name = "ArmR",
+		size = Vector3.new(3.8 * scale, 2.0 * scale, 2.0 * scale),
+		cframe = CFrame.new(pos + Vector3.new(2.2 * scale, 4.2 * scale, 0)),
+		color = col,
+		studded = true,
+		canQuery = false,
+		parent = m,
+	})
+end
+
+local function buildSwampMushroom(pos: Vector3, scale: number, parent: Instance)
+	local m = Instance.new("Model")
+	m.Name = "GiantSwampMushroom"
+	m.Parent = parent
+	makeBlock({
+		name = "Stem",
+		size = Vector3.new(2.4 * scale, 7.5 * scale, 2.4 * scale),
+		cframe = CFrame.new(pos + Vector3.new(0, 3.7 * scale, 0)),
+		color = Color3.fromRGB(224, 212, 186),
+		canQuery = false,
+		parent = m,
+	})
+	makeBlock({
+		name = "Cap",
+		size = Vector3.new(8.2 * scale, 3.2 * scale, 8.2 * scale),
+		cframe = CFrame.new(pos + Vector3.new(0, 8.2 * scale, 0)),
+		color = Color3.fromRGB(112, 232, 148),
+		material = Enum.Material.Neon,
+		studded = false,
+		canQuery = false,
+		parent = m,
+	})
+end
+
+local function buildIceSpire(pos: Vector3, scale: number, parent: Instance)
+	local m = Instance.new("Model")
+	m.Name = "AlpineIceSpire"
+	m.Parent = parent
+	for tier = 0, 3 do
+		local w = (12 - tier * 2.6) * scale
+		local h = 5.5 * scale
+		makeBlock({
+			name = "IceLayer_" .. tier,
+			size = Vector3.new(w, h, w),
+			cframe = CFrame.new(pos + Vector3.new(0, tier * h + h * 0.5 - 0.1, 0)) * CFrame.Angles(0, math.rad(tier * 12), 0),
+			color = if tier % 2 == 0 then Color3.fromRGB(142, 224, 255) else Color3.fromRGB(218, 244, 255),
+			material = Enum.Material.Ice,
+			studded = false,
+			canQuery = false,
+			parent = m,
+		})
+	end
+end
+
+local function buildVolcanoSpire(pos: Vector3, scale: number, parent: Instance)
+	local m = Instance.new("Model")
+	m.Name = "VolcanoSpire"
+	m.Parent = parent
+	for tier = 0, 3 do
+		local w = (22 - tier * 4.5) * scale
+		local h = 4.8 * scale
+		makeBlock({
+			name = "Basalt_" .. tier,
+			size = Vector3.new(w, h, w),
+			cframe = CFrame.new(pos + Vector3.new(0, tier * h + h * 0.5 - 0.1, 0)),
+			color = Color3.fromRGB(46, 38, 52),
+			material = Enum.Material.Basalt,
+			studded = true,
+			canQuery = false,
+			parent = m,
+		})
+	end
+	makeBlock({
+		name = "LavaCore",
+		size = Vector3.new(7 * scale, 2.2 * scale, 7 * scale),
+		cframe = CFrame.new(pos + Vector3.new(0, 19.2 * scale, 0)),
+		color = Color3.fromRGB(255, 96, 28),
+		material = Enum.Material.Neon,
+		studded = false,
+		canQuery = false,
+		parent = m,
+	})
 end
 
 function BlockyMapBiomeGenerator.Build(worldFolder: Folder)
@@ -242,30 +419,48 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder)
 			parent = terrainGroup,
 		})
 
-		-- 2. Stepped Blocky Cliffs along Left & Right Edges (keeps players inside the 220-stud corridor)
-		local sliceStep = 36
-		for z = biome.zStart + 18, biome.zEnd - 18, sliceStep do
-			for _, sideSign in { -1, 1 } do
-				local stepH1 = rng:NextInteger(8, 16)
-				local stepH2 = stepH1 + rng:NextInteger(8, 18)
+		-- 2. Wide Stepped Blocky Cliff Plateaus along Left & Right Edges (Y = 26.5 top terrace)
+		local cliffHeight = 24
+		local capThickness = 2.5
+		local plateauTopY = cliffHeight + capThickness -- 26.5
+		local plateauWidth = 68
+		local plateauCenterX = 94 + plateauWidth * 0.5 -- X spans 94..162
 
+		for _, sideSign in { -1, 1 } do
+			-- Main vertical cliff wall (stone/earth tone)
+			makeBlock({
+				name = "CliffWall_" .. tostring(sideSign),
+				size = Vector3.new(plateauWidth, cliffHeight, lenZ),
+				cframe = CFrame.new(sideSign * plateauCenterX, cliffHeight * 0.5, centerZ),
+				color = biome.cliffColor,
+				material = Enum.Material.Brick,
+				studded = true,
+				canQuery = false,
+				parent = terrainGroup,
+			})
+			-- Biome-colored top plateau cap (matches floor color/material cleanly like Steal an Egg!)
+			makeBlock({
+				name = "CliffTopPlateau_" .. tostring(sideSign),
+				size = Vector3.new(plateauWidth + 1.5, capThickness, lenZ),
+				cframe = CFrame.new(sideSign * plateauCenterX, cliffHeight + capThickness * 0.5, centerZ),
+				color = biome.groundColor,
+				material = biome.materialName,
+				materialVariant = biome.materialVariant,
+				studded = true,
+				canQuery = false,
+				parent = terrainGroup,
+			})
+			-- Front lower cliff ledge steps for silhouette variety
+			local sliceStep = 72
+			for z = biome.zStart + 36, biome.zEnd - 36, sliceStep do
+				local ledgeH = rng:NextInteger(8, 13)
 				makeBlock({
-					name = "CliffStepLower",
-					size = Vector3.new(26, stepH1, sliceStep),
-					cframe = CFrame.new(sideSign * (mapWidth / 2 - 18), stepH1 / 2, z),
-					color = biome.cliffColor,
+					name = "CliffLedge",
+					size = Vector3.new(12, ledgeH, 34),
+					cframe = CFrame.new(sideSign * 88, ledgeH * 0.5, z),
+					color = biome.cliffColor:Lerp(Color3.new(0, 0, 0), 0.12),
 					material = biome.materialName,
 					materialVariant = biome.materialVariant,
-					studded = true,
-					canQuery = false,
-					parent = terrainGroup,
-				})
-				makeBlock({
-					name = "CliffStepUpper",
-					size = Vector3.new(18, stepH2, sliceStep),
-					cframe = CFrame.new(sideSign * (mapWidth / 2 - 4), stepH2 / 2, z),
-					color = biome.cliffColor:Lerp(Color3.new(0, 0, 0), 0.15),
-					material = Enum.Material.Slate,
 					studded = true,
 					canQuery = false,
 					parent = terrainGroup,
@@ -331,20 +526,70 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder)
 			addBiomeArchSign(biome.zStart, biome, biomeModel)
 		end
 
-		-- 4. Curated Creator Store Foliage & Props (outside the 34-stud central road)
+		-- 4. Curated Creator Store Foliage & Props (Arena Floor + Rich Upper Cliff Skyline!)
 		local propsFolder = Instance.new("Folder")
 		propsFolder.Name = "CuratedDecor"
 		propsFolder.Parent = biomeModel
 
 		local templates = getBiomeTemplates(biome.id)
 		if #templates > 0 then
-			for _ = 1, 22 do
+			-- Arena lower floor props (outside the 34-stud central road)
+			for _ = 1, 20 do
 				local side = if rng:NextNumber() < 0.5 then -1 else 1
-				local px = side * rng:NextNumber(26, 78)
+				local px = side * rng:NextNumber(26, 76)
 				local pz = rng:NextNumber(biome.zStart + 20, biome.zEnd - 20)
 				local tpl = templates[rng:NextInteger(1, #templates)]
 				local scale = rng:NextNumber(0.85, 1.25)
 				placeDecorProp(tpl, Vector3.new(px, 0, pz), rng:NextNumber(0, math.pi * 2), scale, propsFolder)
+			end
+			-- Upper Cliff Plateau curated trees & rocks (both left & right ridges!)
+			for _, sideSign in { -1, 1 } do
+				for _ = 1, 12 do
+					local px = sideSign * rng:NextNumber(102, 154)
+					local pz = rng:NextNumber(biome.zStart + 18, biome.zEnd - 18)
+					local tpl = templates[rng:NextInteger(1, #templates)]
+					local scale = rng:NextNumber(1.1, 1.75)
+					placeDecorProp(tpl, Vector3.new(px, plateauTopY, pz), rng:NextNumber(0, math.pi * 2), scale, propsFolder)
+				end
+			end
+		end
+
+		-- Stylized Blocky Upper Cliff Trees & Hero Skyline Landmarks per Biome
+		for _, sideSign in { -1, 1 } do
+			for idx = 1, 7 do
+				local zPos = biome.zStart + 25 + ((idx - 1) / 6) * (lenZ - 50) + rng:NextNumber(-10, 10)
+				local xPos = sideSign * rng:NextNumber(102, 146)
+				local sc = rng:NextNumber(0.95, 1.45)
+				if biome.id == "PineWoods" then
+					buildBlockyTree(Vector3.new(xPos, plateauTopY, zPos), sc, Color3.fromRGB(58, 178, 52), false, propsFolder)
+				elseif biome.id == "MangroveSwamp" then
+					if idx % 2 == 0 then
+						buildSwampMushroom(Vector3.new(xPos, plateauTopY, zPos), sc, propsFolder)
+					else
+						buildBlockyTree(Vector3.new(xPos, plateauTopY, zPos), sc, Color3.fromRGB(54, 118, 72), false, propsFolder)
+					end
+				elseif biome.id == "SavannaCamp" then
+					buildBlockyCactus(Vector3.new(xPos, plateauTopY, zPos), sc, propsFolder)
+					if idx % 3 == 0 then
+						buildBlockyCactus(Vector3.new(sideSign * rng:NextNumber(32, 72), 0, zPos), sc * 0.85, propsFolder)
+					end
+				elseif biome.id == "AlpinePeaks" then
+					buildBlockyTree(Vector3.new(xPos, plateauTopY, zPos), sc * 1.1, Color3.fromRGB(48, 142, 62), true, propsFolder)
+				elseif biome.id == "VolcanicJungle" then
+					buildBlockyTree(Vector3.new(xPos, plateauTopY, zPos), sc, Color3.fromRGB(168, 52, 34), false, propsFolder)
+				end
+			end
+
+			-- Signature Giant Cliff Landmark per Biome Side
+			local landmarkZ = centerZ + sideSign * 45
+			if biome.id == "SavannaCamp" then
+				buildStepPyramid(Vector3.new(sideSign * 126, plateauTopY, landmarkZ), 1.15, propsFolder)
+			elseif biome.id == "AlpinePeaks" then
+				buildIceSpire(Vector3.new(sideSign * 124, plateauTopY, landmarkZ), 1.25, propsFolder)
+				buildIceSpire(Vector3.new(sideSign * 134, plateauTopY, centerZ - sideSign * 55), 0.95, propsFolder)
+			elseif biome.id == "VolcanicJungle" then
+				buildVolcanoSpire(Vector3.new(sideSign * 126, plateauTopY, landmarkZ), 1.2, propsFolder)
+				buildVolcanoSpire(Vector3.new(sideSign * 132, plateauTopY, centerZ - sideSign * 65), 0.9, propsFolder)
 			end
 		end
 

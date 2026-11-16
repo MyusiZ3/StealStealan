@@ -39,43 +39,188 @@ local function makePart(props: {
 	return p
 end
 
-local function addSurfaceSign(part: BasePart, face: Enum.NormalId, titleText: string, subText: string?, bgColor: Color3?)
+local function addSurfaceSign(part: BasePart, face: Enum.NormalId, titleText: string, subText: string?, bgColor: Color3?, accentColor: Color3?)
 	local gui = Instance.new("SurfaceGui")
 	gui.Name = "SignGui"
 	gui.Face = face
 	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-	gui.PixelsPerStud = 32
+	gui.PixelsPerStud = 42
+	gui.LightInfluence = 0.25
 	gui.Parent = part
 
+	local baseCol = bgColor or Color3.fromRGB(24, 30, 42)
 	local frame = Instance.new("Frame")
 	frame.Size = UDim2.fromScale(1, 1)
-	frame.BackgroundColor3 = bgColor or Color3.fromRGB(26, 32, 42)
+	frame.BackgroundColor3 = baseCol
 	frame.BorderSizePixel = 0
 	frame.Parent = gui
 
+	local grad = Instance.new("UIGradient")
+	grad.Rotation = 90
+	grad.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, baseCol:Lerp(Color3.new(1, 1, 1), 0.14)),
+		ColorSequenceKeypoint.new(1, baseCol:Lerp(Color3.new(0, 0, 0), 0.35)),
+	})
+	grad.Parent = frame
+
+	if accentColor then
+		local inner = Instance.new("Frame")
+		inner.Name = "InsetFrame"
+		inner.Size = UDim2.new(1, -18, 1, -18)
+		inner.Position = UDim2.fromOffset(9, 9)
+		inner.BackgroundColor3 = baseCol:Lerp(Color3.new(0, 0, 0), 0.22)
+		inner.BackgroundTransparency = 0.35
+		inner.BorderSizePixel = 0
+		inner.ZIndex = 1
+		inner.Parent = frame
+		local ic = Instance.new("UICorner")
+		ic.CornerRadius = UDim.new(0, 14)
+		ic.Parent = inner
+		local ist = Instance.new("UIStroke")
+		ist.Thickness = 4
+		ist.Color = accentColor
+		ist.Parent = inner
+	end
+
 	local title = Instance.new("TextLabel")
 	title.Name = "Title"
-	title.Size = if subText then UDim2.fromScale(0.92, 0.55) else UDim2.fromScale(0.92, 0.85)
-	title.Position = UDim2.fromScale(0.04, 0.08)
+	title.Size = if subText then UDim2.fromScale(0.88, 0.50) else UDim2.fromScale(0.88, 0.80)
+	title.Position = UDim2.fromScale(0.06, 0.12)
 	title.BackgroundTransparency = 1
 	title.Text = titleText
 	title.TextColor3 = Color3.fromRGB(255, 255, 255)
 	title.Font = Enum.Font.FredokaOne
 	title.TextScaled = true
+	title.ZIndex = 2
 	title.Parent = frame
+	local tStroke = Instance.new("UIStroke")
+	tStroke.Thickness = 3
+	tStroke.Color = Color3.fromRGB(10, 12, 16)
+	tStroke.Parent = title
 
 	if subText then
 		local sub = Instance.new("TextLabel")
 		sub.Name = "Subtitle"
-		sub.Size = UDim2.fromScale(0.92, 0.30)
-		sub.Position = UDim2.fromScale(0.04, 0.64)
+		sub.Size = UDim2.fromScale(0.88, 0.28)
+		sub.Position = UDim2.fromScale(0.06, 0.63)
 		sub.BackgroundTransparency = 1
 		sub.Text = subText
-		sub.TextColor3 = Color3.fromRGB(255, 214, 92)
-		sub.Font = Enum.Font.GothamBold
+		sub.TextColor3 = Color3.fromRGB(255, 224, 96)
+		sub.Font = Enum.Font.FredokaOne
 		sub.TextScaled = true
+		sub.ZIndex = 2
 		sub.Parent = frame
+		local sStroke = Instance.new("UIStroke")
+		sStroke.Thickness = 2.2
+		sStroke.Color = Color3.fromRGB(10, 12, 16)
+		sStroke.Parent = sub
 	end
+end
+
+local function makeEnhancedPad(opts: {
+	name: string,
+	size: Vector3,
+	cframe: CFrame,
+	accentColor: Color3,
+	bgColor: Color3,
+	titleText: string,
+	subText: string,
+	canCollide: boolean?,
+	withHalo: boolean?,
+	parent: Instance,
+}): Part
+	local col = if opts.canCollide ~= nil then opts.canCollide else true
+
+	-- 1. Dark Metallic Base Plinth
+	makePart({
+		name = opts.name .. "_Plinth",
+		size = Vector3.new(opts.size.X + 1.8, opts.size.Y + 0.12, opts.size.Z + 1.8),
+		cframe = opts.cframe * CFrame.new(0, -0.14, 0),
+		color = Color3.fromRGB(24, 28, 38),
+		material = Enum.Material.Metal,
+		canCollide = col,
+		canQuery = false,
+		parent = opts.parent,
+	})
+
+	-- 2. Glowing Neon Perimeter Rim
+	makePart({
+		name = opts.name .. "_NeonRim",
+		size = Vector3.new(opts.size.X + 0.95, opts.size.Y - 0.08, opts.size.Z + 0.95),
+		cframe = opts.cframe * CFrame.new(0, -0.06, 0),
+		color = opts.accentColor,
+		material = Enum.Material.Neon,
+		canCollide = false,
+		canQuery = false,
+		parent = opts.parent,
+	})
+
+	-- 3. Corner Accent Pillars with Neon Caps
+	local hx = opts.size.X * 0.5 + 0.45
+	local hz = opts.size.Z * 0.5 + 0.45
+	for i, corner in ipairs({
+		Vector3.new(-hx, 0, -hz),
+		Vector3.new(hx, 0, -hz),
+		Vector3.new(-hx, 0, hz),
+		Vector3.new(hx, 0, hz),
+	}) do
+		makePart({
+			name = opts.name .. "_Corner_" .. i,
+			size = Vector3.new(1.15, opts.size.Y + 0.36, 1.15),
+			cframe = opts.cframe * CFrame.new(corner + Vector3.new(0, 0.04, 0)),
+			color = Color3.fromRGB(32, 36, 48),
+			material = Enum.Material.Metal,
+			canCollide = false,
+			canQuery = false,
+			parent = opts.parent,
+		})
+		makePart({
+			name = opts.name .. "_CornerGlow_" .. i,
+			size = Vector3.new(0.85, 0.16, 0.85),
+			cframe = opts.cframe * CFrame.new(corner + Vector3.new(0, opts.size.Y * 0.5 + 0.24, 0)),
+			color = opts.accentColor,
+			material = Enum.Material.Neon,
+			canCollide = false,
+			canQuery = false,
+			parent = opts.parent,
+		})
+	end
+
+	-- 4. Interactive Top Deck (keeps exact name & SignGui structure for PlotService/TrainingSystem)
+	local deck = makePart({
+		name = opts.name,
+		size = opts.size,
+		cframe = opts.cframe,
+		color = opts.bgColor,
+		material = Enum.Material.SmoothPlastic,
+		canCollide = col,
+		parent = opts.parent,
+	})
+	addSurfaceSign(deck, Enum.NormalId.Top, opts.titleText, opts.subText, opts.bgColor, opts.accentColor)
+
+	if opts.withHalo then
+		local halo = makePart({
+			name = opts.name .. "_Halo",
+			size = Vector3.new(opts.size.X + 2.8, 0.08, opts.size.Z + 2.8),
+			cframe = opts.cframe * CFrame.new(0, -opts.size.Y * 0.5 + 0.05, 0),
+			color = opts.accentColor,
+			material = Enum.Material.Neon,
+			canCollide = false,
+			canQuery = false,
+			transparency = 0.65,
+			parent = opts.parent,
+		})
+		halo.CastShadow = false
+		local pl = Instance.new("PointLight")
+		pl.Name = "PadGlow"
+		pl.Color = opts.accentColor
+		pl.Range = 14
+		pl.Brightness = 0.75
+		pl.Shadows = false
+		pl.Parent = deck
+	end
+
+	return deck
 end
 
 local function addPrompt(parent: Instance, actionText: string, objectText: string, tag: string)
@@ -243,58 +388,67 @@ local function buildSingleOpenPlot(plotIndex: number, centerPos: Vector3, facing
 	end
 
 	-- 4. Front Functional Pads (Unbox Crate | Cash Collector | Pen Capacity Upgrade | Personal Treadmill)
+	-- Rotated +90 deg Y so SurfaceGui faces straight up for incoming players at the plot entrance (-Z local)
 	-- A. Crate Unbox Pad
-	local unboxPad = makePart({
+	local unboxPad = makeEnhancedPad({
 		name = "CrateUnboxPad",
-		size = Vector3.new(11, 0.6, 8),
-		cframe = plotCF * CFrame.new(-20, 1.3, -16),
-		color = Color3.fromRGB(255, 168, 52),
-		studded = true,
+		size = Vector3.new(7.5, 0.55, 9.5),
+		cframe = plotCF * CFrame.new(-20, 1.3, -16) * CFrame.Angles(0, math.rad(90), 0),
+		accentColor = Color3.fromRGB(255, 174, 48),
+		bgColor = Color3.fromRGB(64, 34, 12),
+		titleText = "DROP & UNBOX CRATE",
+		subText = "Step here with crate!",
+		withHalo = true,
 		parent = plotModel,
 	})
 	unboxPad:SetAttribute("PlotIndex", plotIndex)
-	addSurfaceSign(unboxPad, Enum.NormalId.Top, "DROP & UNBOX CRATE", "Step here with crate!", Color3.fromRGB(168, 86, 22))
 	addPrompt(unboxPad, "Drop / Open Crate", "Crate Unbox Pad", "UnboxPadPrompt")
 
 	-- B. Cash Collector Pad
-	local cashPad = makePart({
+	local cashPad = makeEnhancedPad({
 		name = "CashCollectorPad",
-		size = Vector3.new(12, 0.6, 8),
-		cframe = plotCF * CFrame.new(-6, 1.3, -16),
-		color = Color3.fromRGB(82, 232, 118),
-		material = Enum.Material.Neon,
+		size = Vector3.new(7.5, 0.55, 10.5),
+		cframe = plotCF * CFrame.new(-7, 1.3, -16) * CFrame.Angles(0, math.rad(90), 0),
+		accentColor = Color3.fromRGB(68, 252, 126),
+		bgColor = Color3.fromRGB(14, 52, 28),
+		titleText = "COLLECT CASH: $0",
+		subText = "0/s Pen Income",
 		canCollide = false,
+		withHalo = true,
 		parent = plotModel,
 	})
 	cashPad:SetAttribute("PlotIndex", plotIndex)
-	addSurfaceSign(cashPad, Enum.NormalId.Top, "COLLECT CASH: $0", "0/s Pen Income", Color3.fromRGB(24, 122, 54))
 	addPrompt(cashPad, "Collect Coins", "Zoo Pen Cash", "CollectCashPrompt")
 
 	-- C. Pen Capacity Upgrade Stand (8 -> 20)
-	local upgradePad = makePart({
+	local upgradePad = makeEnhancedPad({
 		name = "PenUpgradePad",
-		size = Vector3.new(11, 0.6, 8),
-		cframe = plotCF * CFrame.new(8, 1.3, -16),
-		color = Color3.fromRGB(152, 92, 255),
-		studded = true,
+		size = Vector3.new(7.5, 0.55, 9.5),
+		cframe = plotCF * CFrame.new(6, 1.3, -16) * CFrame.Angles(0, math.rad(90), 0),
+		accentColor = Color3.fromRGB(184, 102, 255),
+		bgColor = Color3.fromRGB(42, 20, 74),
+		titleText = "UPGRADE PEN (8/20)",
+		subText = "Next: $600",
+		withHalo = true,
 		parent = plotModel,
 	})
 	upgradePad:SetAttribute("PlotIndex", plotIndex)
-	addSurfaceSign(upgradePad, Enum.NormalId.Top, "UPGRADE PEN (8/20)", "Next: $600", Color3.fromRGB(84, 34, 158))
 	addPrompt(upgradePad, "Upgrade Pen Capacity", "Zoo Capacity (8->20)", "UpgradePenPrompt")
 
 	-- D. Personal Upgradeable Treadmill Track (Right Front) + 3D Treadmill Model & Snap Anchor
-	local treadmillPad = makePart({
+	local treadmillPad = makeEnhancedPad({
 		name = "TreadmillPad",
-		size = Vector3.new(26, 0.6, 8.5),
-		cframe = plotCF * CFrame.new(12, 1.3, -24.5),
-		color = Color3.fromRGB(58, 168, 255),
-		studded = true,
+		size = Vector3.new(8.5, 0.55, 25),
+		cframe = plotCF * CFrame.new(12, 1.3, -24.5) * CFrame.Angles(0, math.rad(90), 0),
+		accentColor = Color3.fromRGB(48, 212, 255),
+		bgColor = Color3.fromRGB(14, 44, 72),
+		titleText = "TREADMILL LV.1",
+		subText = "Step on Belt to Run!",
+		withHalo = true,
 		parent = plotModel,
 	})
 	treadmillPad:SetAttribute("IsTreadmillZone", true)
 	treadmillPad:SetAttribute("PlotIndex", plotIndex)
-	addSurfaceSign(treadmillPad, Enum.NormalId.Top, "TREADMILL LV.1", "Step on Belt to Run!", Color3.fromRGB(24, 96, 178))
 	addPrompt(treadmillPad, "Upgrade Treadmill", "Speed Training Lv.1", "UpgradeTreadmillPrompt")
 
 	local treadMesh = cloneCuratedModel("Hero_Treadmill_AI", plotCF * CFrame.new(12, 4.0, -24.5) * CFrame.Angles(0, math.pi, 0), 1.35, plotModel, 1.6, true)
@@ -380,25 +534,163 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 	spawnLoc.Duration = 0
 	spawnLoc.Parent = hub
 
-	-- Global / Server Top Rangers Leaderboard 3D Board at Spawn Plaza
-	local lbStand = makePart({
-		name = "LeaderboardStand",
-		size = Vector3.new(2, 5, 2),
-		cframe = CFrame.new(24, 2.5, -108) * CFrame.Angles(0, math.rad(-28), 0),
-		color = Color3.fromRGB(48, 54, 68),
-		material = Enum.Material.Metal,
-		parent = hub,
-	})
-	lbStand.CanQuery = false
-	local lbBoard = makePart({
-		name = "LeaderboardBoard",
-		size = Vector3.new(18, 12, 1.2),
-		cframe = CFrame.new(24, 9.5, -108) * CFrame.Angles(0, math.rad(-28), 0),
-		color = Color3.fromRGB(22, 26, 36),
-		parent = hub,
-	})
-	addSurfaceSign(lbBoard, Enum.NormalId.Front, "🏆 TOP RANGERS", "Loading server rankings...", Color3.fromRGB(22, 34, 52))
-	addSurfaceSign(lbBoard, Enum.NormalId.Back, "🏆 TOP RANGERS", "Invite friends for +10% Boost!", Color3.fromRGB(22, 34, 52))
+	-- 3-Board Global Leaderboard Wall (Top Money | Top Speed | Top Playtime — Top 100 each, updates every 5m)
+	local lbWall = Instance.new("Model")
+	lbWall.Name = "LeaderboardWall"
+	lbWall.Parent = hub
+
+	local wallCenterCF = CFrame.lookAt(Vector3.new(54, 0, -128), Vector3.new(42, 0, -94))
+	local boardSpecs = {
+		{
+			name = "TopMoneyBoard",
+			offsetX = 13.8,
+			title = "💵 Top Money 💵",
+			frameColor = Color3.fromRGB(36, 224, 92),
+			headerColor = Color3.fromRGB(28, 198, 64),
+			darkBg = Color3.fromRGB(16, 48, 28),
+		},
+		{
+			name = "TopSpeedBoard",
+			offsetX = 0,
+			title = "👟 Top Speed 👟",
+			frameColor = Color3.fromRGB(48, 168, 255),
+			headerColor = Color3.fromRGB(24, 128, 248),
+			darkBg = Color3.fromRGB(16, 36, 68),
+		},
+		{
+			name = "TopPlaytimeBoard",
+			offsetX = -13.8,
+			title = "🕒 Top Playtime 🕒",
+			frameColor = Color3.fromRGB(255, 68, 118),
+			headerColor = Color3.fromRGB(238, 38, 86),
+			darkBg = Color3.fromRGB(58, 16, 32),
+		},
+	}
+
+	for _, spec in ipairs(boardSpecs) do
+		local bm = Instance.new("Model")
+		bm.Name = spec.name
+		bm.Parent = lbWall
+
+		local bCF = wallCenterCF * CFrame.new(spec.offsetX, 0, 0)
+
+		-- Neon Base Pedestal Glow Strip
+		makePart({
+			name = "BasePedestal",
+			size = Vector3.new(13.6, 0.5, 2.4),
+			cframe = bCF * CFrame.new(0, 0.25, 0),
+			color = spec.frameColor,
+			material = Enum.Material.Neon,
+			canCollide = false,
+			parent = bm,
+		})
+
+		-- Outer Colored Frame
+		makePart({
+			name = "OuterFrame",
+			size = Vector3.new(13.0, 17.6, 1.2),
+			cframe = bCF * CFrame.new(0, 9.2, 0),
+			color = spec.frameColor,
+			material = Enum.Material.SmoothPlastic,
+			parent = bm,
+		})
+
+		-- White/Ice Inner Border Accent
+		makePart({
+			name = "InnerBorder",
+			size = Vector3.new(12.2, 16.8, 1.3),
+			cframe = bCF * CFrame.new(0, 9.2, -0.02),
+			color = Color3.fromRGB(236, 244, 255),
+			material = Enum.Material.SmoothPlastic,
+			canCollide = false,
+			parent = bm,
+		})
+
+		-- Main Dark Backing + Interactive Display SurfaceGui (Top 100 ScrollList)
+		local display = makePart({
+			name = "DisplaySurface",
+			size = Vector3.new(11.4, 15.8, 1.4),
+			cframe = bCF * CFrame.new(0, 9.1, -0.05),
+			color = spec.darkBg,
+			material = Enum.Material.SmoothPlastic,
+			canCollide = false,
+			parent = bm,
+		})
+
+		-- Colored Top Header Banner Ribbon
+		local headerPart = makePart({
+			name = "HeaderBanner",
+			size = Vector3.new(14.2, 2.9, 1.7),
+			cframe = bCF * CFrame.new(0, 18.8, -0.15),
+			color = spec.headerColor,
+			material = Enum.Material.SmoothPlastic,
+			parent = bm,
+		})
+		addSurfaceSign(headerPart, Enum.NormalId.Front, spec.title, nil, spec.headerColor, spec.frameColor)
+		addSurfaceSign(headerPart, Enum.NormalId.Back, spec.title, nil, spec.headerColor, spec.frameColor)
+
+		local boardGui = Instance.new("SurfaceGui")
+		boardGui.Name = "BoardGui"
+		boardGui.Face = Enum.NormalId.Front
+		boardGui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+		boardGui.PixelsPerStud = 36
+		boardGui.LightInfluence = 0.2
+		boardGui.Parent = display
+
+		local container = Instance.new("Frame")
+		container.Name = "Container"
+		container.Size = UDim2.fromScale(1, 1)
+		container.BackgroundColor3 = spec.darkBg
+		container.BorderSizePixel = 0
+		container.Parent = boardGui
+
+		local cGrad = Instance.new("UIGradient")
+		cGrad.Rotation = 90
+		cGrad.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, spec.darkBg:Lerp(Color3.new(1, 1, 1), 0.08)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(16, 18, 24)),
+		})
+		cGrad.Parent = container
+
+		local scroll = Instance.new("ScrollingFrame")
+		scroll.Name = "ScrollList"
+		scroll.Size = UDim2.new(1, -14, 1, -46)
+		scroll.Position = UDim2.fromOffset(7, 8)
+		scroll.BackgroundTransparency = 1
+		scroll.ScrollBarThickness = 8
+		scroll.ScrollBarImageColor3 = spec.frameColor
+		scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		scroll.CanvasSize = UDim2.fromScale(0, 0)
+		scroll.Parent = container
+
+		local listLayout = Instance.new("UIListLayout")
+		listLayout.Padding = UDim.new(0, 6)
+		listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		listLayout.Parent = scroll
+
+		local listPad = Instance.new("UIPadding")
+		listPad.PaddingTop = UDim.new(0, 4)
+		listPad.PaddingLeft = UDim.new(0, 3)
+		listPad.Parent = scroll
+
+		local footer = Instance.new("TextLabel")
+		footer.Name = "FooterLabel"
+		footer.Size = UDim2.new(1, -12, 0, 28)
+		footer.Position = UDim2.new(0, 6, 1, -33)
+		footer.BackgroundColor3 = Color3.fromRGB(18, 20, 26)
+		footer.Text = "Top 100 • Updates every 5:00"
+		footer.TextColor3 = Color3.fromRGB(255, 224, 96)
+		footer.Font = Enum.Font.FredokaOne
+		footer.TextScaled = true
+		footer.Parent = container
+		local fc = Instance.new("UICorner")
+		fc.CornerRadius = UDim.new(0, 6)
+		fc.Parent = footer
+		local fst = Instance.new("UIStroke")
+		fst.Thickness = 2
+		fst.Color = Color3.fromRGB(10, 12, 16)
+		fst.Parent = footer
+	end
 
 	-- Floating 3D Shop & Machine Signboards helper
 	local function addFloatingBoothLabel(pos: Vector3, text: string, color: Color3)
@@ -413,8 +705,8 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 			parent = hub,
 		})
 		local bb = Instance.new("BillboardGui")
-		bb.Size = UDim2.fromOffset(180, 44)
-		bb.MaxDistance = 140
+		bb.Size = UDim2.fromOffset(156, 36)
+		bb.MaxDistance = 85
 		bb.Parent = anchor
 		local lbl = Instance.new("TextLabel")
 		lbl.Size = UDim2.fromScale(1, 1)
@@ -431,30 +723,34 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 	end
 
 	-- 3. Row 1 (Z = -55): Lasso Gear Shop (Left) & Trail Multiplier Shop (Right)
-	local lassoShopPad = makePart({
+	local lassoShopPad = makeEnhancedPad({
 		name = "LassoShopPad",
-		size = Vector3.new(15, 0.9, 14),
-		cframe = CFrame.new(-13, 0.5, -55),
-		color = Color3.fromRGB(244, 162, 52),
-		studded = true,
+		size = Vector3.new(12, 0.75, 13),
+		cframe = CFrame.new(-9.5, 0.58, -55) * CFrame.Angles(0, math.rad(90), 0),
+		accentColor = Color3.fromRGB(255, 182, 48),
+		bgColor = Color3.fromRGB(58, 32, 12),
+		titleText = "LASSO GEAR SHOP",
+		subText = "10 Tiers: 150 -> 750Qi!",
+		withHalo = true,
 		parent = hub,
 	})
-	addSurfaceSign(lassoShopPad, Enum.NormalId.Top, "LASSO GEAR SHOP", "10 Tiers: 150 -> 750Qi!", Color3.fromRGB(148, 82, 18))
-	cloneCuratedModel("Hero_ShopBooth", CFrame.new(-16, 6, -55) * CFrame.Angles(0, math.rad(90), 0), 0.95, hub, 0.95, true)
-	addFloatingBoothLabel(Vector3.new(-16, 13.5, -55), "Lasso Shop", Color3.fromRGB(255, 198, 64))
+	cloneCuratedModel("Hero_ShopBooth", CFrame.new(-20.2, 6, -55) * CFrame.Angles(0, math.rad(90), 0), 0.95, hub, 0.95, true)
+	addFloatingBoothLabel(Vector3.new(-20.2, 13.5, -55), "Lasso Shop", Color3.fromRGB(255, 198, 64))
 	addPrompt(lassoShopPad, "Open Lasso Shop", "10 Lasso Tiers", "LassoShopPrompt")
 
-	local trailShopPad = makePart({
+	local trailShopPad = makeEnhancedPad({
 		name = "TrailShopPad",
-		size = Vector3.new(15, 0.9, 14),
-		cframe = CFrame.new(13, 0.5, -55),
-		color = Color3.fromRGB(0, 212, 255),
-		studded = true,
+		size = Vector3.new(12, 0.75, 13),
+		cframe = CFrame.new(9.5, 0.58, -55) * CFrame.Angles(0, math.rad(90), 0),
+		accentColor = Color3.fromRGB(0, 224, 255),
+		bgColor = Color3.fromRGB(14, 44, 68),
+		titleText = "TRAIL SPEED SHOP",
+		subText = "1.25x -> 750x Speed!",
+		withHalo = true,
 		parent = hub,
 	})
-	addSurfaceSign(trailShopPad, Enum.NormalId.Top, "TRAIL SPEED SHOP", "1.25x -> 750x Speed!", Color3.fromRGB(18, 108, 158))
-	cloneCuratedModel("Hero_ShopBooth", CFrame.new(16, 6, -55) * CFrame.Angles(0, math.rad(-90), 0), 0.95, hub, 0.95, true)
-	addFloatingBoothLabel(Vector3.new(16, 13.5, -55), "Trails Shop", Color3.fromRGB(84, 245, 138))
+	cloneCuratedModel("Hero_ShopBooth", CFrame.new(20.2, 6, -55) * CFrame.Angles(0, math.rad(-90), 0), 0.95, hub, 0.95, true)
+	addFloatingBoothLabel(Vector3.new(20.2, 13.5, -55), "Trails Shop", Color3.fromRGB(84, 245, 138))
 	addPrompt(trailShopPad, "Open Trail Shop", "Speed Multiplier Trails", "TrailShopPrompt")
 
 	-- 4. Row 2 (Z = 0): Mutation & Fuse Machine (Left) & Vehicle Garage (Right)
@@ -462,16 +758,18 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 	fuseZone.Name = "FuseAndMergePlaza"
 	fuseZone.Parent = hub
 
-	local fusePad = makePart({
+	local fusePad = makeEnhancedPad({
 		name = "FusePad",
-		size = Vector3.new(18, 0.9, 18),
-		cframe = CFrame.new(-12, 0.5, 0),
-		color = Color3.fromRGB(168, 86, 255),
-		studded = true,
+		size = Vector3.new(12, 0.75, 13),
+		cframe = CFrame.new(-9.5, 0.58, 0) * CFrame.Angles(0, math.rad(90), 0),
+		accentColor = Color3.fromRGB(192, 92, 255),
+		bgColor = Color3.fromRGB(40, 18, 72),
+		titleText = "FUSE & MUTATION",
+		subText = "Merge -> Rainbow/Celestial!",
+		withHalo = true,
 		parent = fuseZone,
 	})
-	addSurfaceSign(fusePad, Enum.NormalId.Top, "FUSE & MUTATION", "Merge -> Golden/Rainbow/Celestial!", Color3.fromRGB(84, 34, 158))
-	local fuseHero = cloneCuratedModel("Hero_FuseMachine", CFrame.new(-12, 5.2, 0), 0.9, fuseZone, 0.95)
+	local fuseHero = cloneCuratedModel("Hero_FuseMachine", CFrame.new(-19.5, 5.2, 0), 0.9, fuseZone, 0.95)
 	local fusePromptPart: BasePart = fusePad
 	if fuseHero then
 		for _, p in ipairs(fuseHero:GetDescendants()) do
@@ -481,47 +779,56 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 			end
 		end
 	end
-	addPrompt(fusePromptPart, "Open Fuse Machine", "Mutation & Fuse Machine", "FusePrompt")
-	addFloatingBoothLabel(Vector3.new(-12, 13.5, 0), "Animal Merging", Color3.fromRGB(112, 224, 255))
+	addPrompt(fusePad, "Open Fuse Machine", "Mutation & Fuse Machine", "FusePrompt")
+	if fusePromptPart ~= fusePad then
+		addPrompt(fusePromptPart, "Open Fuse Machine", "Mutation & Fuse Machine", "FusePrompt")
+	end
+	addFloatingBoothLabel(Vector3.new(-19.5, 13.5, 0), "Animal Merging", Color3.fromRGB(112, 224, 255))
 
-	local vehicleShopPad = makePart({
+	local vehicleShopPad = makeEnhancedPad({
 		name = "VehicleGaragePad",
-		size = Vector3.new(18, 0.9, 18),
-		cframe = CFrame.new(12, 0.5, 0),
-		color = Color3.fromRGB(64, 188, 128),
-		studded = true,
+		size = Vector3.new(12, 0.75, 13),
+		cframe = CFrame.new(9.5, 0.58, 0) * CFrame.Angles(0, math.rad(90), 0),
+		accentColor = Color3.fromRGB(58, 238, 152),
+		bgColor = Color3.fromRGB(14, 50, 36),
+		titleText = "VEHICLE GARAGE",
+		subText = "Spawn & Upgrade Ride!",
+		withHalo = true,
 		parent = hub,
 	})
-	addSurfaceSign(vehicleShopPad, Enum.NormalId.Top, "VEHICLE GARAGE", "Spawn & Upgrade Ride!", Color3.fromRGB(28, 108, 68))
-	cloneCuratedModel("Hero_SafariATV", CFrame.new(12, 3.6, 0) * CFrame.Angles(0, math.rad(-145), 0), 1.15, hub, 0.95)
-	addFloatingBoothLabel(Vector3.new(12, 11.5, 0), "Vehicle Garage", Color3.fromRGB(84, 245, 162))
+	cloneCuratedModel("Hero_SafariATV", CFrame.new(19.5, 3.6, 0) * CFrame.Angles(0, math.rad(-145), 0), 1.15, hub, 0.95)
+	addFloatingBoothLabel(Vector3.new(19.5, 11.5, 0), "Vehicle Garage", Color3.fromRGB(84, 245, 162))
 	addPrompt(vehicleShopPad, "Open Vehicle Garage", "Expedition Vehicles", "VehicleShopPrompt")
 
 	-- 5. Row 3 (Z = 58): Rebirth Shrine (Left) & Animal Merchant / Index Board (Right)
-	local rebirthPad = makePart({
+	local rebirthPad = makeEnhancedPad({
 		name = "RebirthAltarPad",
-		size = Vector3.new(15, 0.9, 14),
-		cframe = CFrame.new(-13, 0.5, 58),
-		color = Color3.fromRGB(255, 86, 132),
-		studded = true,
+		size = Vector3.new(12, 0.75, 13),
+		cframe = CFrame.new(-9.5, 0.58, 58) * CFrame.Angles(0, math.rad(90), 0),
+		accentColor = Color3.fromRGB(255, 78, 146),
+		bgColor = Color3.fromRGB(58, 16, 36),
+		titleText = "REBIRTH & DAILY",
+		subText = "Permanent Multiplier!",
+		withHalo = true,
 		parent = hub,
 	})
-	addSurfaceSign(rebirthPad, Enum.NormalId.Top, "REBIRTH & DAILY", "Permanent Multiplier!", Color3.fromRGB(142, 26, 68))
-	cloneCuratedModel("Hero_RebirthPortal", CFrame.new(-16, 6, 58), 0.72, hub, 0.95, true)
-	addFloatingBoothLabel(Vector3.new(-16, 13.5, 58), "Rebirth Shrine", Color3.fromRGB(255, 112, 182))
+	cloneCuratedModel("Hero_RebirthPortal", CFrame.new(-19.8, 6, 58), 0.72, hub, 0.95, true)
+	addFloatingBoothLabel(Vector3.new(-19.8, 13.5, 58), "Rebirth Shrine", Color3.fromRGB(255, 112, 182))
 	addPrompt(rebirthPad, "Open Rebirth / Daily", "Ranger Prestige", "RebirthPrompt")
 
-	local merchantPad = makePart({
+	local merchantPad = makeEnhancedPad({
 		name = "AnimalMerchantPad",
-		size = Vector3.new(15, 0.9, 14),
-		cframe = CFrame.new(13, 0.5, 58),
-		color = Color3.fromRGB(255, 206, 62),
-		studded = true,
+		size = Vector3.new(12, 0.75, 13),
+		cframe = CFrame.new(9.5, 0.58, 58) * CFrame.Angles(0, math.rad(90), 0),
+		accentColor = Color3.fromRGB(255, 218, 64),
+		bgColor = Color3.fromRGB(54, 38, 12),
+		titleText = "INDEX & MERCHANT",
+		subText = "Sell Extras & Claim 63 Index!",
+		withHalo = true,
 		parent = hub,
 	})
-	addSurfaceSign(merchantPad, Enum.NormalId.Top, "INDEX & MERCHANT", "Sell Extras & Claim 63 Index!", Color3.fromRGB(132, 92, 18))
-	cloneCuratedModel("Hero_ShopBooth", CFrame.new(16, 6, 58) * CFrame.Angles(0, math.rad(-90), 0), 0.95, hub, 0.95, true)
-	addFloatingBoothLabel(Vector3.new(16, 13.5, 58), "Index & Sell", Color3.fromRGB(255, 224, 72))
+	cloneCuratedModel("Hero_ShopBooth", CFrame.new(20.2, 6, 58) * CFrame.Angles(0, math.rad(-90), 0), 0.95, hub, 0.95, true)
+	addFloatingBoothLabel(Vector3.new(20.2, 13.5, 58), "Index & Sell", Color3.fromRGB(255, 224, 72))
 	addPrompt(merchantPad, "Open Index / Sell", "Animal Index & Merchant", "IndexPrompt")
 
 	-- 6. Grand Sanctuary Safe-Zone Exit Gate at Z = 148

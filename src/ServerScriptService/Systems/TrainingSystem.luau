@@ -35,10 +35,7 @@ local function getVehicleDef(vehicleId: string)
 	return VehicleConfig[1]
 end
 
-local function computeSpeedGainPerPulse(player: Player): number
-	local profile = DataService.GetProfile(player)
-	if not profile then return 0 end
-	local base = GameConfig.TREADMILL.BASE_SPEED_PER_PULSE * math.pow(GameConfig.TREADMILL.GROWTH_PER_LEVEL, profile.treadmillLevel - 1)
+local function computeTotalSpeedMultiplier(player: Player, profile: any): number
 	local trailMult = getTrailSpeedMult(profile.equippedTrail)
 	local passMult = if PassManager.OwnsPass(player, "DoubleSpeed") then 2.0 else 1.0
 	local vipMult = if PassManager.OwnsPass(player, "VIP") then 1.5 else 1.0
@@ -46,8 +43,15 @@ local function computeSpeedGainPerPulse(player: Player): number
 	if profile.zoneIndexBonusesClaimed.PineWoods then indexMult += 0.15 end
 	if profile.zoneIndexBonusesClaimed.AlpinePeaks then indexMult += 0.50 end
 	if profile.zoneIndexBonusesClaimed.VolcanicJungle then indexMult += 1.00 end
+	return trailMult * passMult * vipMult * indexMult * AdminService.GetSpeedMultiplier()
+end
 
-	return base * trailMult * passMult * vipMult * indexMult * AdminService.GetSpeedMultiplier()
+local function computeSpeedGainPerPulse(player: Player): (number, number)
+	local profile = DataService.GetProfile(player)
+	if not profile then return 0, 1.0 end
+	local base = GameConfig.TREADMILL.BASE_SPEED_PER_PULSE * math.pow(GameConfig.TREADMILL.GROWTH_PER_LEVEL, profile.treadmillLevel - 1)
+	local totalMult = computeTotalSpeedMultiplier(player, profile)
+	return base * totalMult, totalMult
 end
 
 function TrainingSystem.ComputeEffectiveWalkSpeed(player: Player, zPos: number): number
@@ -173,9 +177,19 @@ function TrainingSystem.Init()
 					if doTrainingTick and (isOn or inZone) then
 						local profile = DataService.GetProfile(player)
 						if profile then
-							local gain = math.max(1, math.floor(computeSpeedGainPerPulse(player)))
+							local rawGain, totalMult = computeSpeedGainPerPulse(player)
+							local gain = math.max(1, math.floor(rawGain))
 							profile.speedStat += gain
-							Remotes.Get("TrainingPulse"):FireClient(player, gain)
+							Remotes.Get("TrainingPulse"):FireClient(player, gain, totalMult, true)
+							DataService.SyncProfile(player)
+						end
+					elseif doTrainingTick and hum.MoveDirection.Magnitude > 0.1 and hum.WalkSpeed > 0 then
+						local profile = DataService.GetProfile(player)
+						if profile then
+							local rawGain, totalMult = computeSpeedGainPerPulse(player)
+							local stepGain = math.max(1, math.floor(rawGain * 0.45))
+							profile.speedStat += stepGain
+							Remotes.Get("TrainingPulse"):FireClient(player, stepGain, totalMult, false)
 							DataService.SyncProfile(player)
 						end
 					end

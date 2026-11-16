@@ -8,6 +8,7 @@ local Players = game:GetService("Players")
 
 local Types = require(game.ReplicatedStorage.Shared.Types)
 local GameConfig = require(game.ReplicatedStorage.Config.GameConfig)
+local FormatUtil = require(game.ReplicatedStorage.Modules.FormatUtil)
 local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
 
 local DataService = {}
@@ -237,6 +238,11 @@ function DataService.SyncProfile(player: Player)
 	local profile = profiles[player.UserId]
 	if not profile then
 		return
+	end
+	local ls = player:FindFirstChild("leaderstats")
+	local spd = if ls then ls:FindFirstChild("Speed") else nil
+	if spd and spd:IsA("StringValue") then
+		spd.Value = FormatUtil.Number(profile.speedStat)
 	end
 	Remotes.Get("ProfileSync"):FireClient(player, profile)
 end
