@@ -26,6 +26,12 @@
         "$path": "src/ServerScriptService/Systems"
       }
     },
+    "ServerStorage": {
+      "$className": "ServerStorage",
+      "Generators": {
+        "$path": "generators"
+      }
+    },
     "StarterPlayer": {
       "$className": "StarterPlayer",
       "StarterPlayerScripts": {

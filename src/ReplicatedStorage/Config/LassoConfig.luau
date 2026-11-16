@@ -1,0 +1,98 @@
+--!strict
+-- LassoConfig.luau
+-- 8 Tiers of Rescue Lassos for pulling buried animal crates
+
+local Types = require(script.Parent.Parent.Shared.Types)
+
+local LassoConfig: { Types.LassoDefinition } = {
+	{
+		id = "RopeLasso",
+		tier = 1,
+		name = "Hemp Rope Lasso",
+		cost = 0,
+		pullPower = 15,
+		maxRange = 16,
+		sweetSpotWidth = 0.28,
+		beamColor = Color3.fromRGB(214, 174, 114),
+		description = "Starter ranger rope. Reliable for Pine Woods crates.",
+	},
+	{
+		id = "ReinforcedLasso",
+		tier = 2,
+		name = "Reinforced Nylon Lasso",
+		cost = 350,
+		pullPower = 35,
+		maxRange = 18,
+		sweetSpotWidth = 0.30,
+		beamColor = Color3.fromRGB(84, 212, 128),
+		description = "Braided high-tension nylon that digs out crates twice as fast.",
+	},
+	{
+		id = "SteelCableLasso",
+		tier = 3,
+		name = "Steel-Core Cable",
+		cost = 1800,
+		pullPower = 85,
+		maxRange = 20,
+		sweetSpotWidth = 0.32,
+		beamColor = Color3.fromRGB(168, 194, 218),
+		description = "Heavy steel winch cord made to yank crates out of Mangrove mud.",
+	},
+	{
+		id = "HydraulicLasso",
+		tier = 4,
+		name = "Hydraulic Winch Lasso",
+		cost = 7500,
+		pullPower = 190,
+		maxRange = 22,
+		sweetSpotWidth = 0.34,
+		beamColor = Color3.fromRGB(255, 166, 48),
+		description = "Pressurized tether built for Savanna Poacher barricades.",
+	},
+	{
+		id = "MagneticGrapple",
+		tier = 5,
+		name = "Magnetic Grapple Tether",
+		cost = 28000,
+		pullPower = 420,
+		maxRange = 24,
+		sweetSpotWidth = 0.36,
+		beamColor = Color3.fromRGB(68, 172, 255),
+		description = "Snaps straight onto iron cage locks from afar.",
+	},
+	{
+		id = "PlasmaTether",
+		tier = 6,
+		name = "Plasma Energy Tether",
+		cost = 95000,
+		pullPower = 900,
+		maxRange = 26,
+		sweetSpotWidth = 0.38,
+		beamColor = Color3.fromRGB(196, 82, 255),
+		description = "Cuts through Alpine permafrost to extract frozen cages.",
+	},
+	{
+		id = "QuantumTractor",
+		tier = 7,
+		name = "Quantum Tractor Lasso",
+		cost = 320000,
+		pullPower = 1950,
+		maxRange = 28,
+		sweetSpotWidth = 0.40,
+		beamColor = Color3.fromRGB(0, 245, 212),
+		description = "Zero-friction energy beam capable of lifting Mythic cages.",
+	},
+	{
+		id = "TitanRescueHook",
+		tier = 8,
+		name = "Titan Rescue Hook",
+		cost = 1100000,
+		pullPower = 4500,
+		maxRange = 30,
+		sweetSpotWidth = 0.45,
+		beamColor = Color3.fromRGB(255, 215, 64),
+		description = "Apex rescue tool. Extracts Volcanic Vault cages in seconds.",
+	},
+}
+
+return LassoConfig

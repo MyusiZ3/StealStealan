@@ -1,0 +1,88 @@
+--!strict
+-- VehicleConfig.luau
+-- 6 Tiers of Expedition Land Vehicles for traversing biomes & towing crates
+
+local Types = require(script.Parent.Parent.Shared.Types)
+
+local VehicleConfig: { Types.VehicleDefinition } = {
+	{
+		id = "StarterATV",
+		tier = 1,
+		name = "Safari ATV Quadbike",
+		cost = 0,
+		baseSpeedBonus = 14,
+		towCapacity = 1,
+		ignoresTerrainPenalty = false,
+		shieldHits = 0,
+		primaryColor = Color3.fromRGB(76, 176, 80),
+		accentColor = Color3.fromRGB(250, 204, 52),
+		description = "Nimble starter quadbike parked right outside your Sanctuary.",
+	},
+	{
+		id = "TrailScooter",
+		tier = 2,
+		name = "Ranger Dirt Bike",
+		cost = 650,
+		baseSpeedBonus = 24,
+		towCapacity = 1,
+		ignoresTerrainPenalty = false,
+		shieldHits = 0,
+		primaryColor = Color3.fromRGB(235, 118, 44),
+		accentColor = Color3.fromRGB(48, 52, 60),
+		description = "Lightweight off-roader with snappy acceleration.",
+	},
+	{
+		id = "MudBuggy",
+		tier = 3,
+		name = "Mud-Crawler Buggy",
+		cost = 4200,
+		baseSpeedBonus = 34,
+		towCapacity = 1,
+		ignoresTerrainPenalty = true,
+		shieldHits = 0,
+		primaryColor = Color3.fromRGB(64, 158, 224),
+		accentColor = Color3.fromRGB(235, 235, 240),
+		description = "Oversized studded tires ignore Swamp mud & Alpine ice slowdowns!",
+	},
+	{
+		id = "ArmoredJeep",
+		tier = 4,
+		name = "Armored Rescue Jeep 4x4",
+		cost = 22000,
+		baseSpeedBonus = 48,
+		towCapacity = 1,
+		ignoresTerrainPenalty = true,
+		shieldHits = 1,
+		primaryColor = Color3.fromRGB(218, 168, 56),
+		accentColor = Color3.fromRGB(42, 46, 52),
+		description = "Reinforced rollbar absorbs 1 Poacher tackle without dropping your crate.",
+	},
+	{
+		id = "SnowcatHalftrack",
+		tier = 5,
+		name = "Arctic Snowcat Halftrack",
+		cost = 115000,
+		baseSpeedBonus = 66,
+		towCapacity = 1,
+		ignoresTerrainPenalty = true,
+		shieldHits = 1,
+		primaryColor = Color3.fromRGB(210, 232, 248),
+		accentColor = Color3.fromRGB(48, 128, 232),
+		description = "Heavy-duty tracked cruiser built for Alpine & Volcanic chases.",
+	},
+	{
+		id = "CyberHovertruck",
+		tier = 6,
+		name = "Cyber-Ranger Hovertruck",
+		cost = 550000,
+		baseSpeedBonus = 92,
+		towCapacity = 2,
+		ignoresTerrainPenalty = true,
+		shieldHits = 2,
+		primaryColor = Color3.fromRGB(36, 40, 58),
+		accentColor = Color3.fromRGB(0, 242, 212),
+		description = "Futuristic hover rig! Tows 2 crates by default and shrugs off 2 hits.",
+	},
+}
+
+return VehicleConfig
