@@ -24,6 +24,7 @@ end)
 
 local profiles: { [number]: Types.PlayerProfileSchema } = {}
 local memoryBans: { [number]: { expiresAt: number, reason: string, byAdmin: string } } = {}
+local savingPlayers: { [number]: boolean } = {}
 
 local function deepCopy<T>(tbl: T): T
 	if type(tbl) ~= "table" then
@@ -92,6 +93,10 @@ local function migrateProfile(raw: any): Types.PlayerProfileSchema
 			if raw.settings[sk] == nil then
 				raw.settings[sk] = sv
 			end
+		end
+		local gq = raw.settings.graphicsQuality
+		if gq ~= "Low" and gq ~= "Medium" and gq ~= "High" then
+			raw.settings.graphicsQuality = "Medium"
 		end
 	end
 	raw.penCapacity = math.max(GameConfig.PEN.STARTING_CAPACITY, raw.penCapacity or GameConfig.PEN.STARTING_CAPACITY)
@@ -186,28 +191,36 @@ function DataService.LoadProfile(player: Player): Types.PlayerProfileSchema
 end
 
 function DataService.SaveProfile(player: Player): boolean
-	local profile = profiles[player.UserId]
+	local uid = player.UserId
+	if savingPlayers[uid] then
+		return true
+	end
+	local profile = profiles[uid]
 	if not profile then
 		return false
 	end
 	if not playerStore then
 		return true
 	end
-	local key = "player_" .. tostring(player.UserId)
+	savingPlayers[uid] = true
+	local key = "player_" .. tostring(uid)
 	for attempt = 1, 3 do
 		local ok, err = pcall(function()
 			(playerStore :: DataStore):SetAsync(key, profile)
 		end)
 		if ok then
+			savingPlayers[uid] = nil
 			print(string.format("[DataService] Saved DataStore profile for %s (Coins=%s, Speed=%s)", player.Name, tostring(profile.coins), tostring(profile.speedStat)))
 			return true
 		end
 		if string.find(tostring(err), "StudioAccessToApisNotAllowed", 1, true) then
 			playerStore = nil
+			savingPlayers[uid] = nil
 			return true
 		end
 		task.wait(0.4 * attempt)
 	end
+	savingPlayers[uid] = nil
 	return false
 end
 

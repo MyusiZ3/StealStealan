@@ -15,6 +15,7 @@ local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
 
 local DataService = require(script.Parent.DataService)
 local PassManager = require(script.Parent.PassManager)
+local AnalyticsTracker = require(script.Parent.AnalyticsTracker)
 
 local PlotService = {}
 
@@ -422,6 +423,7 @@ function PlotService.ClaimPenCoins(player: Player)
 	local amount = math.floor(profile.unclaimedPenCoins)
 	profile.unclaimedPenCoins = 0
 	profile.coins += amount
+	AnalyticsTracker.LogEconomy(player, true, "Coins", amount, profile.coins, "Gameplay", "PenIncome")
 	PlotService.RefreshPlotBoardVisuals(player)
 	DataService.SyncProfile(player)
 	Remotes.Get("NotifyClient"):FireClient(player, "+$" .. FormatUtil.Number(amount) .. " collected from Zoo Pen!", Color3.fromRGB(84, 245, 148))
@@ -445,6 +447,11 @@ function PlotService.UpgradePen(player: Player)
 	profile.coins -= cost
 	profile.penCapacity += 1
 	profile.penUpgradeLevel += 1
+	AnalyticsTracker.LogEconomy(player, false, "Coins", cost, profile.coins, "Upgrade", "PenCapacity_" .. tostring(profile.penCapacity))
+	if profile.analyticsMeta.onboardingStep < 4 then
+		profile.analyticsMeta.onboardingStep = 4
+		AnalyticsTracker.LogOnboardingStep(player, 4, "FirstPenUpgrade")
+	end
 	PlotService.RefreshPlotBoardVisuals(player)
 	DataService.SyncProfile(player)
 	Remotes.Get("NotifyClient"):FireClient(player, string.format("Pen Upgraded to %d/%d Animals (+10%% Income)!", profile.penCapacity, maxCap), Color3.fromRGB(168, 108, 255))
@@ -518,15 +525,46 @@ function PlotService.Init()
 		Remotes.Get("NotifyClient"):FireClient(player, "Equipped Best Animals to your Sanctuary Pen!", Color3.fromRGB(84, 245, 148))
 	end)
 
-	-- Income accumulation + auto-unbox tick loop
+	-- Rideable Animal Mount System
+	Remotes.Get("MountAnimal").OnServerEvent:Connect(function(player, animalUid)
+		if typeof(animalUid) ~= "string" then return end
+		local profile = DataService.GetProfile(player)
+		if not profile then return end
+		if animalUid == "" or player:GetAttribute("MountedAnimalUid") == animalUid then
+			player:SetAttribute("MountedAnimalUid", "")
+			player:SetAttribute("MountedAnimalId", "")
+			player:SetAttribute("MountedAnimalMutation", "None")
+			player:SetAttribute("MountedAnimalSize", 1)
+			player:SetAttribute("MountedAnimalSpeedBonus", 0)
+			Remotes.Get("NotifyClient"):FireClient(player, "Dismounted animal.", Color3.fromRGB(200, 210, 225))
+			return
+		end
+		local animal = profile.inventoryAnimals[animalUid]
+		local spec = if animal then AnimalConfig.GetById(animal.speciesId) else nil
+		if not animal or not spec then return end
+		-- Dismount vehicle if active
+		player:SetAttribute("IsRidingVehicle", false)
+		local rarityIdx = table.find({ "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic" }, spec.rarity) or 1
+		local speedBonus = 12 + rarityIdx * 7 + math.floor(animal.sizeRatio * 4)
+		player:SetAttribute("MountedAnimalUid", animalUid)
+		player:SetAttribute("MountedAnimalId", spec.id)
+		player:SetAttribute("MountedAnimalMutation", animal.mutation)
+		player:SetAttribute("MountedAnimalSize", animal.sizeRatio)
+		player:SetAttribute("MountedAnimalSpeedBonus", speedBonus)
+		Remotes.Get("NotifyClient"):FireClient(player, string.format("Riding %s (+%d Speed)!", spec.name, speedBonus), Color3.fromRGB(84, 245, 148))
+	end)
+
+	-- Income accumulation + auto-unbox + 3D Leaderboard update loop
 	task.spawn(function()
 		while true do
 			task.wait(GameConfig.ECONOMY.INCOME_TICK_SECONDS)
 			local now = os.time()
+			local boardEntries: { { name: string, income: number, speed: number } } = {}
 			for _, player in ipairs(Players:GetPlayers()) do
 				local profile = DataService.GetProfile(player)
 				if profile then
 					local perSec = PlotService.ComputePlayerIncomePerSec(player, profile)
+					table.insert(boardEntries, { name = player.DisplayName, income = perSec, speed = profile.speedStat })
 					if perSec > 0 then
 						local gain = perSec * GameConfig.ECONOMY.INCOME_TICK_SECONDS
 						if PassManager.OwnsPass(player, "AutoUnboxCollect") then
@@ -548,6 +586,20 @@ function PlotService.Init()
 					DataService.SyncProfile(player)
 				end
 			end
+
+			table.sort(boardEntries, function(a, b) return a.income > b.income end)
+			local gw = Workspace:FindFirstChild("GameWorld")
+			local hub = if gw then gw:FindFirstChild("SanctuaryHub") else nil
+			local lbBoard = if hub then hub:FindFirstChild("LeaderboardBoard") else nil
+			if lbBoard and lbBoard:IsA("BasePart") then
+				local lines = {}
+				for i = 1, math.min(5, #boardEntries) do
+					local e = boardEntries[i]
+					table.insert(lines, string.format("#%d %s: $%s/s | %s SPD", i, e.name, FormatUtil.Number(e.income), FormatUtil.Number(e.speed)))
+				end
+				updateSignGui(lbBoard, "🏆 TOP RANGERS", if #lines > 0 then table.concat(lines, "\n") else "Join & Rescue Animals!")
+			end
+			Remotes.Get("LeaderboardSync"):FireAllClients(boardEntries)
 		end
 	end)
 end

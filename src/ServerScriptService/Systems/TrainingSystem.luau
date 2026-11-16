@@ -71,7 +71,8 @@ function TrainingSystem.ComputeEffectiveWalkSpeed(player: Player, zPos: number):
 	local vehicleDef = getVehicleDef(profile.equippedVehicle)
 	local ridingVehicle = player:GetAttribute("IsRidingVehicle") == true
 	local vehicleBonus = if ridingVehicle then vehicleDef.baseSpeedBonus else 0
-	local total = math.min(GameConfig.SPEED.MAX_EFFECTIVE_WALKSPEED, GameConfig.SPEED.BASE_WALK_SPEED + statBonus + vehicleBonus)
+	local mountBonus = tonumber(player:GetAttribute("MountedAnimalSpeedBonus")) or 0
+	local total = math.min(GameConfig.SPEED.MAX_EFFECTIVE_WALKSPEED, GameConfig.SPEED.BASE_WALK_SPEED + statBonus + vehicleBonus + mountBonus)
 
 	-- Terrain penalty unless riding a terrain-ignoring vehicle
 	if zPos > GameConfig.WORLD.SAFE_ZONE_Z_MAX and not (ridingVehicle and vehicleDef.ignoresTerrainPenalty) then

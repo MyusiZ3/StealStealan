@@ -12,6 +12,7 @@ local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
 
 local DataService = require(script.Parent.DataService)
 local PlotService = require(script.Parent.PlotService)
+local AnalyticsTracker = require(script.Parent.AnalyticsTracker)
 
 local EconomyService = {}
 
@@ -48,6 +49,7 @@ function EconomyService.Init()
 		profile.coins -= def.cost
 		profile.ownedLassos[lassoId] = true
 		profile.equippedLasso = lassoId
+		AnalyticsTracker.LogEconomy(player, false, "Coins", def.cost, profile.coins, "Shop", "Lasso_" .. lassoId)
 		DataService.SyncProfile(player)
 		Remotes.Get("NotifyClient"):FireClient(player, "Equipped " .. def.name .. "!", Color3.fromRGB(84, 245, 148))
 	end)
@@ -78,6 +80,7 @@ function EconomyService.Init()
 		profile.coins -= def.cost
 		profile.ownedTrails[trailId] = true
 		profile.equippedTrail = trailId
+		AnalyticsTracker.LogEconomy(player, false, "Coins", def.cost, profile.coins, "Shop", "Trail_" .. trailId)
 		PlotService.RefreshPlotBoardVisuals(player)
 		DataService.SyncProfile(player)
 		Remotes.Get("NotifyClient"):FireClient(player, "Equipped " .. def.name .. " (" .. def.speedMultiplier .. "x Speed)!", Color3.fromRGB(0, 224, 255))
@@ -110,6 +113,7 @@ function EconomyService.Init()
 		profile.coins -= def.cost
 		profile.ownedVehicles[vehicleId] = true
 		profile.equippedVehicle = vehicleId
+		AnalyticsTracker.LogEconomy(player, false, "Coins", def.cost, profile.coins, "Shop", "Vehicle_" .. vehicleId)
 		DataService.SyncProfile(player)
 		Remotes.Get("NotifyClient"):FireClient(player, "Unlocked " .. def.name .. "!", Color3.fromRGB(84, 245, 148))
 	end)

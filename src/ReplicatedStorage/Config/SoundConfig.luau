@@ -1,6 +1,6 @@
 --!strict
 -- SoundConfig.luau
--- SoundGroups and default Roblox audio IDs for BGM & SFX controls
+-- SoundGroups, Creator Store APM BGM loops, and gameplay SFX IDs
 
 local SoundConfig = {
 	GROUPS = {
@@ -8,7 +8,12 @@ local SoundConfig = {
 		SFX = "SFXGroup",
 	},
 
-	-- Default safe UI/gameplay sound asset IDs (can be swapped anytime)
+	BGM = {
+		Hub = "rbxassetid://1838933509",  -- Little Friends OL (Playful hub loop)
+		Wild = "rbxassetid://1844217603", -- Just Content (Upbeat adventure loop)
+		Boss = "rbxassetid://9039901622", -- Cool & Collected (Tense pursuit pulse)
+	},
+
 	SFX = {
 		LassoThrow = "rbxassetid://12222200",
 		LassoPullTick = "rbxassetid://12221967",

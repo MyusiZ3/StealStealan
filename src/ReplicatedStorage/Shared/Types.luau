@@ -4,6 +4,7 @@
 
 export type AnimalRarity = "Common" | "Uncommon" | "Rare" | "Epic" | "Legendary" | "Mythic"
 export type AnimalMutation = "None" | "Albino" | "Golden" | "Diamond" | "Neon" | "Rainbow" | "Celestial"
+export type GraphicsQuality = "Low" | "Medium" | "High"
 
 export type AnimalInstance = {
 	uid: string,
@@ -38,6 +39,7 @@ export type PlayerSettings = {
 	hideOtherAnimals: boolean,
 	hideOwnAnimals: boolean,
 	lowVFX: boolean,
+	graphicsQuality: GraphicsQuality,
 }
 
 export type PlayerProfileSchema = {

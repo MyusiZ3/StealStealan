@@ -348,6 +348,11 @@ function LassoRescueSystem.DropPlayerCrates(player: Player, dropOrigin: Vector3)
 			if dRec.pickedUp or not droppedCrates[dropId] then
 				return
 			end
+			local pChar = picker.Character
+			local pHum = if pChar then pChar:FindFirstChildOfClass("Humanoid") else nil
+			if not pHum or pHum.Health <= 0 or pHum.PlatformStand then
+				return
+			end
 			local pList = playerTowedCrates[picker.UserId] or {}
 			if #pList >= getTowCapacity(picker) then
 				Remotes.Get("NotifyClient"):FireClient(picker, "Tow capacity full! Deliver your crate first!", Color3.fromRGB(255, 196, 62))

@@ -380,6 +380,56 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 	spawnLoc.Duration = 0
 	spawnLoc.Parent = hub
 
+	-- Global / Server Top Rangers Leaderboard 3D Board at Spawn Plaza
+	local lbStand = makePart({
+		name = "LeaderboardStand",
+		size = Vector3.new(2, 5, 2),
+		cframe = CFrame.new(24, 2.5, -108) * CFrame.Angles(0, math.rad(-28), 0),
+		color = Color3.fromRGB(48, 54, 68),
+		material = Enum.Material.Metal,
+		parent = hub,
+	})
+	lbStand.CanQuery = false
+	local lbBoard = makePart({
+		name = "LeaderboardBoard",
+		size = Vector3.new(18, 12, 1.2),
+		cframe = CFrame.new(24, 9.5, -108) * CFrame.Angles(0, math.rad(-28), 0),
+		color = Color3.fromRGB(22, 26, 36),
+		parent = hub,
+	})
+	addSurfaceSign(lbBoard, Enum.NormalId.Front, "🏆 TOP RANGERS", "Loading server rankings...", Color3.fromRGB(22, 34, 52))
+	addSurfaceSign(lbBoard, Enum.NormalId.Back, "🏆 TOP RANGERS", "Invite friends for +10% Boost!", Color3.fromRGB(22, 34, 52))
+
+	-- Floating 3D Shop & Machine Signboards helper
+	local function addFloatingBoothLabel(pos: Vector3, text: string, color: Color3)
+		local anchor = makePart({
+			name = "BoothSignAnchor_" .. text,
+			size = Vector3.new(1, 1, 1),
+			cframe = CFrame.new(pos),
+			color = color,
+			canCollide = false,
+			canQuery = false,
+			transparency = 1,
+			parent = hub,
+		})
+		local bb = Instance.new("BillboardGui")
+		bb.Size = UDim2.fromOffset(180, 44)
+		bb.MaxDistance = 140
+		bb.Parent = anchor
+		local lbl = Instance.new("TextLabel")
+		lbl.Size = UDim2.fromScale(1, 1)
+		lbl.BackgroundTransparency = 1
+		lbl.Text = text
+		lbl.TextColor3 = color
+		lbl.Font = Enum.Font.FredokaOne
+		lbl.TextScaled = true
+		lbl.Parent = bb
+		local st = Instance.new("UIStroke")
+		st.Thickness = 2.5
+		st.Color = Color3.fromRGB(12, 12, 16)
+		st.Parent = lbl
+	end
+
 	-- 3. Row 1 (Z = -55): Lasso Gear Shop (Left) & Trail Multiplier Shop (Right)
 	local lassoShopPad = makePart({
 		name = "LassoShopPad",
@@ -391,6 +441,7 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 	})
 	addSurfaceSign(lassoShopPad, Enum.NormalId.Top, "LASSO GEAR SHOP", "10 Tiers: 150 -> 750Qi!", Color3.fromRGB(148, 82, 18))
 	cloneCuratedModel("Hero_ShopBooth", CFrame.new(-16, 6, -55) * CFrame.Angles(0, math.rad(90), 0), 0.95, hub, 0.95, true)
+	addFloatingBoothLabel(Vector3.new(-16, 13.5, -55), "Lasso Shop", Color3.fromRGB(255, 198, 64))
 	addPrompt(lassoShopPad, "Open Lasso Shop", "10 Lasso Tiers", "LassoShopPrompt")
 
 	local trailShopPad = makePart({
@@ -403,6 +454,7 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 	})
 	addSurfaceSign(trailShopPad, Enum.NormalId.Top, "TRAIL SPEED SHOP", "1.25x -> 750x Speed!", Color3.fromRGB(18, 108, 158))
 	cloneCuratedModel("Hero_ShopBooth", CFrame.new(16, 6, -55) * CFrame.Angles(0, math.rad(-90), 0), 0.95, hub, 0.95, true)
+	addFloatingBoothLabel(Vector3.new(16, 13.5, -55), "Trails Shop", Color3.fromRGB(84, 245, 138))
 	addPrompt(trailShopPad, "Open Trail Shop", "Speed Multiplier Trails", "TrailShopPrompt")
 
 	-- 4. Row 2 (Z = 0): Mutation & Fuse Machine (Left) & Vehicle Garage (Right)
@@ -430,6 +482,7 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 		end
 	end
 	addPrompt(fusePromptPart, "Open Fuse Machine", "Mutation & Fuse Machine", "FusePrompt")
+	addFloatingBoothLabel(Vector3.new(-12, 13.5, 0), "Animal Merging", Color3.fromRGB(112, 224, 255))
 
 	local vehicleShopPad = makePart({
 		name = "VehicleGaragePad",
@@ -441,6 +494,7 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 	})
 	addSurfaceSign(vehicleShopPad, Enum.NormalId.Top, "VEHICLE GARAGE", "Spawn & Upgrade Ride!", Color3.fromRGB(28, 108, 68))
 	cloneCuratedModel("Hero_SafariATV", CFrame.new(12, 3.6, 0) * CFrame.Angles(0, math.rad(-145), 0), 1.15, hub, 0.95)
+	addFloatingBoothLabel(Vector3.new(12, 11.5, 0), "Vehicle Garage", Color3.fromRGB(84, 245, 162))
 	addPrompt(vehicleShopPad, "Open Vehicle Garage", "Expedition Vehicles", "VehicleShopPrompt")
 
 	-- 5. Row 3 (Z = 58): Rebirth Shrine (Left) & Animal Merchant / Index Board (Right)
@@ -454,6 +508,7 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 	})
 	addSurfaceSign(rebirthPad, Enum.NormalId.Top, "REBIRTH & DAILY", "Permanent Multiplier!", Color3.fromRGB(142, 26, 68))
 	cloneCuratedModel("Hero_RebirthPortal", CFrame.new(-16, 6, 58), 0.72, hub, 0.95, true)
+	addFloatingBoothLabel(Vector3.new(-16, 13.5, 58), "Rebirth Shrine", Color3.fromRGB(255, 112, 182))
 	addPrompt(rebirthPad, "Open Rebirth / Daily", "Ranger Prestige", "RebirthPrompt")
 
 	local merchantPad = makePart({
@@ -466,6 +521,7 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 	})
 	addSurfaceSign(merchantPad, Enum.NormalId.Top, "INDEX & MERCHANT", "Sell Extras & Claim 63 Index!", Color3.fromRGB(132, 92, 18))
 	cloneCuratedModel("Hero_ShopBooth", CFrame.new(16, 6, 58) * CFrame.Angles(0, math.rad(-90), 0), 0.95, hub, 0.95, true)
+	addFloatingBoothLabel(Vector3.new(16, 13.5, 58), "Index & Sell", Color3.fromRGB(255, 224, 72))
 	addPrompt(merchantPad, "Open Index / Sell", "Animal Index & Merchant", "IndexPrompt")
 
 	-- 6. Grand Sanctuary Safe-Zone Exit Gate at Z = 148

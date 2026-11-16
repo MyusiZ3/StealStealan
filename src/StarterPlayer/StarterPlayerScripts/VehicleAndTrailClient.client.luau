@@ -1,6 +1,6 @@
 --!strict
 -- VehicleAndTrailClient.client.luau
--- Manages Speed Multiplier Trail VFX on character, Drivable Land Vehicle Visuals, and Towed Crate Spring Physics.
+-- Manages Speed Multiplier Trail VFX on character, Drivable Land Vehicle Visuals, Rideable Animal Mounts, and Towed Crate Spring Physics.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
+local AnimalVisualBuilder = require(ReplicatedStorage.Modules.AnimalVisualBuilder)
 local TrailConfig = require(ReplicatedStorage.Config.TrailConfig)
 local VehicleConfig = require(ReplicatedStorage.Config.VehicleConfig)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
@@ -20,6 +21,7 @@ local isRidingVehicle = false
 
 local activeTrail: Trail? = nil
 local activeVehicleModel: Model? = nil
+local activeMountModel: Model? = nil
 local towedCrateVisuals: { Model } = {}
 local towedPositions: { Vector3 } = {}
 
@@ -123,14 +125,54 @@ local function buildVehicleVisual(): Model
 	return m
 end
 
+local function rebuildMountVisual()
+	if activeMountModel then
+		activeMountModel:Destroy()
+		activeMountModel = nil
+	end
+	local uid = tostring(localPlayer:GetAttribute("MountedAnimalUid") or "")
+	local char = localPlayer.Character
+	local hum = if char then char:FindFirstChildOfClass("Humanoid") else nil
+	if uid == "" then
+		if hum and not isRidingVehicle then
+			hum.HipHeight = 0
+		end
+		return
+	end
+
+	local speciesId = tostring(localPlayer:GetAttribute("MountedAnimalId") or "Capybara")
+	local mutation = tostring(localPlayer:GetAttribute("MountedAnimalMutation") or "Normal")
+	local sizeRatio = tonumber(localPlayer:GetAttribute("MountedAnimalSize")) or 1.0
+	local m = AnimalVisualBuilder.BuildAnimalModel(speciesId, math.clamp(sizeRatio * 0.72, 0.8, 1.35), mutation :: any, true)
+	m.Name = "MountedAnimal"
+	m.WorldPivot = CFrame.new(0, 0, 0)
+	m.Parent = Workspace
+	activeMountModel = m
+
+	if hum then
+		hum.HipHeight = 1.9
+	end
+end
+
 local function setRidingVehicle(state: boolean)
 	isRidingVehicle = state
+	if state and tostring(localPlayer:GetAttribute("MountedAnimalUid") or "") ~= "" then
+		Remotes.Get("MountAnimal"):FireServer("")
+		if activeMountModel then
+			activeMountModel:Destroy()
+			activeMountModel = nil
+		end
+	end
 	Remotes.Get("SetMovementState"):FireServer("IsRidingVehicle", state)
 
 	local char = localPlayer.Character
 	local hum = if char then char:FindFirstChildOfClass("Humanoid") else nil
 	if hum then
-		hum.HipHeight = if state then 1.4 else 0
+		if state then
+			hum.HipHeight = 1.4
+		elseif tostring(localPlayer:GetAttribute("MountedAnimalUid") or "") == "" then
+			hum.HipHeight = 0
+		end
 	end
 
 	if activeVehicleModel then
@@ -195,6 +237,15 @@ localPlayer.AttributeChanged:Connect(function(attrName)
 		syncTowedCrateCount(tonumber(localPlayer:GetAttribute("TowedCrateCount")) or 0)
 	elseif attrName == "ToggleVehicleRequest" then
 		setRidingVehicle(not isRidingVehicle)
+	elseif attrName == "MountedAnimalUid" or attrName == "MountedAnimalId" or attrName == "MountedAnimalMutation" or attrName == "MountedAnimalSize" then
+		if tostring(localPlayer:GetAttribute("MountedAnimalUid") or "") ~= "" and isRidingVehicle then
+			isRidingVehicle = false
+			if activeVehicleModel then
+				activeVehicleModel:Destroy()
+				activeVehicleModel = nil
+			end
+		end
+		rebuildMountVisual()
 	end
 end)
 
@@ -210,16 +261,30 @@ localPlayer.CharacterAdded:Connect(function(char)
 	applyTrailToCharacter(char)
 	if isRidingVehicle then
 		setRidingVehicle(true)
+	elseif tostring(localPlayer:GetAttribute("MountedAnimalUid") or "") ~= "" then
+		rebuildMountVisual()
 	end
 end)
 if localPlayer.Character then
 	applyTrailToCharacter(localPlayer.Character)
+	if tostring(localPlayer:GetAttribute("MountedAnimalUid") or "") ~= "" then
+		rebuildMountVisual()
+	end
 end
 
 RunService.RenderStepped:Connect(function(dt: number)
 	local char = localPlayer.Character
 	local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
 	if not root or not root:IsA("BasePart") then return end
+
+	if activeMountModel and activeMountModel.PrimaryPart then
+		local now = os.clock()
+		local vel = root.AssemblyLinearVelocity
+		local horizSpeed = Vector3.new(vel.X, 0, vel.Z).Magnitude
+		local hopY = if horizSpeed > 2 then math.abs(math.sin(now * 11)) * 0.55 else math.sin(now * 3) * 0.08
+		local pitch = if horizSpeed > 2 then math.sin(now * 11) * 0.1 else 0
+		activeMountModel:PivotTo(root.CFrame * CFrame.new(0, -3.35 + hopY, 0) * CFrame.Angles(pitch, 0, 0))
+	end
 
 	if isRidingVehicle and activeVehicleModel and activeVehicleModel.PrimaryPart then
 		local targetCF = root.CFrame * CFrame.new(0, -1.8, 0)

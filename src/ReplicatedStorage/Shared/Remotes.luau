@@ -53,6 +53,7 @@ local EVENT_NAMES = {
 	"ClaimDailyReward",
 	"ProfileSync",
 	"AllPlotsSync",
+	"LeaderboardSync",
 	"NotifyClient",
 	"PoacherAlertSync",
 	-- Admin Panel & Live Events

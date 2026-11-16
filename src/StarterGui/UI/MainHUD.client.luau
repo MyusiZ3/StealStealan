@@ -11,6 +11,8 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local RunService = game:GetService("RunService")
+local SocialService = game:GetService("SocialService")
+local SoundService = game:GetService("SoundService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
@@ -22,11 +24,27 @@ local TrailConfig = require(ReplicatedStorage.Config.TrailConfig)
 local VehicleConfig = require(ReplicatedStorage.Config.VehicleConfig)
 local AnimalConfig = require(ReplicatedStorage.Config.AnimalConfig)
 local MonetizationConfig = require(ReplicatedStorage.Config.MonetizationConfig)
+local SoundConfig = require(ReplicatedStorage.Config.SoundConfig)
 local FormatUtil = require(ReplicatedStorage.Modules.FormatUtil)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 
 local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
+
+local function playClickSFX()
+	local s = Instance.new("Sound")
+	s.SoundId = SoundConfig.SFX.ButtonClick
+	local sfxGroup = SoundService:FindFirstChild(SoundConfig.GROUPS.SFX)
+	if sfxGroup and sfxGroup:IsA("SoundGroup") then
+		s.SoundGroup = sfxGroup
+	end
+	s.Volume = 0.65
+	s.Parent = SoundService
+	s:Play()
+	s.Ended:Connect(function()
+		s:Destroy()
+	end)
+end
 
 local profile: Types.PlayerProfileSchema? = nil
 local currentModal: string? = nil -- "Shop" | "Index" | "Settings" | "Inventory"
@@ -231,7 +249,7 @@ end
 -- 1. TOP-LEFT SETTINGS GEAR + RIDE BUTTON + TOASTS & BIOME BANNER
 -- ============================================================================
 local topLeftRow = Instance.new("Frame")
-topLeftRow.Size = UDim2.fromOffset(175, 44)
+topLeftRow.Size = UDim2.fromOffset(305, 44)
 topLeftRow.Position = UDim2.new(0, 14, 0, 12)
 topLeftRow.BackgroundTransparency = 1
 topLeftRow.Parent = gui
@@ -262,7 +280,29 @@ makeStroke(rideTopBtn, 2.5)
 makeTextStroke(rideTopBtn, 2)
 makeGradient(rideTopBtn, Color3.fromRGB(82, 224, 134), Color3.fromRGB(32, 146, 76))
 rideTopBtn.MouseButton1Click:Connect(function()
+	playClickSFX()
 	localPlayer:SetAttribute("ToggleVehicleRequest", not (localPlayer:GetAttribute("ToggleVehicleRequest") == true))
+end)
+
+local inviteFriendsBtn = Instance.new("TextButton")
+inviteFriendsBtn.Name = "InviteFriendsButton"
+inviteFriendsBtn.Size = UDim2.fromOffset(122, 38)
+inviteFriendsBtn.Position = UDim2.fromOffset(168, 2)
+inviteFriendsBtn.BackgroundColor3 = Color3.fromRGB(72, 152, 248)
+inviteFriendsBtn.Text = "👥 +10% Boost"
+inviteFriendsBtn.TextColor3 = Color3.new(1, 1, 1)
+inviteFriendsBtn.Font = Enum.Font.FredokaOne
+inviteFriendsBtn.TextScaled = true
+inviteFriendsBtn.Parent = topLeftRow
+makeCorner(inviteFriendsBtn, 10)
+makeStroke(inviteFriendsBtn, 2.5)
+makeTextStroke(inviteFriendsBtn, 2)
+makeGradient(inviteFriendsBtn, Color3.fromRGB(102, 186, 255), Color3.fromRGB(48, 114, 218))
+inviteFriendsBtn.MouseButton1Click:Connect(function()
+	playClickSFX()
+	pcall(function()
+		SocialService:PromptGameInvite(localPlayer)
+	end)
 end)
 
 -- Top-Right Biome Entry Banner (Screenshot 7)
@@ -1447,14 +1487,43 @@ local function renderInventoryModal()
 				btn.Text = ""
 				btn.Parent = invScroll
 
+				local isMounted = tostring(localPlayer:GetAttribute("MountedAnimalUid") or "") == uid
 				local box = makeAnimalIconFrame(btn, animal.speciesId, animal.mutation, false)
+				if isMounted then
+					makeStroke(box, 3, Color3.fromRGB(84, 255, 132))
+				end
 				makeOutlinedLabel(box, nameStr, UDim2.new(1, -6, 0, 18), UDim2.fromOffset(3, 52), Color3.fromRGB(122, 232, 255), 1.8)
 				makeOutlinedLabel(box, string.format("(%.1fKG)", animal.weightKg), UDim2.new(1, -6, 0, 18), UDim2.fromOffset(3, 72), Color3.fromRGB(118, 255, 132), 1.8)
 
 				if animal.locked then
 					makeOutlinedLabel(box, "🔒", UDim2.fromOffset(20, 20), UDim2.fromOffset(2, 2), Color3.new(1, 1, 1), 1.5)
 				end
+
+				local rideBadgeBtn = Instance.new("TextButton")
+				rideBadgeBtn.Name = "MountPetBtn"
+				rideBadgeBtn.Size = UDim2.fromOffset(32, 20)
+				rideBadgeBtn.Position = UDim2.new(1, -34, 0, 3)
+				rideBadgeBtn.BackgroundColor3 = if isMounted then Color3.fromRGB(238, 86, 62) else Color3.fromRGB(54, 178, 96)
+				rideBadgeBtn.Text = if isMounted then "STOP" else "RIDE"
+				rideBadgeBtn.TextColor3 = Color3.new(1, 1, 1)
+				rideBadgeBtn.Font = Enum.Font.FredokaOne
+				rideBadgeBtn.TextScaled = true
+				rideBadgeBtn.ZIndex = 4
+				rideBadgeBtn.Parent = box
+				makeCorner(rideBadgeBtn, 4)
+				makeStroke(rideBadgeBtn, 1.5)
+				rideBadgeBtn.MouseButton1Click:Connect(function()
+					playClickSFX()
+					Remotes.Get("MountAnimal"):FireServer(if isMounted then "" else uid)
+					task.delay(0.1, function()
+						if currentModal == "Inventory" then
+							renderInventoryModal()
+						end
+					end)
+				end)
+
 				btn.MouseButton1Click:Connect(function()
+					playClickSFX()
 					if sellModeActive then
 						Remotes.Get("SellAnimal"):FireServer(uid)
 					else
@@ -1489,7 +1558,24 @@ local function renderInventoryModal()
 		invCountLbl.Text = "Crates: " .. cnt
 
 	elseif invLeftTab == "Mounts" then
-		invTitleLbl.Text = "Vehicles"
+		invTitleLbl.Text = "Vehicles & Mounts"
+		local activeMountUid = tostring(localPlayer:GetAttribute("MountedAnimalUid") or "")
+		if activeMountUid ~= "" then
+			local disBtn = Instance.new("TextButton")
+			disBtn.BackgroundColor3 = Color3.fromRGB(224, 92, 48)
+			disBtn.Text = "🐎 Dismount\n" .. tostring(localPlayer:GetAttribute("MountedAnimalId") or "Pet")
+			disBtn.TextColor3 = Color3.new(1, 1, 1)
+			disBtn.Font = Enum.Font.FredokaOne
+			disBtn.TextScaled = true
+			disBtn.Parent = invScroll
+			makeCorner(disBtn, 8)
+			makeStroke(disBtn, 2)
+			makeTextStroke(disBtn, 1.8)
+			disBtn.MouseButton1Click:Connect(function()
+				playClickSFX()
+				Remotes.Get("MountAnimal"):FireServer("")
+			end)
+		end
 		for _, v in ipairs(VehicleConfig) do
 			local owned = profile.ownedVehicles[v.id] == true
 			local eq = profile.equippedVehicle == v.id
@@ -1504,6 +1590,7 @@ local function renderInventoryModal()
 			makeStroke(btn, 2)
 			makeTextStroke(btn, 1.8)
 			btn.MouseButton1Click:Connect(function()
+				playClickSFX()
 				if owned then Remotes.Get("EquipVehicle"):FireServer(v.id)
 				else Remotes.Get("BuyVehicle"):FireServer(v.id) end
 			end)
@@ -1559,11 +1646,11 @@ searchBox:GetPropertyChangedSignal("Text"):Connect(function()
 	end
 end)
 
--- D. SETTINGS MODAL (Screenshot 10 — Silver Header + Sliders + Switches)
+-- D. SETTINGS MODAL (Screenshot 10 — Silver Header + Sliders + Switches + Graphics Quality)
 local settingsWindow = Instance.new("Frame")
 settingsWindow.Name = "SettingsModal"
-settingsWindow.Size = UDim2.fromOffset(540, 365)
-settingsWindow.Position = UDim2.new(0.5, -270, 0.5, -182)
+settingsWindow.Size = UDim2.fromOffset(540, 425)
+settingsWindow.Position = UDim2.new(0.5, -270, 0.5, -212)
 settingsWindow.BackgroundColor3 = Color3.fromRGB(36, 38, 44)
 settingsWindow.Visible = false
 settingsWindow.Parent = gui
@@ -1571,6 +1658,7 @@ makeCorner(settingsWindow, 12)
 makeStroke(settingsWindow, 3)
 
 makeWindowHeader(settingsWindow, "Settings", Color3.fromRGB(236, 240, 246), Color3.fromRGB(132, 138, 152), function()
+	playClickSFX()
 	openModal(nil)
 end)
 
@@ -1683,8 +1771,45 @@ local function renderSettingsModal()
 		Remotes.Get("UpdateSettings"):FireServer({ hideOwnAnimals = not s.hideOwnAnimals })
 	end)
 	addSwitchRow("View my Crates", viewCratesEnabled, function()
+		playClickSFX()
 		viewCratesEnabled = not viewCratesEnabled
 		Remotes.Get("UpdateSettings"):FireServer({ lowVFX = not viewCratesEnabled })
+		renderSettingsModal()
+	end)
+
+	-- Graphics Quality Cyclic Row (Low | Medium | High)
+	local gRow = Instance.new("Frame")
+	gRow.Name = "GraphicsQualityRow"
+	gRow.Size = UDim2.new(0.96, 0, 0, 52)
+	gRow.BackgroundColor3 = Color3.fromRGB(48, 50, 56)
+	gRow.Parent = settingsBody
+	makeCorner(gRow, 6)
+	makeStroke(gRow, 2)
+
+	makeOutlinedLabel(gRow, "Graphics Quality", UDim2.fromOffset(180, 26), UDim2.fromOffset(10, 4), Color3.new(1, 1, 1), 2.2).TextXAlignment = Enum.TextXAlignment.Left
+	makeOutlinedLabel(gRow, "Colors, Bloom & VFX!", UDim2.fromOffset(180, 16), UDim2.fromOffset(10, 30), Color3.fromRGB(210, 215, 224), 1.6).TextXAlignment = Enum.TextXAlignment.Left
+
+	local gVal = tostring((s :: any).graphicsQuality or "Medium")
+	local gBtn = Instance.new("TextButton")
+	gBtn.Name = "GraphicsQualityButton"
+	gBtn.Size = UDim2.fromOffset(132, 34)
+	gBtn.Position = UDim2.new(1, -144, 0.5, -17)
+	gBtn.BackgroundColor3 = if gVal == "High" then Color3.fromRGB(72, 206, 88) elseif gVal == "Medium" then Color3.fromRGB(64, 152, 232) else Color3.fromRGB(168, 124, 52)
+	gBtn.Text = string.upper(gVal)
+	gBtn.TextColor3 = Color3.new(1, 1, 1)
+	gBtn.Font = Enum.Font.FredokaOne
+	gBtn.TextScaled = true
+	gBtn.Parent = gRow
+	makeCorner(gBtn, 6)
+	makeStroke(gBtn, 2)
+	makeTextStroke(gBtn, 1.8)
+	gBtn.MouseButton1Click:Connect(function()
+		playClickSFX()
+		local nextVal = if gVal == "Low" then "Medium" elseif gVal == "Medium" then "High" else "Low"
+		if profile and type(profile.settings) == "table" then
+			(profile.settings :: any).graphicsQuality = nextVal
+		end
+		Remotes.Get("UpdateSettings"):FireServer({ graphicsQuality = nextVal })
 		renderSettingsModal()
 	end)
 end
@@ -1703,10 +1828,20 @@ renderActiveModal = function()
 end
 
 -- Bind Buttons & Hotbar Slots
-shopBtn.MouseButton1Click:Connect(function() openModal("Shop") end)
-indexBtn.MouseButton1Click:Connect(function() openModal("Index") end)
-settingsGearBtn.MouseButton1Click:Connect(function() openModal("Settings") end)
+shopBtn.MouseButton1Click:Connect(function()
+	playClickSFX()
+	openModal("Shop")
+end)
+indexBtn.MouseButton1Click:Connect(function()
+	playClickSFX()
+	openModal("Index")
+end)
+settingsGearBtn.MouseButton1Click:Connect(function()
+	playClickSFX()
+	openModal("Settings")
+end)
 speedIconBtn.MouseButton1Click:Connect(function()
+	playClickSFX()
 	shopSubTab = "Trails"
 	openModal("Shop")
 end)

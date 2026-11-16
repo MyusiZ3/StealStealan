@@ -16,11 +16,14 @@ local PassManager = require(Services.PassManager)
 local PlotService = require(Services.PlotService)
 local EconomyService = require(Services.EconomyService)
 local AdminService = require(Services.AdminService)
+local AnalyticsTracker = require(Services.AnalyticsTracker)
 
 local PoacherAISystem = require(Systems.PoacherAISystem)
 local LassoRescueSystem = require(Systems.LassoRescueSystem)
 local TrainingSystem = require(Systems.TrainingSystem)
 local FuseMergeSystem = require(Systems.FuseMergeSystem)
+
+local sessionStartTimes: { [number]: number } = {}
 
 -- Initialize Services & Systems
 PassManager.Init()
@@ -42,6 +45,8 @@ Players.PlayerAdded:Connect(function(player)
 	end
 
 	local profile = DataService.LoadProfile(player)
+	sessionStartTimes[player.UserId] = os.time()
+	AnalyticsTracker.LogOnboardingStep(player, 1, "JoinedExperience")
 	PlotService.AssignPlot(player)
 	PoacherAISystem.ResetShieldsForPlayer(player)
 
@@ -74,10 +79,18 @@ Remotes.Get("UpdateSettings").OnServerEvent:Connect(function(player, newSettings
 	if type(newSettings.hideOtherAnimals) == "boolean" then profile.settings.hideOtherAnimals = newSettings.hideOtherAnimals end
 	if type(newSettings.hideOwnAnimals) == "boolean" then profile.settings.hideOwnAnimals = newSettings.hideOwnAnimals end
 	if type(newSettings.lowVFX) == "boolean" then profile.settings.lowVFX = newSettings.lowVFX end
+	if newSettings.graphicsQuality == "Low" or newSettings.graphicsQuality == "Medium" or newSettings.graphicsQuality == "High" then
+		profile.settings.graphicsQuality = newSettings.graphicsQuality
+	end
 	DataService.SyncProfile(player)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
+	local started = sessionStartTimes[player.UserId]
+	if started then
+		AnalyticsTracker.LogCustom(player, "SessionEnd", os.time() - started)
+		sessionStartTimes[player.UserId] = nil
+	end
 	PlotService.ReleasePlot(player)
 	DataService.ReleaseProfile(player)
 end)

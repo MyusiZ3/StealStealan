@@ -101,6 +101,7 @@ local GameConfig = {
 		hideOtherAnimals = false,
 		hideOwnAnimals = false,
 		lowVFX = false,
+		graphicsQuality = "Medium",
 	},
 }
 

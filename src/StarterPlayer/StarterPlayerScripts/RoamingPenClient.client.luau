@@ -147,9 +147,44 @@ Remotes.Get("ProfileSync").OnClientEvent:Connect(function(profile)
 	end
 end)
 
+local activeCrateBaseCF: { [Model]: CFrame } = {}
+
 RunService.RenderStepped:Connect(function(dt: number)
-	if #activeEntities == 0 then return end
 	local now = os.clock()
+
+	-- Subtle periodic struggle animation on nearby buried crates (when graphics quality is not Low)
+	if (currentSettings :: any).graphicsQuality ~= "Low" and not currentSettings.lowVFX then
+		local gw = Workspace:FindFirstChild("GameWorld")
+		local cratesFolder = if gw then gw:FindFirstChild("ActiveCrates") else nil
+		if cratesFolder then
+			local cam = Workspace.CurrentCamera
+			local camPos = if cam then cam.CFrame.Position else Vector3.zero
+			for _, cr in ipairs(cratesFolder:GetChildren()) do
+				if cr:IsA("Model") and cr.PrimaryPart then
+					if not activeCrateBaseCF[cr] then
+						activeCrateBaseCF[cr] = cr:GetPivot()
+					end
+					local baseCF = activeCrateBaseCF[cr]
+					if (baseCF.Position - camPos).Magnitude < 130 then
+						local cycle = (now + math.abs(baseCF.Position.X) * 0.13) % 3.2
+						if cycle < 0.45 then
+							local wob = math.sin(cycle * 28) * 0.12
+							cr:PivotTo(baseCF * CFrame.Angles(wob, 0, wob * 0.8))
+						else
+							cr:PivotTo(baseCF)
+						end
+					end
+				end
+			end
+			for m in pairs(activeCrateBaseCF) do
+				if not m.Parent then
+					activeCrateBaseCF[m] = nil
+				end
+			end
+		end
+	end
+
+	if #activeEntities == 0 then return end
 
 	if #rainbowParts > 0 then
 		local hueCol = Color3.fromHSV((now * 0.35) % 1, 0.85, 1)
