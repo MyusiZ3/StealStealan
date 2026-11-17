@@ -14,6 +14,8 @@ local Types = require(ReplicatedStorage.Shared.Types)
 local GameConfig = require(ReplicatedStorage.Config.GameConfig)
 local AnimalConfig = require(ReplicatedStorage.Config.AnimalConfig)
 local AnimalVisualBuilder = require(ReplicatedStorage.Modules.AnimalVisualBuilder)
+local VoxelPets = require(ReplicatedStorage.Modules.VoxelPets)
+local CinematicVFX = require(ReplicatedStorage.Modules.CinematicVFX)
 local RarityEffects = require(ReplicatedStorage.Modules.RarityEffects)
 local FormatUtil = require(ReplicatedStorage.Modules.FormatUtil)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
@@ -43,6 +45,7 @@ type RoamingEntity = {
 type PlacedCrateVisual = {
 	uid: string,
 	plotIndex: number,
+	isOwn: boolean,
 	model: Model,
 	baseCF: CFrame,
 	localX: number,
@@ -57,6 +60,11 @@ type PlacedCrateVisual = {
 	prompt: ProximityPrompt?,
 	phase: number,
 }
+
+local function isClientInstantUnbox(isOwnPlot: boolean): boolean
+	return Workspace:GetAttribute("InstantUnboxParty") == true
+		or (isOwnPlot and localPlayer:GetAttribute("AdminInstantUnbox") == true)
+end
 
 local currentPlotsPayload: any = {}
 local currentSettings: Types.PlayerSettings = GameConfig.DEFAULT_SETTINGS
@@ -163,14 +171,16 @@ local function rebuildEntities(forceReset: boolean?)
 								if existing and existing.model then
 									existing.model:Destroy()
 								end
-								local model = AnimalVisualBuilder.BuildAnimalModel(animal.speciesId, animal.sizeRatio, animal.mutation, currentSettings.lowVFX)
+								local titanicActive = Workspace:GetAttribute("TitanicZooActive") == true
+								local visualSizeRatio = if titanicActive then math.max(animal.sizeRatio * 2.1, 2.8) else animal.sizeRatio
+								local model = AnimalVisualBuilder.BuildAnimalModel(animal.speciesId, visualSizeRatio, animal.mutation, currentSettings.lowVFX)
 								model.Name = string.format("P%d_%s_%s", plotData.plotIndex, animal.speciesId, string.sub(animal.uid, 1, 6))
 
 								local root = model.PrimaryPart :: BasePart
 								local spec = AnimalConfig.GetById(animal.speciesId)
 								local bb = Instance.new("BillboardGui")
 								bb.Size = UDim2.fromOffset(170, 44)
-								bb.StudsOffset = Vector3.new(0, 3.6 * animal.sizeRatio, 0)
+								bb.StudsOffset = Vector3.new(0, 3.6 * visualSizeRatio, 0)
 								bb.MaxDistance = 65
 								bb.Parent = root
 
@@ -304,12 +314,13 @@ local function rebuildEntities(forceReset: boolean?)
 							pcall(function()
 								crateModel:ScaleTo(initRelScale)
 							end)
+							local instantNow = isClientInstantUnbox(isOwn)
 							local statLbl = Instance.new("TextLabel")
 							statLbl.Size = UDim2.new(1, -4, 0.48, 0)
 							statLbl.Position = UDim2.new(0, 2, 0.50, 0)
 							statLbl.BackgroundTransparency = 1
-							statLbl.Text = if rem > 0 then ("⏳ Hatch: " .. FormatUtil.Time(rem)) else "✨ READY! Click / [E]"
-							statLbl.TextColor3 = if rem > 0 then Color3.fromRGB(255, 224, 96) else Color3.fromRGB(108, 255, 132)
+							statLbl.Text = if rem > 0 and instantNow then "⚡ INSTANT UNBOX! [E]" elseif rem > 0 then ("⏳ Hatch: " .. FormatUtil.Time(rem)) else "✨ READY! Click / [E]"
+							statLbl.TextColor3 = if rem > 0 and instantNow then Color3.fromRGB(56, 224, 255) elseif rem > 0 then Color3.fromRGB(255, 224, 96) else Color3.fromRGB(108, 255, 132)
 							statLbl.Font = Enum.Font.FredokaOne
 							statLbl.TextScaled = true
 							statLbl.Parent = bb
@@ -329,7 +340,7 @@ local function rebuildEntities(forceReset: boolean?)
 
 								local p = Instance.new("ProximityPrompt")
 								p.Name = "HatchPenCratePrompt"
-								p.ActionText = if rem > 0 then ("Hatching (" .. FormatUtil.Time(rem) .. ")") else "Hatch / Open Crate"
+								p.ActionText = if rem > 0 and instantNow then "⚡ Instant Unbox!" elseif rem > 0 then ("Hatching (" .. FormatUtil.Time(rem) .. ")") else "Hatch / Open Crate"
 								p.ObjectText = string.upper(crate.rarity) .. " " .. crate.biomeId .. " Crate"
 								p.HoldDuration = 0
 								p.MaxActivationDistance = 12
@@ -345,6 +356,7 @@ local function rebuildEntities(forceReset: boolean?)
 							local newCr: PlacedCrateVisual = {
 								uid = crate.uid,
 								plotIndex = plotData.plotIndex,
+								isOwn = isOwn,
 								model = crateModel,
 								baseCF = baseCF,
 								localX = localPos.X,
@@ -581,101 +593,8 @@ task.spawn(function()
 end)
 
 -- ============================================================================
--- STEAL / BREAK AN EGG HATCH REVEAL ANIMATION (#4, #6, #7)
+-- TIERED CINEMATIC HATCH REVEAL (#4, #6, #7 + Biome/Rarity VFX)
 -- ============================================================================
-local HATCH_SHARD_STYLES: { [string]: { mat: Enum.Material, c1: Color3, c2: Color3 } } = {
-	PineWoods = { mat = Enum.Material.Wood, c1 = Color3.fromRGB(128, 86, 50), c2 = Color3.fromRGB(58, 132, 64) },
-	MangroveSwamp = { mat = Enum.Material.WoodPlanks, c1 = Color3.fromRGB(98, 78, 46), c2 = Color3.fromRGB(72, 224, 158) },
-	SavannaCamp = { mat = Enum.Material.DiamondPlate, c1 = Color3.fromRGB(68, 72, 82), c2 = Color3.fromRGB(224, 158, 52) },
-	AlpinePeaks = { mat = Enum.Material.Ice, c1 = Color3.fromRGB(148, 222, 255), c2 = Color3.fromRGB(228, 246, 255) },
-	VolcanicJungle = { mat = Enum.Material.Basalt, c1 = Color3.fromRGB(42, 34, 46), c2 = Color3.fromRGB(255, 86, 28) },
-}
-
-local function spawnMaterialShatter(originPos: Vector3, biomeId: string, rarityCol: Color3, scale: number)
-	local style = HATCH_SHARD_STYLES[biomeId] or HATCH_SHARD_STYLES.PineWoods
-	local shards: { { p: Part, vel: Vector3, rot: Vector3, baseSz: Vector3 } } = {}
-	for i = 1, 16 do
-		local ang = (i / 16) * math.pi * 2 + (math.random() - 0.5) * 0.35
-		local spd = 11 + math.random() * 14
-		local sh = Instance.new("Part")
-		sh.Name = "HatchMaterialShard"
-		local sx = (0.45 + math.random() * 0.55) * scale
-		local sy = (0.28 + math.random() * 0.45) * scale
-		local sz = (0.45 + math.random() * 0.55) * scale
-		sh.Size = Vector3.new(sx, sy, sz)
-		sh.CFrame = CFrame.new(originPos + Vector3.new(math.cos(ang) * 0.6, 0.8 * scale, math.sin(ang) * 0.6))
-			* CFrame.Angles(math.random() * 6, math.random() * 6, math.random() * 6)
-		if i % 3 == 0 then
-			sh.Color = rarityCol
-			sh.Material = Enum.Material.Neon
-		else
-			sh.Color = if i % 2 == 0 then style.c1 else style.c2
-			sh.Material = style.mat
-		end
-		sh.TopSurface = Enum.SurfaceType.Studs
-		sh.Anchored = true
-		sh.CanCollide = false
-		sh.CanQuery = false
-		sh.CanTouch = false
-		sh.Parent = Workspace
-		table.insert(shards, {
-			p = sh,
-			vel = Vector3.new(math.cos(ang) * spd, 12 + math.random() * 12, math.sin(ang) * spd),
-			rot = Vector3.new((math.random() - 0.5) * 14, (math.random() - 0.5) * 14, (math.random() - 0.5) * 14),
-			baseSz = sh.Size,
-		})
-	end
-
-	-- Sparkle particle cloud matching rarity & crate debris
-	local emitHolder = Instance.new("Part")
-	emitHolder.Size = Vector3.new(1, 1, 1)
-	emitHolder.Position = originPos + Vector3.new(0, 1.2 * scale, 0)
-	emitHolder.Transparency = 1
-	emitHolder.Anchored = true
-	emitHolder.CanCollide = false
-	emitHolder.CanQuery = false
-	emitHolder.Parent = Workspace
-	local pe = Instance.new("ParticleEmitter")
-	pe.Color = ColorSequence.new(rarityCol, Color3.new(1, 1, 1))
-	pe.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.9 * scale), NumberSequenceKeypoint.new(1, 0) })
-	pe.Lifetime = NumberRange.new(0.45, 0.8)
-	pe.Speed = NumberRange.new(10, 22)
-	pe.SpreadAngle = Vector2.new(85, 85)
-	pe.Acceleration = Vector3.new(0, -18, 0)
-	pe.LightEmission = 0.85
-	pe.Rate = 0
-	pe.Parent = emitHolder
-	pe:Emit(28)
-
-	task.spawn(function()
-		local t0 = os.clock()
-		local prev = t0
-		while os.clock() - t0 < 0.72 do
-			local nowC = os.clock()
-			local dt = math.min(0.05, nowC - prev)
-			prev = nowC
-			local alpha = (nowC - t0) / 0.72
-			for _, item in ipairs(shards) do
-				item.vel += Vector3.new(0, -48 * dt, 0)
-				local p = item.p
-				local nextPos = p.Position + item.vel * dt
-				if nextPos.Y < originPos.Y + 0.2 then
-					nextPos = Vector3.new(nextPos.X, originPos.Y + 0.2, nextPos.Z)
-					item.vel = Vector3.new(item.vel.X * 0.65, math.abs(item.vel.Y) * 0.38, item.vel.Z * 0.65)
-				end
-				p.CFrame = CFrame.new(nextPos) * (p.CFrame - p.CFrame.Position) * CFrame.Angles(item.rot.X * dt, item.rot.Y * dt, item.rot.Z * dt)
-				p.Size = item.baseSz * math.max(0.05, 1 - alpha * 0.85)
-				p.Transparency = math.clamp(alpha * 1.15 - 0.15, 0, 1)
-			end
-			RunService.RenderStepped:Wait()
-		end
-		for _, item in ipairs(shards) do
-			if item.p.Parent then item.p:Destroy() end
-		end
-		if emitHolder.Parent then emitHolder:Destroy() end
-	end)
-end
-
 Remotes.Get("CrateHatchReveal").OnClientEvent:Connect(function(data)
 	if type(data) ~= "table" then return end
 	local gw = Workspace:FindFirstChild("GameWorld")
@@ -694,194 +613,31 @@ Remotes.Get("CrateHatchReveal").OnClientEvent:Connect(function(data)
 	local localPos = computePenCrateSlotLocalPos(slotIdx, data.localX, data.localZ, paddock.Size.Y * 0.5)
 	local baseCF = paddock.CFrame * CFrame.new(localPos)
 
-	local speciesId = tostring(data.speciesId or "RustyFox")
-	local spec = AnimalConfig.GetById(speciesId)
-	local variantIdx = if spec then ((spec.indexNumber % 3) + 1) else 1
-	local biomeId = tostring(data.biomeId or "PineWoods")
+	local openerUid = tonumber(data.openerUserId)
+	local openerPlayer = if openerUid then Players:GetPlayerByUserId(openerUid) else localPlayer
+	local isLocalOpener = (openerUid == nil or openerUid == localPlayer.UserId)
 
-	local revealCrate = AnimalVisualBuilder.BuildCrateModel((data.rarity or "Common") :: any, biomeId, sc, {
-		isBuried = false,
-		canCollide = false,
-		showBeacon = false,
-		variant = variantIdx,
+	CinematicVFX.PlayCrateHatchSequence({
+		baseCF = baseCF,
+		rarity = tostring(data.rarity or "Common"),
+		biomeId = tostring(data.biomeId or "PineWoods"),
+		sizeScale = sc,
+		speciesId = tostring(data.speciesId or "RustyFox"),
+		mutation = tostring(data.mutation or "None"),
+		sizeRatio = tonumber(data.sizeRatio) or 1.0,
+		weightKg = tonumber(data.weightKg) or 5.0,
+		oddsDenom = tonumber(data.oddsDenom),
+		openerPlayer = openerPlayer,
+		isLocalOpener = isLocalOpener,
+		lowVFX = (currentSettings.lowVFX == true),
+		playerGui = localPlayer:FindFirstChildOfClass("PlayerGui"),
+		onComplete = function()
+			if type(data.animalUid) == "string" then
+				delayedAnimalUids[data.animalUid] = nil
+				rebuildEntities(false)
+			end
+		end,
 	})
-	revealCrate.Name = "ClientHatchAnimCrate"
-	revealCrate:PivotTo(baseCF)
-	revealCrate.Parent = Workspace
-
-	local rarityCol = GameConfig.RARITY_COLORS[data.rarity] or Color3.fromRGB(255, 224, 96)
-
-	task.spawn(function()
-		-- Phase 1 (0.72s): Accelerating wobble & pulse anticipation
-		local startT = os.clock()
-		while os.clock() - startT < 0.72 do
-			local el = os.clock() - startT
-			local alpha = el / 0.72
-			local freq = 18 + alpha * 42
-			local amp = 0.08 + alpha * 0.25
-			local hop = math.abs(math.sin(el * 13)) * (0.35 + alpha * 0.85)
-			local tilt = math.sin(el * freq) * amp
-			revealCrate:PivotTo(baseCF * CFrame.new(0, hop, 0) * CFrame.Angles(tilt, alpha * 2.2, -tilt * 0.8))
-			pcall(function()
-				revealCrate:ScaleTo(1 + math.sin(el * 22) * 0.1)
-			end)
-			RunService.RenderStepped:Wait()
-		end
-
-		-- Phase 2: Material Shatter Debris + Expanding Sunburst Ring + Destroy Crate!
-		spawnMaterialShatter(baseCF.Position, biomeId, rarityCol, sc)
-
-		local ring = Instance.new("Part")
-		ring.Name = "HatchShockRing"
-		ring.Shape = Enum.PartType.Cylinder
-		ring.Size = Vector3.new(0.25, 2 * sc, 2 * sc)
-		ring.CFrame = CFrame.new(baseCF.Position + Vector3.new(0, 1.2 * sc, 0)) * CFrame.Angles(0, 0, math.rad(90))
-		ring.Color = rarityCol
-		ring.Material = Enum.Material.Neon
-		ring.Anchored = true
-		ring.CanCollide = false
-		ring.CanQuery = false
-		ring.Transparency = 0.2
-		ring.Parent = Workspace
-		TweenService:Create(ring, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Size = Vector3.new(0.15, 16 * sc, 16 * sc),
-			Transparency = 1,
-		}):Play()
-		task.delay(0.48, function()
-			if ring.Parent then ring:Destroy() end
-		end)
-
-		if revealCrate.Parent then
-			revealCrate:Destroy()
-		end
-
-		-- Phase 3a (0.45s): Hatched Pet erupts big facing directly toward player/camera (Image 3 style!)
-		local petScale = math.clamp((tonumber(data.sizeRatio) or 1.0) * 0.92, 0.85, 1.8)
-		local animPet = AnimalVisualBuilder.BuildAnimalModel(speciesId, petScale, (data.mutation or "None") :: any, false)
-		animPet.Name = "ClientHatchLeapAnimal"
-		local originPos = (baseCF * CFrame.new(0, 1.8 * sc, 0)).Position
-		animPet:PivotTo(CFrame.new(originPos))
-		animPet.Parent = Workspace
-
-		local pRoot = animPet.PrimaryPart
-		if pRoot then
-			local inc = AnimalConfig.ComputeIncomePerSec({
-				uid = "",
-				speciesId = speciesId,
-				sizeRatio = tonumber(data.sizeRatio) or 1.0,
-				weightKg = tonumber(data.weightKg) or 5.0,
-				mutation = (data.mutation or "None") :: any,
-				locked = false,
-				acquiredAt = 0,
-			})
-			local bb = Instance.new("BillboardGui")
-			bb.Size = UDim2.fromOffset(195, 62)
-			bb.StudsOffset = Vector3.new(0, 3.8 * petScale + 1.2, 0)
-			bb.AlwaysOnTop = true
-			bb.Parent = pRoot
-
-			local topTxt = Instance.new("TextLabel")
-			topTxt.Size = UDim2.fromScale(1, 0.54)
-			topTxt.BackgroundTransparency = 1
-			topTxt.Text = "$" .. FormatUtil.Number(inc) .. "/s"
-			topTxt.TextColor3 = Color3.fromRGB(108, 255, 128)
-			topTxt.Font = Enum.Font.FredokaOne
-			topTxt.TextScaled = true
-			topTxt.Parent = bb
-			local ts = Instance.new("UIStroke")
-			ts.Thickness = 2.8
-			ts.Color = Color3.fromRGB(10, 12, 16)
-			ts.Parent = topTxt
-
-			local subTxt = Instance.new("TextLabel")
-			subTxt.Size = UDim2.fromScale(1, 0.44)
-			subTxt.Position = UDim2.fromScale(0, 0.54)
-			subTxt.BackgroundTransparency = 1
-			subTxt.Text = tostring(data.rarity or "Common")
-			subTxt.TextColor3 = rarityCol
-			subTxt.Font = Enum.Font.FredokaOne
-			subTxt.TextScaled = true
-			subTxt.Parent = bb
-			local ss = Instance.new("UIStroke")
-			ss.Thickness = 2.6
-			ss.Color = Color3.fromRGB(10, 12, 16)
-			ss.Parent = subTxt
-		end
-
-		local popStart = os.clock()
-		local popDur = 0.45
-		local hoverPos = originPos + Vector3.new(0, 4.2, 0)
-		while os.clock() - popStart < popDur do
-			local a = math.clamp((os.clock() - popStart) / popDur, 0, 1)
-			local easeOut = 1 - math.pow(1 - a, 3)
-			local char = localPlayer.Character
-			local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
-			local cam = Workspace.CurrentCamera
-			local viewerPos = if root and root:IsA("BasePart")
-				then root.Position
-				elseif cam then cam.CFrame.Position
-				else (originPos + Vector3.new(0, 4, -12))
-			local curPos = originPos:Lerp(hoverPos, easeOut)
-			local lookPt = Vector3.new(viewerPos.X, curPos.Y, viewerPos.Z)
-			local faceCF = if (lookPt - curPos).Magnitude > 0.1 then CFrame.lookAt(curPos, lookPt) else CFrame.new(curPos)
-			animPet:PivotTo(faceCF)
-			pcall(function()
-				animPet:ScaleTo(0.35 + easeOut * 0.95)
-			end)
-			RunService.RenderStepped:Wait()
-		end
-
-		-- Phase 3b (0.50s): Swoops directly toward the player's body/inventory while facing the player!
-		local leapStart = os.clock()
-		local leapDur = 0.50
-		while os.clock() - leapStart < leapDur do
-			local a = math.clamp((os.clock() - leapStart) / leapDur, 0, 1)
-			local char = localPlayer.Character
-			local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
-			local targetPos = if root and root:IsA("BasePart") then (root.Position + Vector3.new(0, 0.5, 0)) else (originPos + Vector3.new(0, 5, 0))
-			local arcY = math.sin(a * math.pi) * 4.5
-			local curPos = hoverPos:Lerp(targetPos, a * a) + Vector3.new(0, arcY, 0)
-			local lookTarget = Vector3.new(targetPos.X, curPos.Y, targetPos.Z)
-			local lookCF = if (lookTarget - curPos).Magnitude > 0.1 then CFrame.lookAt(curPos, lookTarget) else CFrame.new(curPos)
-			animPet:PivotTo(lookCF)
-			pcall(function()
-				animPet:ScaleTo(math.max(0.18, 1.3 - a * 1.12))
-			end)
-			RunService.RenderStepped:Wait()
-		end
-
-		-- Small collect flash on player chest when hatched pet enters!
-		local charEnd = localPlayer.Character
-		local rootEnd = if charEnd then charEnd:FindFirstChild("HumanoidRootPart") else nil
-		if rootEnd and rootEnd:IsA("BasePart") then
-			local flash = Instance.new("Part")
-			flash.Shape = Enum.PartType.Ball
-			flash.Size = Vector3.new(1.5, 1.5, 1.5)
-			flash.CFrame = rootEnd.CFrame
-			flash.Color = rarityCol
-			flash.Material = Enum.Material.Neon
-			flash.Anchored = true
-			flash.CanCollide = false
-			flash.CanQuery = false
-			flash.Transparency = 0.25
-			flash.Parent = Workspace
-			TweenService:Create(flash, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-				Size = Vector3.new(5.5, 5.5, 5.5),
-				Transparency = 1,
-			}):Play()
-			task.delay(0.3, function()
-				if flash.Parent then flash:Destroy() end
-			end)
-		end
-
-		if animPet.Parent then
-			animPet:Destroy()
-		end
-		if type(data.animalUid) == "string" then
-			delayedAnimalUids[data.animalUid] = nil
-			rebuildEntities(false)
-		end
-	end)
 end)
 
 -- ============================================================================
@@ -1005,6 +761,10 @@ Remotes.Get("ProfileSync").OnClientEvent:Connect(function(profile)
 	end
 end)
 
+Workspace:GetAttributeChangedSignal("TitanicZooActive"):Connect(function()
+	rebuildEntities(true)
+end)
+
 local activeCrateBaseCF: { [Model]: CFrame } = {}
 local timerAccum = 0
 
@@ -1063,7 +823,14 @@ RunService.RenderStepped:Connect(function(dt: number)
 					end)
 				end
 				if refreshTimers then
-					if rem > 0 then
+					local instantNow = isClientInstantUnbox(cr.isOwn)
+					if rem > 0 and instantNow then
+						cr.statusLabel.Text = "⚡ INSTANT UNBOX! [E]"
+						cr.statusLabel.TextColor3 = Color3.fromRGB(56, 224, 255)
+						if cr.prompt then
+							cr.prompt.ActionText = "⚡ Instant Unbox!"
+						end
+					elseif rem > 0 then
 						cr.statusLabel.Text = "⏳ Hatch: " .. FormatUtil.Time(rem)
 						cr.statusLabel.TextColor3 = Color3.fromRGB(255, 224, 96)
 						if cr.prompt then
@@ -1146,18 +913,25 @@ RunService.RenderStepped:Connect(function(dt: number)
 			local horiz = Vector3.new(delta.X, 0, delta.Z)
 			local dist = horiz.Magnitude
 
+			local isVoxelRig = (ent.model:GetAttribute("VoxelRig") == true)
+			local isMoving = false
 			local hopY = 0
 			if now >= ent.waitUntil and dist > 0.6 then
+				isMoving = true
 				local step = math.min(dist, ent.speed * dt)
 				local dir = horiz.Unit
 				ent.pos += dir * step
 				ent.yaw = math.atan2(-dir.X, -dir.Z)
-				hopY = math.abs(math.sin(now * 9 + ent.phase)) * 0.55
+				hopY = if isVoxelRig then 0 else math.abs(math.sin(now * 9 + ent.phase)) * 0.55
 			elseif dist <= 0.6 then
 				ent.waitUntil = now + math.random(10, 28) / 10
 				ent.targetPos = randomLocalPaddockPos(ent.topY)
 			else
-				hopY = math.abs(math.sin(now * 3 + ent.phase)) * 0.05
+				hopY = if isVoxelRig then 0 else math.abs(math.sin(now * 3 + ent.phase)) * 0.05
+			end
+
+			if isVoxelRig then
+				VoxelPets.StepRig(ent.model, if isMoving then "Walk" else "Idle", now, ent.phase)
 			end
 
 			local worldCF = computeEntityGroundCFrame(ent.paddockCF, ent.pos.X, ent.topY, ent.pos.Z, hopY, ent.yaw, ent.footBotRel)
@@ -1178,3 +952,63 @@ RunService.RenderStepped:Connect(function(dt: number)
 		end
 	end
 end)
+
+-- Animate Hub VoxelFantasyShowcase Pedestal Pets & Bind Interactive Pose Switcher
+do
+	local SHOWCASE_CYCLE: { VoxelPets.AnimMode } = { "Idle", "Walk", "Fly" }
+	local NEXT_POSE_LABEL = { "Auto", "Idle", "Walk", "Fly" }
+	local boundPrompts: { [Instance]: boolean } = {}
+
+	local function cycleShowcasePose(pedestal: Instance)
+		local petModel = pedestal:FindFirstChildWhichIsA("Model")
+		if not petModel then return end
+		local cur = tostring(petModel:GetAttribute("ShowcaseAnimMode") or "Auto")
+		local idx = table.find(NEXT_POSE_LABEL, cur) or 1
+		local nxt = NEXT_POSE_LABEL[(idx % #NEXT_POSE_LABEL) + 1]
+		petModel:SetAttribute("ShowcaseAnimMode", nxt)
+		local prompt = pedestal:FindFirstChild("ShowcasePosePrompt", true)
+		if prompt and prompt:IsA("ProximityPrompt") then
+			prompt.ActionText = "Pose: " .. nxt .. " ([E] Switch)"
+		end
+	end
+
+	RunService.RenderStepped:Connect(function()
+		local gw = Workspace:FindFirstChild("GameWorld")
+		local hub = if gw then gw:FindFirstChild("SanctuaryHub") else nil
+		local showcase = if hub then hub:FindFirstChild("VoxelFantasyShowcase") else nil
+		if not showcase then return end
+
+		local now = os.clock()
+		for i, ch in ipairs(showcase:GetChildren()) do
+			if string.sub(ch.Name, 1, 9) == "Pedestal_" then
+				local prompt = ch:FindFirstChild("ShowcasePosePrompt", true)
+				if prompt and prompt:IsA("ProximityPrompt") and not boundPrompts[prompt] then
+					boundPrompts[prompt] = true
+					prompt.Triggered:Connect(function()
+						cycleShowcasePose(ch)
+					end)
+				end
+				local cd = ch:FindFirstChild("ShowcasePoseClick", true)
+				if cd and cd:IsA("ClickDetector") and not boundPrompts[cd] then
+					boundPrompts[cd] = true
+					cd.MouseClick:Connect(function()
+						cycleShowcasePose(ch)
+					end)
+				end
+
+				local petModel = ch:FindFirstChildWhichIsA("Model")
+				if petModel and petModel:GetAttribute("VoxelRig") == true then
+					local modeAttr = tostring(petModel:GetAttribute("ShowcaseAnimMode") or "Auto")
+					local animMode: VoxelPets.AnimMode
+					if modeAttr == "Idle" or modeAttr == "Walk" or modeAttr == "Fly" then
+						animMode = modeAttr :: VoxelPets.AnimMode
+					else
+						local slot = (math.floor((now + i * 1.5) / 5) % #SHOWCASE_CYCLE) + 1
+						animMode = SHOWCASE_CYCLE[slot]
+					end
+					VoxelPets.StepRig(petModel, animMode, now, i * 1.3)
+				end
+			end
+		end
+	end)
+end

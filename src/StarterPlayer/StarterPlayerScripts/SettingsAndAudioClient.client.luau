@@ -84,21 +84,41 @@ Remotes.Get("CrateDelivered").OnClientEvent:Connect(function()
 	playSFX(SoundConfig.SFX.CoinCollect, 0.85)
 end)
 
-Remotes.Get("CrateHatchReveal").OnClientEvent:Connect(function()
-	-- Multi-stage Hatch SFX: shake/crack ticks -> burst pop -> happy reveal chime!
-	playSFX(SoundConfig.SFX.LassoPullTick, 0.7)
-	task.delay(0.28, function()
-		playSFX(SoundConfig.SFX.LassoPullTick, 0.85)
-	end)
-	task.delay(0.56, function()
-		playSFX(SoundConfig.SFX.LassoPullTick, 0.95)
-	end)
-	task.delay(0.86, function()
+Remotes.Get("CrateHatchReveal").OnClientEvent:Connect(function(data)
+	local isLocal = (type(data) ~= "table" or data.openerUserId == nil or data.openerUserId == localPlayer.UserId)
+	if not isLocal then
+		return
+	end
+	local rarity = if type(data) == "table" then tostring(data.rarity or "Common") else "Common"
+	local tier = GameConfig.GetRarityTier(rarity)
+	local chargeDur = if tier >= 11 then 1.60 elseif tier >= 7 then 1.20 elseif tier >= 4 then 0.90 else 0.65
+
+	-- Scaled multi-stage hatch SFX synchronized cleanly to charge & detonation duration
+	local tickCount = if tier >= 11 then 6 elseif tier >= 7 then 5 else 3
+	for k = 0, tickCount - 1 do
+		local frac = k / math.max(1, tickCount)
+		local delayT = frac * (chargeDur - 0.14)
+		local vol = 0.62 + frac * 0.34
+		if delayT <= 0.01 then
+			playSFX(SoundConfig.SFX.LassoPullTick, vol)
+		else
+			task.delay(delayT, function()
+				playSFX(SoundConfig.SFX.LassoPullTick, vol)
+			end)
+		end
+	end
+	task.delay(chargeDur, function()
 		playSFX(SoundConfig.SFX.CratePop, 1.0)
 	end)
-	task.delay(1.18, function()
+	task.delay(chargeDur + 0.28, function()
 		playSFX(SoundConfig.SFX.MergeSuccess, 0.92)
 	end)
+	if tier >= 7 then
+		task.delay(chargeDur + 0.56, function()
+			playSFX(SoundConfig.SFX.CoinCollect, 0.95)
+			playSFX(SoundConfig.SFX.MergeSuccess, 0.85)
+		end)
+	end
 end)
 
 Remotes.Get("PoacherAlertSync").OnClientEvent:Connect(function(active)

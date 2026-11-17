@@ -5,6 +5,8 @@
 # Rojo / Tooling build artifacts
 build.rbxl
 build.rbxlx
+PetLab.rbxl
+PetLab.rbxlx
 sourcemap.json
 
 # OS / Editor

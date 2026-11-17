@@ -1,0 +1,73 @@
+{
+  "name": "StealStealan_PetLab",
+  "servePort": 34873,
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Shared": {
+        "$path": "src/ReplicatedStorage/Shared"
+      },
+      "Config": {
+        "$path": "src/ReplicatedStorage/Config"
+      },
+      "Modules": {
+        "$path": "src/ReplicatedStorage/Modules"
+      },
+      "PetLab": {
+        "$path": "petlab/Shared"
+      }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "PetLabServer": {
+        "$path": "petlab/Server"
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "PetLabClient": {
+          "$path": "petlab/Client"
+        }
+      }
+    },
+    "Workspace": {
+      "$className": "Workspace",
+      "Baseplate": {
+        "$className": "Part",
+        "$properties": {
+          "Anchored": true,
+          "Locked": true,
+          "Position": [0, -1, 0],
+          "Size": [180, 2, 180],
+          "Color": [0.165, 0.188, 0.235],
+          "Material": "SmoothPlastic",
+          "TopSurface": "Smooth"
+        }
+      },
+      "SpawnLocation": {
+        "$className": "SpawnLocation",
+        "$properties": {
+          "Anchored": true,
+          "Neutral": true,
+          "Duration": 0,
+          "Position": [0, 0.25, 18],
+          "Size": [8, 0.5, 8],
+          "Color": [0.22, 0.52, 0.88],
+          "Material": "SmoothPlastic",
+          "TopSurface": "Smooth"
+        }
+      }
+    },
+    "Lighting": {
+      "$className": "Lighting",
+      "$properties": {
+        "Brightness": 2,
+        "ClockTime": 13.5,
+        "GlobalShadows": true
+      }
+    }
+  }
+}

@@ -34,17 +34,29 @@ end
 
 function EconomyService.Init()
 	Remotes.Get("BuyLasso").OnServerEvent:Connect(function(player, lassoId)
-		if typeof(lassoId) ~= "string" then return end
+		if typeof(lassoId) ~= "string" then
+			Remotes.Get("NotifyClient"):FireClient(player, "Invalid Lasso selection!", Color3.fromRGB(255, 86, 86))
+			return
+		end
 		local def = findById(LassoConfig, lassoId)
 		local profile = DataService.GetProfile(player)
-		if not def or not profile then return end
+		if not def or not profile then
+			Remotes.Get("NotifyClient"):FireClient(player, "Shop unavailable right now — please try again!", Color3.fromRGB(255, 86, 86))
+			return
+		end
 		if profile.ownedLassos[lassoId] then
 			profile.equippedLasso = lassoId
 			DataService.SyncProfile(player)
+			Remotes.Get("NotifyClient"):FireClient(player, "Equipped " .. def.name .. "!", Color3.fromRGB(84, 245, 148))
 			return
 		end
 		if profile.coins < def.cost then
-			Remotes.Get("NotifyClient"):FireClient(player, "Need $" .. FormatUtil.Number(def.cost) .. " for " .. def.name, Color3.fromRGB(255, 96, 96))
+			local short = def.cost - profile.coins
+			Remotes.Get("NotifyClient"):FireClient(
+				player,
+				string.format("Not enough Cash! Need $%s more for %s ($%s)", FormatUtil.Number(short), def.name, FormatUtil.Number(def.cost)),
+				Color3.fromRGB(255, 86, 86)
+			)
 			return
 		end
 		profile.coins -= def.cost
@@ -57,25 +69,50 @@ function EconomyService.Init()
 
 	Remotes.Get("EquipLasso").OnServerEvent:Connect(function(player, lassoId)
 		if typeof(lassoId) ~= "string" then return end
+		local def = findById(LassoConfig, lassoId)
 		local profile = DataService.GetProfile(player)
-		if profile and profile.ownedLassos[lassoId] then
-			profile.equippedLasso = lassoId
-			DataService.SyncProfile(player)
+		if not profile then
+			Remotes.Get("NotifyClient"):FireClient(player, "Profile not loaded — please wait!", Color3.fromRGB(255, 86, 86))
+			return
 		end
+		if not profile.ownedLassos[lassoId] then
+			Remotes.Get("NotifyClient"):FireClient(player, "You don't own that Lasso yet — buy it first!", Color3.fromRGB(255, 86, 86))
+			return
+		end
+		if profile.equippedLasso == lassoId then
+			Remotes.Get("NotifyClient"):FireClient(player, "Already equipped " .. (def and def.name or lassoId) .. "!", Color3.fromRGB(255, 198, 62))
+			return
+		end
+		profile.equippedLasso = lassoId
+		DataService.SyncProfile(player)
+		Remotes.Get("NotifyClient"):FireClient(player, "Equipped " .. (def and def.name or lassoId) .. "!", Color3.fromRGB(84, 245, 148))
 	end)
 
 	Remotes.Get("BuyTrail").OnServerEvent:Connect(function(player, trailId)
-		if typeof(trailId) ~= "string" then return end
+		if typeof(trailId) ~= "string" then
+			Remotes.Get("NotifyClient"):FireClient(player, "Invalid Trail selection!", Color3.fromRGB(255, 86, 86))
+			return
+		end
 		local def = findById(TrailConfig, trailId)
 		local profile = DataService.GetProfile(player)
-		if not def or not profile then return end
+		if not def or not profile then
+			Remotes.Get("NotifyClient"):FireClient(player, "Shop unavailable right now — please try again!", Color3.fromRGB(255, 86, 86))
+			return
+		end
 		if profile.ownedTrails[trailId] then
 			profile.equippedTrail = trailId
+			PlotService.RefreshPlotBoardVisuals(player)
 			DataService.SyncProfile(player)
+			Remotes.Get("NotifyClient"):FireClient(player, "Equipped " .. def.name .. "!", Color3.fromRGB(0, 224, 255))
 			return
 		end
 		if profile.coins < def.cost then
-			Remotes.Get("NotifyClient"):FireClient(player, "Need $" .. FormatUtil.Number(def.cost) .. " for " .. def.name, Color3.fromRGB(255, 96, 96))
+			local short = def.cost - profile.coins
+			Remotes.Get("NotifyClient"):FireClient(
+				player,
+				string.format("Not enough Cash! Need $%s more for %s ($%s)", FormatUtil.Number(short), def.name, FormatUtil.Number(def.cost)),
+				Color3.fromRGB(255, 86, 86)
+			)
 			return
 		end
 		profile.coins -= def.cost
@@ -90,31 +127,51 @@ function EconomyService.Init()
 	Remotes.Get("EquipTrail").OnServerEvent:Connect(function(player, trailId)
 		if typeof(trailId) ~= "string" then return end
 		local profile = DataService.GetProfile(player)
-		if not profile then return end
+		if not profile then
+			Remotes.Get("NotifyClient"):FireClient(player, "Profile not loaded — please wait!", Color3.fromRGB(255, 86, 86))
+			return
+		end
 		if trailId == "" then
 			profile.equippedTrail = ""
 			PlotService.RefreshPlotBoardVisuals(player)
 			DataService.SyncProfile(player)
+			Remotes.Get("NotifyClient"):FireClient(player, "Unequipped Trail.", Color3.fromRGB(200, 212, 230))
 		elseif profile.ownedTrails[trailId] then
+			local def = findById(TrailConfig, trailId)
 			profile.equippedTrail = trailId
 			PlotService.RefreshPlotBoardVisuals(player)
 			DataService.SyncProfile(player)
+			Remotes.Get("NotifyClient"):FireClient(player, "Equipped " .. (def and def.name or trailId) .. "!", Color3.fromRGB(0, 224, 255))
+		else
+			Remotes.Get("NotifyClient"):FireClient(player, "You don't own that Trail yet — buy it first!", Color3.fromRGB(255, 86, 86))
 		end
 	end)
 
 	Remotes.Get("BuyVehicle").OnServerEvent:Connect(function(player, vehicleId)
-		if typeof(vehicleId) ~= "string" then return end
+		if typeof(vehicleId) ~= "string" then
+			Remotes.Get("NotifyClient"):FireClient(player, "Invalid Vehicle selection!", Color3.fromRGB(255, 86, 86))
+			return
+		end
 		local def = findById(VehicleConfig, vehicleId)
 		local profile = DataService.GetProfile(player)
-		if not def or not profile then return end
+		if not def or not profile then
+			Remotes.Get("NotifyClient"):FireClient(player, "Garage unavailable right now — please try again!", Color3.fromRGB(255, 86, 86))
+			return
+		end
 		if profile.ownedVehicles[vehicleId] then
 			profile.equippedVehicle = vehicleId
 			PlotService.RefreshPlotBoardVisuals(player)
 			DataService.SyncProfile(player)
+			Remotes.Get("NotifyClient"):FireClient(player, "Equipped " .. def.name .. "!", Color3.fromRGB(84, 245, 148))
 			return
 		end
 		if profile.coins < def.cost then
-			Remotes.Get("NotifyClient"):FireClient(player, "Need $" .. FormatUtil.Number(def.cost) .. " for " .. def.name, Color3.fromRGB(255, 96, 96))
+			local short = def.cost - profile.coins
+			Remotes.Get("NotifyClient"):FireClient(
+				player,
+				string.format("Not enough Cash! Need $%s more for %s ($%s)", FormatUtil.Number(short), def.name, FormatUtil.Number(def.cost)),
+				Color3.fromRGB(255, 86, 86)
+			)
 			return
 		end
 		profile.coins -= def.cost
@@ -128,12 +185,24 @@ function EconomyService.Init()
 
 	Remotes.Get("EquipVehicle").OnServerEvent:Connect(function(player, vehicleId)
 		if typeof(vehicleId) ~= "string" then return end
+		local def = findById(VehicleConfig, vehicleId)
 		local profile = DataService.GetProfile(player)
-		if profile and profile.ownedVehicles[vehicleId] then
-			profile.equippedVehicle = vehicleId
-			PlotService.RefreshPlotBoardVisuals(player)
-			DataService.SyncProfile(player)
+		if not profile then
+			Remotes.Get("NotifyClient"):FireClient(player, "Profile not loaded — please wait!", Color3.fromRGB(255, 86, 86))
+			return
 		end
+		if not profile.ownedVehicles[vehicleId] then
+			Remotes.Get("NotifyClient"):FireClient(player, "You don't own that Vehicle yet — buy it first!", Color3.fromRGB(255, 86, 86))
+			return
+		end
+		if profile.equippedVehicle == vehicleId then
+			Remotes.Get("NotifyClient"):FireClient(player, "Already equipped " .. (def and def.name or vehicleId) .. "!", Color3.fromRGB(255, 198, 62))
+			return
+		end
+		profile.equippedVehicle = vehicleId
+		PlotService.RefreshPlotBoardVisuals(player)
+		DataService.SyncProfile(player)
+		Remotes.Get("NotifyClient"):FireClient(player, "Equipped " .. (def and def.name or vehicleId) .. "!", Color3.fromRGB(84, 245, 148))
 	end)
 
 	Remotes.Get("UpgradeTreadmill").OnServerEvent:Connect(function(player)
@@ -160,11 +229,13 @@ function EconomyService.Init()
 			return
 		end
 		if not DataService.AcquireTransactionLock(player.UserId, { animalUid }) then
+			Remotes.Get("NotifyClient"):FireClient(player, "Transaction busy — try again in a moment!", Color3.fromRGB(255, 198, 62))
 			return
 		end
 		local animal = profile.inventoryAnimals[animalUid]
 		if not animal then
 			DataService.ReleaseTransactionLock(player.UserId, { animalUid })
+			Remotes.Get("NotifyClient"):FireClient(player, "Pet is no longer in your Backpack!", Color3.fromRGB(255, 86, 86))
 			return
 		end
 		if animal.locked then
@@ -216,9 +287,19 @@ function EconomyService.Init()
 		if typeof(speciesId) ~= "string" then return end
 		local profile = DataService.GetProfile(player)
 		local spec = AnimalConfig.GetById(speciesId)
-		if not profile or not spec then return end
+		if not profile or not spec then
+			Remotes.Get("NotifyClient"):FireClient(player, "Index unavailable right now — try again!", Color3.fromRGB(255, 86, 86))
+			return
+		end
 		local entry = profile.discoveredIndex[speciesId]
-		if not entry or entry.rewardClaimed then return end
+		if not entry then
+			Remotes.Get("NotifyClient"):FireClient(player, "Not discovered yet! Rescue " .. spec.name .. " first.", Color3.fromRGB(255, 112, 92))
+			return
+		end
+		if entry.rewardClaimed then
+			Remotes.Get("NotifyClient"):FireClient(player, "Index reward for " .. spec.name .. " already claimed!", Color3.fromRGB(255, 198, 62))
+			return
+		end
 		entry.rewardClaimed = true
 		local rewardCoins, rewardSpeed = AnimalConfig.ComputeIndexRewards(spec)
 		profile.coins += rewardCoins
@@ -260,6 +341,8 @@ function EconomyService.Init()
 				string.format("Claimed %d Index Rewards (+$%s & +%s Speed)!", claimed, FormatUtil.Number(totalCoins), FormatUtil.Number(totalSpeed)),
 				Color3.fromRGB(255, 214, 72)
 			)
+		else
+			Remotes.Get("NotifyClient"):FireClient(player, "No unclaimed Index rewards! Discover new pets first.", Color3.fromRGB(255, 198, 62))
 		end
 	end)
 
@@ -267,11 +350,25 @@ function EconomyService.Init()
 		local profile = DataService.GetProfile(player)
 		if not profile then return end
 		local reqSpeed, reqCoins = EconomyService.GetRebirthRequirements(profile.rebirths)
-		if profile.speedStat < reqSpeed or profile.coins < reqCoins then
+		if profile.speedStat < reqSpeed and profile.coins < reqCoins then
 			Remotes.Get("NotifyClient"):FireClient(
 				player,
-				string.format("Need %s Speed & $%s Coins to Rebirth!", FormatUtil.Number(reqSpeed), FormatUtil.Number(reqCoins)),
-				Color3.fromRGB(255, 96, 96)
+				string.format("Rebirth Failed! Need +%s Speed & +$%s Cash!", FormatUtil.Number(reqSpeed - profile.speedStat), FormatUtil.Number(reqCoins - profile.coins)),
+				Color3.fromRGB(255, 86, 86)
+			)
+			return
+		elseif profile.speedStat < reqSpeed then
+			Remotes.Get("NotifyClient"):FireClient(
+				player,
+				string.format("Not enough Speed! Need +%s more Speed (%s / %s)!", FormatUtil.Number(reqSpeed - profile.speedStat), FormatUtil.Number(profile.speedStat), FormatUtil.Number(reqSpeed)),
+				Color3.fromRGB(255, 86, 86)
+			)
+			return
+		elseif profile.coins < reqCoins then
+			Remotes.Get("NotifyClient"):FireClient(
+				player,
+				string.format("Not enough Cash! Need +$%s more Cash ($%s / $%s)!", FormatUtil.Number(reqCoins - profile.coins), FormatUtil.Number(profile.coins), FormatUtil.Number(reqCoins)),
+				Color3.fromRGB(255, 86, 86)
 			)
 			return
 		end
@@ -281,6 +378,11 @@ function EconomyService.Init()
 		PlotService.RefreshPlotBoardVisuals(player)
 		DataService.SyncProfile(player)
 		task.spawn(LeaderboardService.RefreshGlobalLeaderboards)
+		Remotes.Get("PlayWorldVFX"):FireAllClients({
+			kind = "RebirthAscend",
+			userId = player.UserId,
+			rebirths = profile.rebirths,
+		})
 		Remotes.Get("NotifyClient"):FireClient(
 			player,
 			string.format("REBIRTH %d COMPLETE! Only Coins reset — Permanent +%d%% Cash Bonus!", profile.rebirths, profile.rebirths * 75),

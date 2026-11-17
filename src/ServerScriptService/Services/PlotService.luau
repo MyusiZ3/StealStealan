@@ -634,7 +634,11 @@ function PlotService.OpenCrate(player: Player, crateUid: string)
 	if animal then
 		local spec = AnimalConfig.GetById(animal.speciesId)
 		local mutText = if animal.mutation ~= "None" then ("[" .. animal.mutation .. "] ") else ""
-		Remotes.Get("CrateHatchReveal"):FireClient(player, {
+		local oddsDenom = GameConfig.ComputePullOddsDenominator(crate.rarity, animal.mutation)
+		local tier = GameConfig.GetRarityTier(crate.rarity)
+		Remotes.Get("CrateHatchReveal"):FireAllClients({
+			openerUserId = player.UserId,
+			openerName = player.DisplayName,
 			crateUid = revealPayload.crateUid,
 			plotIndex = revealPayload.plotIndex,
 			biomeId = revealPayload.biomeId,
@@ -648,7 +652,15 @@ function PlotService.OpenCrate(player: Player, crateUid: string)
 			mutation = animal.mutation,
 			sizeRatio = animal.sizeRatio,
 			weightKg = animal.weightKg,
+			oddsDenom = oddsDenom,
 		})
+		if tier >= 10 or oddsDenom >= 2500 then
+			Remotes.Get("GlobalEventBanner"):FireAllClients(
+				string.format("🌌 [%s • 1 IN %s] %s hatched %s%s!", string.upper(crate.rarity), FormatUtil.Number(oddsDenom), player.DisplayName, mutText, spec and spec.name or animal.speciesId),
+				GameConfig.RARITY_COLORS[crate.rarity] or Color3.fromRGB(186, 128, 255),
+				8
+			)
+		end
 		Remotes.Get("NotifyClient"):FireClient(
 			player,
 			string.format("Hatched %s%s (%.2fx Size | %.1fkg)!", mutText, spec and spec.name or animal.speciesId, animal.sizeRatio, animal.weightKg),
@@ -702,7 +714,12 @@ function PlotService.UpgradeTreadmill(player: Player)
 	if not prof then return end
 	local cost = math.floor(GameConfig.TREADMILL.UPGRADE_BASE_COST * math.pow(GameConfig.TREADMILL.UPGRADE_GROWTH, prof.treadmillLevel - 1))
 	if prof.coins < cost then
-		Remotes.Get("NotifyClient"):FireClient(player, "Need $" .. FormatUtil.Number(cost) .. " to upgrade Treadmill!", Color3.fromRGB(255, 96, 96))
+		local short = cost - prof.coins
+		Remotes.Get("NotifyClient"):FireClient(
+			player,
+			string.format("Not enough Cash! Need $%s more to Upgrade Treadmill ($%s)", FormatUtil.Number(short), FormatUtil.Number(cost)),
+			Color3.fromRGB(255, 86, 86)
+		)
 		return
 	end
 	prof.coins -= cost
@@ -717,14 +734,20 @@ local function bindBoardTrigger(board: Instance?, promptName: string, pIdx: numb
 	local prompt = board:FindFirstChild(promptName)
 	if prompt and prompt:IsA("ProximityPrompt") then
 		prompt.Triggered:Connect(function(player)
-			if playerPlots[player.UserId] ~= pIdx then return end
+			if playerPlots[player.UserId] ~= pIdx then
+				Remotes.Get("NotifyClient"):FireClient(player, "That belongs to another player's Sanctuary Plot!", Color3.fromRGB(255, 118, 96))
+				return
+			end
 			cb(player)
 		end)
 	end
 	local cd = board:FindFirstChild(promptName .. "_Click")
 	if cd and cd:IsA("ClickDetector") then
 		cd.MouseClick:Connect(function(player)
-			if playerPlots[player.UserId] ~= pIdx then return end
+			if playerPlots[player.UserId] ~= pIdx then
+				Remotes.Get("NotifyClient"):FireClient(player, "That belongs to another player's Sanctuary Plot!", Color3.fromRGB(255, 118, 96))
+				return
+			end
 			cb(player)
 		end)
 	end
@@ -743,6 +766,7 @@ local function bindPlotPrompts()
 			if cashPrompt and cashPrompt:IsA("ProximityPrompt") then
 				cashPrompt.Triggered:Connect(function(player)
 					if playerPlots[player.UserId] ~= pIdx then
+						Remotes.Get("NotifyClient"):FireClient(player, "That belongs to another player's Sanctuary Plot!", Color3.fromRGB(255, 118, 96))
 						return
 					end
 					PlotService.ClaimPenCoins(player)
@@ -770,7 +794,10 @@ end
 
 function PlotService.ClaimPenCoins(player: Player)
 	local profile = DataService.GetProfile(player)
-	if not profile or profile.unclaimedPenCoins <= 0 then
+	if not profile or profile.unclaimedPenCoins < 1 then
+		if profile then
+			Remotes.Get("NotifyClient"):FireClient(player, "No Pen Cash ready yet — equip pets in your Pen to earn!", Color3.fromRGB(255, 198, 62))
+		end
 		return
 	end
 	local amount = math.floor(profile.unclaimedPenCoins)
@@ -794,7 +821,12 @@ function PlotService.UpgradePen(player: Player)
 	end
 	local cost = PlotService.GetPenUpgradeCost(profile)
 	if profile.coins < cost then
-		Remotes.Get("NotifyClient"):FireClient(player, "Need $" .. FormatUtil.Number(cost) .. " to upgrade Pen!", Color3.fromRGB(255, 96, 96))
+		local short = cost - profile.coins
+		Remotes.Get("NotifyClient"):FireClient(
+			player,
+			string.format("Not enough Cash! Need $%s more to Upgrade Pen ($%s)", FormatUtil.Number(short), FormatUtil.Number(cost)),
+			Color3.fromRGB(255, 86, 86)
+		)
 		return
 	end
 	profile.coins -= cost
@@ -892,6 +924,10 @@ function PlotService.Init()
 		local list: { { uid: string, income: number } } = {}
 		for uid, animal in pairs(profile.inventoryAnimals) do
 			table.insert(list, { uid = uid, income = AnimalConfig.ComputeIncomePerSec(animal) })
+		end
+		if #list == 0 then
+			Remotes.Get("NotifyClient"):FireClient(player, "No pets in your Backpack yet! Rescue crates first.", Color3.fromRGB(255, 198, 62))
+			return
 		end
 		table.sort(list, function(a, b)
 			return a.income > b.income

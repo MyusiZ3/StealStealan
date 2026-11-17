@@ -285,6 +285,18 @@ function GameConfig.IsCosmicOrAbove(rarity: string): boolean
 	return GameConfig.GetRarityTier(rarity) >= GameConfig.COSMIC_TIER_THRESHOLD
 end
 
+function GameConfig.ComputePullOddsDenominator(rarity: string, mutation: string?): number
+	local rarWeight = (GameConfig.RARITY_WEIGHTS :: any)[rarity] or 50.0
+	local denom = 100.0 / math.max(0.0001, rarWeight)
+	if mutation and mutation ~= "None" then
+		local mutEntry = (GameConfig.MUTATIONS :: any)[mutation]
+		if mutEntry and type(mutEntry.weight) == "number" and mutEntry.weight > 0 then
+			denom = denom * (100.0 / mutEntry.weight)
+		end
+	end
+	return math.max(1, math.floor(denom + 0.5))
+end
+
 function GameConfig.ComputeHatchSeconds(rarity: string, biomeId: string): number
 	local base = (GameConfig.UNBOX_SECONDS :: any)[rarity] or 5
 	local mult = (GameConfig.BIOME_HATCH_MULTIPLIER :: any)[biomeId] or 1.0

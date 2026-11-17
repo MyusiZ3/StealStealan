@@ -496,6 +496,13 @@ function LassoRescueSystem.CompletePull(crate: WorldCrate)
 	crate.grabPrompt.Enabled = true
 	crate.billboardLabel.Text = "✨ Grab! [E]"
 	crate.billboardLabel.TextColor3 = Color3.fromRGB(108, 255, 132)
+	Remotes.Get("PlayWorldVFX"):FireAllClients({
+		kind = "LassoExtract",
+		pos = crate.spawnPos,
+		rarity = crate.rarity,
+		biomeId = crate.biomeId,
+		scale = crate.sizeScale,
+	})
 end
 
 function LassoRescueSystem.GrabExtractedCrate(player: Player, crateId: string)
@@ -1089,8 +1096,10 @@ end
 
 function LassoRescueSystem.SpawnCustomCrate(biomeId: string, rarity: Types.AnimalRarity?, speciesId: string?, nearPos: Vector3?, forcedMutation: Types.AnimalMutation?): boolean
 	local biome = getBiomeDef(biomeId)
+	local lastBiome = BiomeConfig[#BiomeConfig]
+	local maxWorldZ = if lastBiome then (lastBiome.zEnd - 10) else biome.zEnd - 10
 	local pos = if nearPos
-		then Vector3.new(math.clamp(nearPos.X, -82, 82), math.max(0.2, nearPos.Y - 2), math.clamp(nearPos.Z, biome.zStart + 10, biome.zEnd - 10))
+		then Vector3.new(math.clamp(nearPos.X, -82, 82), math.max(0.2, nearPos.Y - 2), math.clamp(nearPos.Z, GameConfig.WORLD.SAFE_ZONE_Z_MAX + 12, maxWorldZ))
 		else sampleBiomeCrateGroundPos(biome)
 	local rec = spawnCrateAt(biome.id, pos, false, rarity, true, speciesId, forcedMutation)
 	return rec ~= nil

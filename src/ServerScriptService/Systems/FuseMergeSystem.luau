@@ -72,6 +72,7 @@ local function handleUnifiedMerge(player: Player, uidList: any)
 
 	-- Acquire per-player + per-UID transaction lock (blocks race-condition / duplicate UID spam)
 	if not DataService.AcquireTransactionLock(player.UserId, cleanUids) then
+		Remotes.Get("NotifyClient"):FireClient(player, "Merge busy — please try again in a moment!", Color3.fromRGB(255, 196, 62))
 		return
 	end
 
@@ -83,6 +84,7 @@ local function handleUnifiedMerge(player: Player, uidList: any)
 		local a = profile.inventoryAnimals[uid]
 		if not a or DataService.IsUidConsumed(profile, uid) then
 			DataService.ReleaseTransactionLock(player.UserId, cleanUids)
+			Remotes.Get("NotifyClient"):FireClient(player, "One of the selected pets is no longer in your Backpack!", Color3.fromRGB(255, 86, 86))
 			return
 		end
 		table.insert(animals, a)
@@ -148,6 +150,13 @@ local function handleUnifiedMerge(player: Player, uidList: any)
 		player:SetAttribute("HeldItemScale", crateScale)
 		player:SetAttribute("HeldItemMerged", true)
 		Remotes.Get("CrateDelivered"):FireClient(player, 1, crateUid, true)
+		Remotes.Get("PlayWorldVFX"):FireAllClients({
+			kind = "MergeBurst",
+			userId = player.UserId,
+			rarity = chosenSpec.rarity,
+			mutation = rolledMut,
+			scale = crateScale,
+		})
 
 		local mutText = if rolledMut ~= "None" then ("[" .. rolledMut .. "] ") else ""
 		Remotes.Get("NotifyClient"):FireClient(

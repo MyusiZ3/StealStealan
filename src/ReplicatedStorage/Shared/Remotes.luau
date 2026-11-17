@@ -68,9 +68,11 @@ local EVENT_NAMES = {
 	-- Admin Panel & Live Events
 	"AdminCommand",
 	"AdminStateSync",
+	"ActiveEventsSync",
 	"GlobalEventBanner",
 	"BiomeWaveSync",
 	"CrateSpawnAnnounce",
+	"PlayWorldVFX",
 	-- Monetization
 	"PromptGamePass",
 	"PromptProduct",
