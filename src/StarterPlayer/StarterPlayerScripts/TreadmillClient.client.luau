@@ -14,10 +14,13 @@ local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
 
 local onTreadmill = false
+local treadmillEnteredAt = 0
 local snapCFrame: CFrame? = nil
 local activeRunTrack: AnimationTrack? = nil
 local hopOffGui: ScreenGui? = nil
 local footSparkEmitter: ParticleEmitter? = nil
+local savedAutoRotate = true
+local standingHipHeight = 2.0
 
 local R15_RUN_ANIM = "rbxassetid://507767714"
 local R6_RUN_ANIM = "rbxassetid://180426354"
@@ -114,26 +117,57 @@ local function startTreadmillAnim()
 	footSparkEmitter = sparks
 end
 
-Remotes.Get("TreadmillState").OnClientEvent:Connect(function(active: boolean, targetCF: CFrame?)
+Remotes.Get("TreadmillState").OnClientEvent:Connect(function(active: boolean, targetCF: CFrame?, beltSurfaceY: number?)
 	onTreadmill = active
+	local char = localPlayer.Character
+	local hum = if char then char:FindFirstChildOfClass("Humanoid") else nil
+	local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
 	if active and targetCF then
-		snapCFrame = targetCF
-		local char = localPlayer.Character
-		local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
+		treadmillEnteredAt = os.clock()
+		local finalCF = targetCF
+		if hum and root and root:IsA("BasePart") then
+			savedAutoRotate = hum.AutoRotate
+			hum.AutoRotate = false
+			-- Use clean standing hipHeight (never inflated mount height) so feet sit flush on belt while carrying crates/items!
+			local cleanHip = if localPlayer:GetAttribute("IsRidingVehicle") ~= true and tostring(localPlayer:GetAttribute("MountedAnimalUid") or "") == ""
+				then hum.HipHeight
+				else standingHipHeight
+			standingHipHeight = cleanHip
+			hum.HipHeight = cleanHip
+			if type(beltSurfaceY) == "number" then
+				local footOffset = cleanHip + (root.Size.Y * 0.5)
+				local rotOnly = targetCF - targetCF.Position
+				finalCF = CFrame.new(targetCF.Position.X, beltSurfaceY + footOffset, targetCF.Position.Z) * rotOnly
+			end
+			-- Ensure any attached held/carried parts are completely massless & non-colliding so belt positioning never glitches
+			for _, desc in ipairs(char:GetDescendants()) do
+				if desc:IsA("BasePart") and (desc.Name == "ClientHeldItemModel" or string.find(desc.Name, "Crate") or desc:FindFirstAncestor("ClientHeldItemModel") or desc:FindFirstAncestor("ClientCarriedCrate")) then
+					desc.CanCollide = false
+					desc.CanTouch = false
+					desc.CanQuery = false
+					desc.Massless = true
+				end
+			end
+		end
+		snapCFrame = finalCF
 		if root and root:IsA("BasePart") then
 			root.AssemblyLinearVelocity = Vector3.zero
-			root.CFrame = targetCF
+			root.AssemblyAngularVelocity = Vector3.zero
+			root.CFrame = finalCF
 		end
 		startTreadmillAnim()
 	else
 		local exitCF = snapCFrame
 		snapCFrame = nil
 		stopTreadmillAnim()
-		local char = localPlayer.Character
-		local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
+		if hum then
+			hum.AutoRotate = savedAutoRotate
+		end
 		if root and root:IsA("BasePart") and exitCF then
-			-- Step safely behind/off the treadmill belt
-			root.CFrame = exitCF * CFrame.new(0, 1.5, 6.5)
+			root.AssemblyLinearVelocity = Vector3.zero
+			root.AssemblyAngularVelocity = Vector3.zero
+			-- Step safely backward off the treadmill belt
+			root.CFrame = exitCF * CFrame.new(0, 1.5, 6.2)
 		end
 	end
 end)
@@ -148,16 +182,32 @@ end)
 RunService.Heartbeat:Connect(function()
 	if not onTreadmill or not snapCFrame then return end
 	local char = localPlayer.Character
+	local hum = if char then char:FindFirstChildOfClass("Humanoid") else nil
 	local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
+	if hum then
+		hum.AutoRotate = false
+		hum:Move(Vector3.zero)
+	end
 	if root and root:IsA("BasePart") then
 		-- Keep character positioned cleanly on belt while running animation plays
 		root.CFrame = snapCFrame
 		root.AssemblyLinearVelocity = Vector3.zero
+		root.AssemblyAngularVelocity = Vector3.zero
 	end
 end)
 
-localPlayer.CharacterAdded:Connect(function()
+localPlayer.CharacterAdded:Connect(function(char)
 	onTreadmill = false
 	snapCFrame = nil
 	stopTreadmillAnim()
+	local hum = char:WaitForChild("Humanoid", 5)
+	if hum and hum:IsA("Humanoid") then
+		standingHipHeight = hum.HipHeight
+	end
 end)
+if localPlayer.Character then
+	local hum = localPlayer.Character:FindFirstChildOfClass("Humanoid")
+	if hum then
+		standingHipHeight = hum.HipHeight
+	end
+end

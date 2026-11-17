@@ -35,7 +35,7 @@ local function getVehicleDef(vehicleId: string)
 	return VehicleConfig[1]
 end
 
-local function computeTotalSpeedMultiplier(player: Player, profile: any): number
+local function computeBaseAndTotalMultiplier(player: Player, profile: any): (number, number, number)
 	local trailMult = getTrailSpeedMult(profile.equippedTrail)
 	local passMult = if PassManager.OwnsPass(player, "DoubleSpeed") then 2.0 else 1.0
 	local vipMult = if PassManager.OwnsPass(player, "VIP") then 1.5 else 1.0
@@ -43,14 +43,27 @@ local function computeTotalSpeedMultiplier(player: Player, profile: any): number
 	if profile.zoneIndexBonusesClaimed.PineWoods then indexMult += 0.15 end
 	if profile.zoneIndexBonusesClaimed.AlpinePeaks then indexMult += 0.50 end
 	if profile.zoneIndexBonusesClaimed.VolcanicJungle then indexMult += 1.00 end
-	return trailMult * passMult * vipMult * indexMult * AdminService.GetSpeedMultiplier()
+	local baseMult = trailMult * passMult * vipMult * indexMult * AdminService.GetSpeedMultiplier()
+	local vehicleDef = getVehicleDef(profile.equippedVehicle)
+	local totalMult = baseMult
+	if player:GetAttribute("IsRidingVehicle") == true then
+		totalMult += vehicleDef.speedMultiplier
+	end
+	return baseMult, totalMult, vehicleDef.speedMultiplier
+end
+
+function TrainingSystem.ComputeSpeedMetrics(player: Player, profile: any): (number, number, number, number)
+	local baseMult, totalMult, vehMult = computeBaseAndTotalMultiplier(player, profile)
+	local riding = player:GetAttribute("IsRidingVehicle") == true
+	local displayedSpeed = profile.speedStat * (if riding then vehMult else 1)
+	return displayedSpeed, baseMult, totalMult, vehMult
 end
 
 local function computeSpeedGainPerPulse(player: Player): (number, number)
 	local profile = DataService.GetProfile(player)
 	if not profile then return 0, 1.0 end
 	local base = GameConfig.TREADMILL.BASE_SPEED_PER_PULSE * math.pow(GameConfig.TREADMILL.GROWTH_PER_LEVEL, profile.treadmillLevel - 1)
-	local totalMult = computeTotalSpeedMultiplier(player, profile)
+	local _, totalMult = computeBaseAndTotalMultiplier(player, profile)
 	return base * totalMult, totalMult
 end
 
@@ -69,11 +82,12 @@ function TrainingSystem.ComputeEffectiveWalkSpeed(player: Player, zPos: number):
 	if not profile then
 		return GameConfig.SPEED.BASE_WALK_SPEED
 	end
-	local statBonus = if profile.speedStat > 0
-		then math.log10(1 + profile.speedStat) * GameConfig.SPEED.STAT_TO_WALKSPEED_LOG_SCALE
-		else 0
 	local vehicleDef = getVehicleDef(profile.equippedVehicle)
 	local ridingVehicle = player:GetAttribute("IsRidingVehicle") == true
+	local effectiveSpeedStat = profile.speedStat * (if ridingVehicle then vehicleDef.speedMultiplier else 1)
+	local statBonus = if effectiveSpeedStat > 0
+		then math.log10(1 + effectiveSpeedStat) * GameConfig.SPEED.STAT_TO_WALKSPEED_LOG_SCALE
+		else 0
 	local vehicleBonus = if ridingVehicle then vehicleDef.baseSpeedBonus else 0
 	local mountBonus = tonumber(player:GetAttribute("MountedAnimalSpeedBonus")) or 0
 	local total = math.min(GameConfig.SPEED.MAX_EFFECTIVE_WALKSPEED, GameConfig.SPEED.BASE_WALK_SPEED + statBonus + vehicleBonus + mountBonus)
@@ -98,12 +112,16 @@ function TrainingSystem.ComputeEffectiveWalkSpeed(player: Player, zPos: number):
 end
 
 function TrainingSystem.Init()
+	DataService.RegisterSpeedMetricsGetter(TrainingSystem.ComputeSpeedMetrics)
+
 	Remotes.Get("SetMovementState").OnServerEvent:Connect(function(player, stateKey, stateVal)
 		if typeof(stateKey) ~= "string" or typeof(stateVal) ~= "boolean" then
 			return
 		end
 		if stateKey == "SlowMode" or stateKey == "IsRidingVehicle" then
 			player:SetAttribute(stateKey, stateVal)
+			PlotService.RefreshPlotBoardVisuals(player)
+			DataService.SyncProfile(player)
 		end
 	end)
 
@@ -153,19 +171,32 @@ function TrainingSystem.Init()
 
 				if treadPad and treadPad:IsA("BasePart") then
 					local localOffset = treadPad.CFrame:PointToObjectSpace(root.Position)
-					local inZone = math.abs(localOffset.X) <= (treadPad.Size.X * 0.5 + 1.5)
-						and math.abs(localOffset.Z) <= (treadPad.Size.Z * 0.5 + 1.5)
+					local inZone = math.abs(localOffset.X) <= (treadPad.Size.X * 0.5 + 1.0)
+						and math.abs(localOffset.Z) <= (treadPad.Size.Z * 0.5 + 1.0)
 						and math.abs(localOffset.Y) <= 9
 
 					local isOn = player:GetAttribute("OnTreadmill") == true
 					if not isOn and inZone and now >= (treadmillCooldownUntil[player.UserId] or 0) then
 						local stunnedUntil = tonumber(player:GetAttribute("StunnedUntil")) or 0
 						if now >= stunnedUntil then
+							-- Dismount active vehicle or animal mount cleanly before snapping onto treadmill belt
+							if player:GetAttribute("IsRidingVehicle") == true then
+								player:SetAttribute("IsRidingVehicle", false)
+								Remotes.Get("SpawnVehicle"):FireClient(player, false)
+							end
+							if tostring(player:GetAttribute("MountedAnimalUid") or "") ~= "" then
+								player:SetAttribute("MountedAnimalUid", "")
+								player:SetAttribute("MountedAnimalId", "")
+								player:SetAttribute("MountedAnimalMutation", "None")
+								player:SetAttribute("MountedAnimalSize", 1)
+								player:SetAttribute("MountedAnimalSpeedBonus", 0)
+							end
 							player:SetAttribute("OnTreadmill", true)
 							local snapCF = if treadAnchor and treadAnchor:IsA("BasePart")
 								then treadAnchor.CFrame
-								else (treadPad.CFrame * CFrame.new(0, 3.2, 0))
-							Remotes.Get("TreadmillState"):FireClient(player, true, snapCF)
+								else (treadPad.CFrame * CFrame.new(0, 3.0, 0))
+							local beltY = if treadAnchor then treadAnchor:GetAttribute("BeltSurfaceY") else nil
+							Remotes.Get("TreadmillState"):FireClient(player, true, snapCF, beltY)
 							isOn = true
 						end
 					elseif isOn and not inZone then
@@ -181,15 +212,6 @@ function TrainingSystem.Init()
 							local gain = math.max(1, math.floor(rawGain))
 							profile.speedStat += gain
 							Remotes.Get("TrainingPulse"):FireClient(player, gain, totalMult, true)
-							DataService.SyncProfile(player)
-						end
-					elseif doTrainingTick and hum.MoveDirection.Magnitude > 0.1 and hum.WalkSpeed > 0 then
-						local profile = DataService.GetProfile(player)
-						if profile then
-							local rawGain, totalMult = computeSpeedGainPerPulse(player)
-							local stepGain = math.max(1, math.floor(rawGain * 0.45))
-							profile.speedStat += stepGain
-							Remotes.Get("TrainingPulse"):FireClient(player, stepGain, totalMult, false)
 							DataService.SyncProfile(player)
 						end
 					end

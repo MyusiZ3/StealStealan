@@ -108,10 +108,10 @@ RunService.Heartbeat:Connect(function()
 
 	local towed = tonumber(localPlayer:GetAttribute("TowedCrateCount")) or 0
 	if towed > 0 and myPlot then
-		local pad = myPlot:FindFirstChild("CrateUnboxPad")
+		local pad = myPlot:FindFirstChild("OpenPaddockFloor")
 		if pad and pad:IsA("BasePart") then
-			targetAttachPart.Position = pad.Position + Vector3.new(0, 2, 0)
-			hintLbl.Text = "Return Crate Here!"
+			targetAttachPart.Position = pad.Position + Vector3.new(0, 2.5, 0)
+			hintLbl.Text = "Drop Crate Inside Pen!"
 			hintGui.Enabled = true
 			return
 		end

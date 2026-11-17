@@ -28,6 +28,10 @@ function FormatUtil.Number(value: number): string
 	local tier = math.floor(math.log10(absVal) / 3)
 	tier = math.clamp(tier, 1, #SUFFIXES - 1)
 	local scaled = absVal / (10 ^ (tier * 3))
+	if scaled >= 999.95 and tier < #SUFFIXES - 1 then
+		tier += 1
+		scaled = absVal / (10 ^ (tier * 3))
+	end
 	local str: string
 	if scaled >= 100 then
 		str = string.format("%.0f%s", scaled, SUFFIXES[tier + 1])
@@ -37,6 +41,23 @@ function FormatUtil.Number(value: number): string
 		str = string.format("%.2f%s", scaled, SUFFIXES[tier + 1])
 	end
 	return if neg then "-" .. str else str
+end
+
+function FormatUtil.Multiplier(value: number): string
+	if value ~= value then
+		return "1"
+	end
+	local absVal = math.abs(value)
+	if absVal >= 1000 then
+		return FormatUtil.Number(value)
+	end
+	local roundedInt = math.floor(value + 0.5)
+	if math.abs(value - roundedInt) < 0.005 then
+		return tostring(roundedInt)
+	end
+	local twoDec = string.format("%.2f", value)
+	twoDec = string.gsub(twoDec, "%.?0+$", "")
+	return twoDec
 end
 
 function FormatUtil.ParseCompactNumber(raw: string): number?
