@@ -190,42 +190,13 @@ function EconomyService.Init()
 		Remotes.Get("NotifyClient"):FireClient(player, "Sold animal for $" .. FormatUtil.Number(sellValue), Color3.fromRGB(84, 245, 148))
 	end)
 
-	Remotes.Get("ClaimIndexReward").OnServerEvent:Connect(function(player, speciesId)
-		if typeof(speciesId) ~= "string" then return end
-		local profile = DataService.GetProfile(player)
-		local spec = AnimalConfig.GetById(speciesId)
-		if not profile or not spec then return end
-		local entry = profile.discoveredIndex[speciesId]
-		if not entry or entry.rewardClaimed then return end
-		entry.rewardClaimed = true
-		local rewardCoins = math.floor(spec.baseIncomePerSec * 120)
-		profile.coins += rewardCoins
-		DataService.SyncProfile(player)
-		Remotes.Get("NotifyClient"):FireClient(player, string.format("Index Claimed (#%02d %s): +$%s!", spec.indexNumber, spec.name, FormatUtil.Number(rewardCoins)), Color3.fromRGB(255, 214, 72))
-	end)
-
-	Remotes.Get("ClaimAllIndexRewards").OnServerEvent:Connect(function(player)
-		local profile = DataService.GetProfile(player)
-		if not profile then return end
-		local totalCoins = 0
-		local claimed = 0
-		for speciesId, entry in pairs(profile.discoveredIndex) do
-			if not entry.rewardClaimed then
-				local spec = AnimalConfig.GetById(speciesId)
-				if spec then
-					entry.rewardClaimed = true
-					totalCoins += math.floor(spec.baseIncomePerSec * 120)
-					claimed += 1
-				end
-			end
-		end
-		-- Check zone 100% completions
+	local function checkZoneIndexCompletions(player: Player, profile: Types.PlayerProfileSchema)
 		for _, biomeId in ipairs({ "PineWoods", "MangroveSwamp", "SavannaCamp", "AlpinePeaks", "VolcanicJungle" }) do
 			if not profile.zoneIndexBonusesClaimed[biomeId] then
 				local pool = AnimalConfig.GetByBiome(biomeId)
 				local allFound = #pool > 0
-				for _, spec in ipairs(pool) do
-					if not profile.discoveredIndex[spec.id] then
+				for _, s in ipairs(pool) do
+					if not profile.discoveredIndex[s.id] then
 						allFound = false
 						break
 					end
@@ -239,10 +210,56 @@ function EconomyService.Init()
 				end
 			end
 		end
+	end
+
+	Remotes.Get("ClaimIndexReward").OnServerEvent:Connect(function(player, speciesId)
+		if typeof(speciesId) ~= "string" then return end
+		local profile = DataService.GetProfile(player)
+		local spec = AnimalConfig.GetById(speciesId)
+		if not profile or not spec then return end
+		local entry = profile.discoveredIndex[speciesId]
+		if not entry or entry.rewardClaimed then return end
+		entry.rewardClaimed = true
+		local rewardCoins, rewardSpeed = AnimalConfig.ComputeIndexRewards(spec)
+		profile.coins += rewardCoins
+		profile.speedStat += rewardSpeed
+		checkZoneIndexCompletions(player, profile)
+		DataService.SyncProfile(player)
+		Remotes.Get("NotifyClient"):FireClient(
+			player,
+			string.format("Index Claimed (#%02d %s): +$%s & +%s Speed!", spec.indexNumber, spec.name, FormatUtil.Number(rewardCoins), FormatUtil.Number(rewardSpeed)),
+			Color3.fromRGB(255, 214, 72)
+		)
+	end)
+
+	Remotes.Get("ClaimAllIndexRewards").OnServerEvent:Connect(function(player)
+		local profile = DataService.GetProfile(player)
+		if not profile then return end
+		local totalCoins = 0
+		local totalSpeed = 0
+		local claimed = 0
+		for speciesId, entry in pairs(profile.discoveredIndex) do
+			if not entry.rewardClaimed then
+				local spec = AnimalConfig.GetById(speciesId)
+				if spec then
+					entry.rewardClaimed = true
+					local rc, rs = AnimalConfig.ComputeIndexRewards(spec)
+					totalCoins += rc
+					totalSpeed += rs
+					claimed += 1
+				end
+			end
+		end
+		checkZoneIndexCompletions(player, profile)
 		if claimed > 0 then
 			profile.coins += totalCoins
+			profile.speedStat += totalSpeed
 			DataService.SyncProfile(player)
-			Remotes.Get("NotifyClient"):FireClient(player, string.format("Claimed %d Index Rewards (+$%s)!", claimed, FormatUtil.Number(totalCoins)), Color3.fromRGB(255, 214, 72))
+			Remotes.Get("NotifyClient"):FireClient(
+				player,
+				string.format("Claimed %d Index Rewards (+$%s & +%s Speed)!", claimed, FormatUtil.Number(totalCoins), FormatUtil.Number(totalSpeed)),
+				Color3.fromRGB(255, 214, 72)
+			)
 		end
 	end)
 

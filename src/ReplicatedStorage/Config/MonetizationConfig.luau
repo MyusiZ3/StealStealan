@@ -66,6 +66,7 @@ local MonetizationConfig = {
 		CoinsSmall = { id = 0, name = "Pocket of Coins", priceRobux = 49, baseCoins = 50000 },
 		CoinsMedium = { id = 0, name = "Ranger Crate of Coins", priceRobux = 149, baseCoins = 500000 },
 		CoinsLarge = { id = 0, name = "Sanctuary Vault of Coins", priceRobux = 399, baseCoins = 5000000 },
+		SkipRebirth = { id = 0, name = "Skip Rebirth (Keep Stats!)", priceRobux = 19, description = "Instantly Rebirth and keep your Cash & Stats!" },
 	},
 
 	-- Plug in your published Developer Product / GamePass IDs for direct Robux Trail purchases!

@@ -44,16 +44,29 @@ end
 
 local DATASTORE_NAME = "PlayerData_v2"
 local BANSTORE_NAME = "BanStore_v1"
+local ADMIN_ROLESTORE_NAME = "AdminRoles_v1"
 
 local playerStore: DataStore? = nil
 local banStore: DataStore? = nil
+local adminRoleStore: DataStore? = nil
 pcall(function()
 	playerStore = DataStoreService:GetDataStore(DATASTORE_NAME)
 	banStore = DataStoreService:GetDataStore(BANSTORE_NAME)
+	adminRoleStore = DataStoreService:GetDataStore(ADMIN_ROLESTORE_NAME)
 end)
+
+export type AdminRoleGrant = {
+	userId: number,
+	username: string,
+	title: "Owner" | "Admin",
+	rank: number,
+	grantedBy: string,
+	updatedAt: number,
+}
 
 local profiles: { [number]: Types.PlayerProfileSchema } = {}
 local memoryBans: { [number]: { expiresAt: number, reason: string, byAdmin: string } } = {}
+local memoryAdminRoles: { [number]: AdminRoleGrant } = {}
 local savingPlayers: { [number]: boolean } = {}
 
 -- ============================================================================
@@ -295,6 +308,10 @@ function DataService.CreateDefaultProfile(): Types.PlayerProfileSchema
 			lastClaimTime = 0,
 			streak = 0,
 		},
+		afkRewards = {
+			elapsedSeconds = 0,
+			claimedTiers = {},
+		},
 		settings = deepCopy(GameConfig.DEFAULT_SETTINGS),
 		analyticsMeta = {
 			firstJoinTime = os.time(),
@@ -340,6 +357,14 @@ local function migrateProfile(raw: any): Types.PlayerProfileSchema
 	end
 	if type(raw.crateInventory) ~= "table" then
 		raw.crateInventory = {}
+	end
+	if type(raw.afkRewards) ~= "table" then
+		raw.afkRewards = { elapsedSeconds = 0, claimedTiers = {} }
+	else
+		raw.afkRewards.elapsedSeconds = math.max(0, tonumber(raw.afkRewards.elapsedSeconds) or 0)
+		if type(raw.afkRewards.claimedTiers) ~= "table" then
+			raw.afkRewards.claimedTiers = {}
+		end
 	end
 	if type(raw.pendingCrates) == "table" then
 		local usedSlots: { [number]: boolean } = {}
@@ -426,6 +451,81 @@ function DataService.UnbanUser(userId: number)
 	end
 end
 
+function DataService.GetAdminRoleGrant(userId: number, username: string): AdminRoleGrant?
+	local cached = memoryAdminRoles[userId]
+	if cached then
+		if cached.userId == userId and string.lower(cached.username) == string.lower(username) then
+			return cached
+		end
+		return nil
+	end
+	if adminRoleStore then
+		local ok, data = pcall(function()
+			return (adminRoleStore :: DataStore):GetAsync("role_" .. tostring(userId))
+		end)
+		if ok and type(data) == "table" then
+			local recUid = tonumber(data.userId)
+			local recName = tostring(data.username or "")
+			local recTitle = tostring(data.title or "")
+			local recRank = tonumber(data.rank) or 0
+			if recUid == userId and recName ~= "" and string.lower(recName) == string.lower(username) and (recTitle == "Owner" or recTitle == "Admin") and recRank >= 2 then
+				local grant: AdminRoleGrant = {
+					userId = recUid,
+					username = recName,
+					title = recTitle :: any,
+					rank = recRank,
+					grantedBy = tostring(data.grantedBy or "Owner"),
+					updatedAt = tonumber(data.updatedAt) or os.time(),
+				}
+				memoryAdminRoles[userId] = grant
+				return grant
+			end
+		elseif not ok and string.find(tostring(data), "StudioAccessToApisNotAllowed", 1, true) then
+			adminRoleStore = nil
+		end
+	end
+	return nil
+end
+
+function DataService.SetAdminRoleGrant(userId: number, username: string, title: "Owner" | "Admin", rank: number, grantedBy: string)
+	local grant: AdminRoleGrant = {
+		userId = userId,
+		username = username,
+		title = title,
+		rank = rank,
+		grantedBy = grantedBy,
+		updatedAt = os.time(),
+	}
+	memoryAdminRoles[userId] = grant
+	if adminRoleStore then
+		pcall(function()
+			(adminRoleStore :: DataStore):SetAsync("role_" .. tostring(userId), grant)
+		end)
+	end
+end
+
+function DataService.RemoveAdminRoleGrant(userId: number)
+	memoryAdminRoles[userId] = nil
+	if adminRoleStore then
+		pcall(function()
+			(adminRoleStore :: DataStore):RemoveAsync("role_" .. tostring(userId))
+		end)
+	end
+end
+
+function DataService.ResetProfileData(player: Player): Types.PlayerProfileSchema?
+	local uid = player.UserId
+	local old = profiles[uid]
+	local oldVer = if old then (tonumber(old.saveVersion) or 1) else 1
+	DataService.UnregisterPlayerUids(uid)
+	local fresh = DataService.CreateDefaultProfile()
+	fresh.saveVersion = oldVer + 1
+	profiles[uid] = fresh
+	DataService.SaveProfile(player, false)
+	DataService.SyncProfile(player)
+	return fresh
+end
+
 function DataService.LoadProfile(player: Player): Types.PlayerProfileSchema
 	local userId = player.UserId
 	local key = "player_" .. tostring(userId)
@@ -478,7 +578,14 @@ end
 function DataService.SaveProfile(player: Player, releaseSessionLock: boolean?): boolean
 	local uid = player.UserId
 	if savingPlayers[uid] then
-		return true
+		local waited = 0
+		while savingPlayers[uid] and waited < 2.5 do
+			task.wait(0.1)
+			waited += 0.1
+		end
+		if savingPlayers[uid] then
+			return false
+		end
 	end
 	local profile = profiles[uid]
 	if not profile then
