@@ -1,13 +1,44 @@
 --!strict
--- AdminConfig.luau
--- Server-verified Admin RBAC ranks and "Admin Abuse" live event presets
+-- AdminConfig.luau (SERVER-ONLY)
+-- Server-verified Admin RBAC accounts (dual UserId + Username check), Titles, & Live Events.
+-- Placed in ServerScriptService so clients can NEVER inspect or tamper with allowlists.
+
+export type StaticAdminEntry = {
+	userId: number,
+	username: string,
+	rank: number,
+	title: "Owner" | "Admin",
+}
 
 local AdminConfig = {
-	-- Rank 3 = Owner / SuperAdmin, Rank 2 = Admin / Event Host, Rank 1 = Moderator
-	-- Note: game.CreatorId and Studio local playtesters (UserId <= 0) automatically get Rank 3.
-	ROLE_USER_IDS = {
-		[5208525988] = 3, -- Owner account detected in Studio context
-	} :: { [number]: number },
+	-- Rank 3 = Owner (Superadmin), Rank 2 = Admin
+	-- Every account entry requires BOTH UserId AND exact Username match (case-insensitive) in live servers!
+	ROOT_OWNERS = {
+		{ userId = 5208525988, username = "Archenciel32", rank = 3, title = "Owner" },
+	} :: { StaticAdminEntry },
+
+	STATIC_ADMINS = {
+		-- Add static Admins as: { userId = 123456789, username = "SomeUsername", rank = 2, title = "Admin" },
+	} :: { StaticAdminEntry },
+
+	TITLES = {
+		Owner = {
+			id = "Owner",
+			rank = 3,
+			badgeText = "👑 OWNER",
+			chatPrefix = "[OWNER]",
+			color = Color3.fromRGB(255, 198, 56),
+			strokeColor = Color3.fromRGB(92, 18, 22),
+		},
+		Admin = {
+			id = "Admin",
+			rank = 2,
+			badgeText = "🛡️ ADMIN",
+			chatPrefix = "[ADMIN]",
+			color = Color3.fromRGB(255, 78, 128),
+			strokeColor = Color3.fromRGB(28, 12, 36),
+		},
+	},
 
 	ADMIN_ABUSE_EVENTS = {
 		CrateRain = {
