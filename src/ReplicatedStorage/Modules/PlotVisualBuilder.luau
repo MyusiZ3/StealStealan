@@ -7,15 +7,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local PlotVisualBuilder = {}
 
-local PLOT_SURFACE_Y = 1.20
 local BELT_LOCAL_REL_Y = 1.24
 
-local function makePart(props: {
+function PlotVisualBuilder.MakePart(props: {
 	name: string,
 	size: Vector3,
 	cframe: CFrame,
 	color: Color3,
 	material: Enum.Material?,
+	materialVariant: string?,
 	studded: boolean?,
 	canCollide: boolean?,
 	canQuery: boolean?,
@@ -29,6 +29,9 @@ local function makePart(props: {
 	p.CFrame = props.cframe
 	p.Color = props.color
 	p.Material = props.material or Enum.Material.SmoothPlastic
+	if props.materialVariant and props.materialVariant ~= "" then
+		p.MaterialVariant = props.materialVariant
+	end
 	if props.shape then
 		p.Shape = props.shape
 	end
@@ -40,6 +43,205 @@ local function makePart(props: {
 	p.Transparency = props.transparency or 0
 	p.Parent = props.parent
 	return p
+end
+
+local makePart = PlotVisualBuilder.MakePart
+
+function PlotVisualBuilder.AddSurfaceSign(part: BasePart, face: Enum.NormalId, titleText: string, subText: string?, bgColor: Color3?, accentColor: Color3?)
+	local gui = Instance.new("SurfaceGui")
+	gui.Name = "SignGui"
+	gui.Face = face
+	gui.Active = false
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 42
+	gui.LightInfluence = 0.25
+	gui.Parent = part
+
+	local baseCol = bgColor or Color3.fromRGB(24, 30, 42)
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.fromScale(1, 1)
+	frame.BackgroundColor3 = baseCol
+	frame.BorderSizePixel = 0
+	frame.Parent = gui
+
+	local grad = Instance.new("UIGradient")
+	grad.Rotation = 90
+	grad.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, baseCol:Lerp(Color3.new(1, 1, 1), 0.14)),
+		ColorSequenceKeypoint.new(1, baseCol:Lerp(Color3.new(0, 0, 0), 0.35)),
+	})
+	grad.Parent = frame
+
+	if accentColor then
+		local inner = Instance.new("Frame")
+		inner.Name = "InsetFrame"
+		inner.Size = UDim2.new(1, -18, 1, -18)
+		inner.Position = UDim2.fromOffset(9, 9)
+		inner.BackgroundColor3 = baseCol:Lerp(Color3.new(0, 0, 0), 0.22)
+		inner.BackgroundTransparency = 0.35
+		inner.BorderSizePixel = 0
+		inner.ZIndex = 1
+		inner.Parent = frame
+		local ic = Instance.new("UICorner")
+		ic.CornerRadius = UDim.new(0, 14)
+		ic.Parent = inner
+		local ist = Instance.new("UIStroke")
+		ist.Thickness = 4
+		ist.Color = accentColor
+		ist.Parent = inner
+	end
+
+	local title = Instance.new("TextLabel")
+	title.Name = "Title"
+	title.Size = if subText then UDim2.fromScale(0.88, 0.50) else UDim2.fromScale(0.88, 0.80)
+	title.Position = UDim2.fromScale(0.06, 0.12)
+	title.BackgroundTransparency = 1
+	title.Text = titleText
+	title.TextColor3 = Color3.fromRGB(255, 255, 255)
+	title.Font = Enum.Font.FredokaOne
+	title.TextScaled = true
+	title.ZIndex = 2
+	title.Parent = frame
+	local tStroke = Instance.new("UIStroke")
+	tStroke.Thickness = 3
+	tStroke.Color = Color3.fromRGB(10, 12, 16)
+	tStroke.Parent = title
+
+	if subText then
+		local sub = Instance.new("TextLabel")
+		sub.Name = "Subtitle"
+		sub.Size = UDim2.fromScale(0.88, 0.28)
+		sub.Position = UDim2.fromScale(0.06, 0.63)
+		sub.BackgroundTransparency = 1
+		sub.Text = subText
+		sub.TextColor3 = Color3.fromRGB(255, 224, 96)
+		sub.Font = Enum.Font.FredokaOne
+		sub.TextScaled = true
+		sub.ZIndex = 2
+		sub.Parent = frame
+		local sStroke = Instance.new("UIStroke")
+		sStroke.Thickness = 2.2
+		sStroke.Color = Color3.fromRGB(10, 12, 16)
+		sStroke.Parent = sub
+	end
+end
+
+function PlotVisualBuilder.MakeEnhancedPad(opts: {
+	name: string,
+	size: Vector3,
+	cframe: CFrame,
+	accentColor: Color3,
+	bgColor: Color3,
+	titleText: string,
+	subText: string,
+	canCollide: boolean?,
+	withHalo: boolean?,
+	parent: Instance,
+}): Part
+	local col = if opts.canCollide ~= nil then opts.canCollide else true
+
+	-- 1. Dark Metallic Base Plinth
+	makePart({
+		name = opts.name .. "_Plinth",
+		size = Vector3.new(opts.size.X + 1.8, opts.size.Y + 0.12, opts.size.Z + 1.8),
+		cframe = opts.cframe * CFrame.new(0, -0.14, 0),
+		color = Color3.fromRGB(24, 28, 38),
+		material = Enum.Material.Metal,
+		canCollide = col,
+		canQuery = false,
+		parent = opts.parent,
+	})
+
+	-- 2. Glowing Neon Perimeter Rim
+	makePart({
+		name = opts.name .. "_NeonRim",
+		size = Vector3.new(opts.size.X + 0.95, opts.size.Y - 0.08, opts.size.Z + 0.95),
+		cframe = opts.cframe * CFrame.new(0, -0.06, 0),
+		color = opts.accentColor,
+		material = Enum.Material.Neon,
+		canCollide = false,
+		canQuery = false,
+		parent = opts.parent,
+	})
+
+	-- 3. Corner Accent Pillars with Neon Caps
+	local hx = opts.size.X * 0.5 + 0.45
+	local hz = opts.size.Z * 0.5 + 0.45
+	for i, corner in ipairs({
+		Vector3.new(-hx, 0, -hz),
+		Vector3.new(hx, 0, -hz),
+		Vector3.new(-hx, 0, hz),
+		Vector3.new(hx, 0, hz),
+	}) do
+		makePart({
+			name = opts.name .. "_Corner_" .. i,
+			size = Vector3.new(1.15, opts.size.Y + 0.36, 1.15),
+			cframe = opts.cframe * CFrame.new(corner + Vector3.new(0, 0.04, 0)),
+			color = Color3.fromRGB(32, 36, 48),
+			material = Enum.Material.Metal,
+			canCollide = false,
+			canQuery = false,
+			parent = opts.parent,
+		})
+		makePart({
+			name = opts.name .. "_CornerGlow_" .. i,
+			size = Vector3.new(0.85, 0.16, 0.85),
+			cframe = opts.cframe * CFrame.new(corner + Vector3.new(0, opts.size.Y * 0.5 + 0.24, 0)),
+			color = opts.accentColor,
+			material = Enum.Material.Neon,
+			canCollide = false,
+			canQuery = false,
+			parent = opts.parent,
+		})
+	end
+
+	-- 4. Interactive Top Deck
+	local deck = makePart({
+		name = opts.name,
+		size = opts.size,
+		cframe = opts.cframe,
+		color = opts.bgColor,
+		material = Enum.Material.SmoothPlastic,
+		canCollide = col,
+		parent = opts.parent,
+	})
+	PlotVisualBuilder.AddSurfaceSign(deck, Enum.NormalId.Top, opts.titleText, opts.subText, opts.bgColor, opts.accentColor)
+
+	if opts.withHalo then
+		local halo = makePart({
+			name = opts.name .. "_Halo",
+			size = Vector3.new(opts.size.X + 2.8, 0.08, opts.size.Z + 2.8),
+			cframe = opts.cframe * CFrame.new(0, -opts.size.Y * 0.5 + 0.05, 0),
+			color = opts.accentColor,
+			material = Enum.Material.Neon,
+			canCollide = false,
+			canQuery = false,
+			transparency = 0.65,
+			parent = opts.parent,
+		})
+		halo.CastShadow = false
+		local pl = Instance.new("PointLight")
+		pl.Name = "PadGlow"
+		pl.Color = opts.accentColor
+		pl.Range = 14
+		pl.Brightness = 0.75
+		pl.Shadows = false
+		pl.Parent = deck
+	end
+
+	return deck
+end
+
+function PlotVisualBuilder.AddPrompt(parent: Instance, actionText: string, objectText: string, tag: string): ProximityPrompt
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = tag
+	prompt.ActionText = actionText
+	prompt.ObjectText = objectText
+	prompt.HoldDuration = 0
+	prompt.MaxActivationDistance = 13
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = parent
+	return prompt
 end
 
 function PlotVisualBuilder.GetPenTier(penLevel: number): number
@@ -606,6 +808,33 @@ function PlotVisualBuilder.BuildTreadmillTier(plotModel: Model, plotCF: CFrame, 
 			+ (rotOnly * Vector3.new(0, 0, 3.0))
 		standAnchor.CFrame = CFrame.lookAt(standWorldPos, lookTargetPos)
 		standAnchor:SetAttribute("BeltSurfaceY", beltSurfaceY)
+
+		local oldBadge = standAnchor:FindFirstChild("TreadmillStepBadge")
+		if oldBadge then
+			oldBadge:Destroy()
+		end
+		local stepBb = Instance.new("BillboardGui")
+		stepBb.Name = "TreadmillStepBadge"
+		stepBb.Size = UDim2.fromOffset(168, 36)
+		stepBb.StudsOffsetWorldSpace = Vector3.new(0, 3.6, 0)
+		stepBb.AlwaysOnTop = false
+		stepBb.MaxDistance = 85
+		stepBb.Enabled = false
+		stepBb.Parent = standAnchor
+
+		local stepLbl = Instance.new("TextLabel")
+		stepLbl.Name = "ValueLabel"
+		stepLbl.Size = UDim2.fromScale(1, 1)
+		stepLbl.BackgroundTransparency = 1
+		stepLbl.Text = "👟 +1/Step"
+		stepLbl.TextColor3 = Color3.fromRGB(96, 224, 255)
+		stepLbl.Font = Enum.Font.FredokaOne
+		stepLbl.TextScaled = true
+		stepLbl.Parent = stepBb
+		local stepSt = Instance.new("UIStroke")
+		stepSt.Thickness = 2.6
+		stepSt.Color = Color3.fromRGB(10, 14, 20)
+		stepSt.Parent = stepLbl
 	end
 
 	plotModel:SetAttribute("AppliedTreadTier", tier)
