@@ -13,6 +13,7 @@ local TrailConfig = require(game.ReplicatedStorage.Config.TrailConfig)
 local VehicleConfig = require(game.ReplicatedStorage.Config.VehicleConfig)
 local FormatUtil = require(game.ReplicatedStorage.Modules.FormatUtil)
 local PlotVisualBuilder = require(game.ReplicatedStorage.Modules.PlotVisualBuilder)
+local PlotPrefabSystem = require(game.ReplicatedStorage.Modules.PlotPrefabSystem)
 local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
 
 local DataService = require(script.Parent.DataService)
@@ -174,6 +175,7 @@ function PlotService.RefreshPlotBoardVisuals(player: Player)
 		return
 	end
 	local incomePerSec = PlotService.ComputePlayerIncomePerSec(player, profile)
+	player:SetAttribute("IncomePerSec", incomePerSec)
 	local maxCap = PlotService.GetMaxPenCapacity(player, profile)
 
 	-- Keep Roblox Top-Right PlayerList (leaderstats: Cash/s & Speed) synced
@@ -259,6 +261,7 @@ function PlotService.BroadcastAllPlotsSync()
 		plotIndex: number,
 		ownerUserId: number,
 		ownerName: string,
+		ownerUsername: string,
 		roamingAnimals: { Types.AnimalInstance },
 		pendingCrates: { Types.CrateInstance },
 	} } = {}
@@ -285,6 +288,7 @@ function PlotService.BroadcastAllPlotsSync()
 			plotIndex = i,
 			ownerUserId = if owner then owner.UserId else 0,
 			ownerName = if owner then owner.DisplayName else "Vacant",
+			ownerUsername = if owner then owner.Name else "",
 			roamingAnimals = list,
 			pendingCrates = crates,
 		}
@@ -650,6 +654,7 @@ function PlotService.AssignPlot(player: Player)
 			playerPlots[player.UserId] = i
 			local model = PlotService.GetPlotModel(i)
 			if model then
+				model:SetAttribute("OwnerUsername", player.Name)
 				model:SetAttribute("OwnerUserId", player.UserId)
 			end
 			PlotService.RefreshPlotBoardVisuals(player)
@@ -667,6 +672,7 @@ function PlotService.ReleasePlot(player: Player)
 		playerPlots[player.UserId] = nil
 		local model = PlotService.GetPlotModel(idx)
 		if model then
+			model:SetAttribute("OwnerUsername", "")
 			model:SetAttribute("OwnerUserId", 0)
 			PlotVisualBuilder.ApplyPlotEvolution(model, 1, 1)
 			updateSignGui(model:FindFirstChild("OwnerSignBoard"), "ZOO SANCTUARY #" .. idx, "Vacant Plot")
@@ -792,6 +798,10 @@ function PlotService.UpgradePen(player: Player)
 end
 
 function PlotService.Init()
+	local gw = Workspace:FindFirstChild("GameWorld")
+	if gw and PlotPrefabSystem.GetOpenPlotPrefab() then
+		PlotPrefabSystem.SyncAllPlotsFromPrefab(gw, false)
+	end
 	bindPlotPrompts()
 
 	Remotes.Get("ClaimPenCoins").OnServerEvent:Connect(function(player)

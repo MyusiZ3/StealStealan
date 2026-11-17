@@ -55,10 +55,12 @@ function AnimalVisualBuilder.BuildAnimalModel(speciesId: string, sizeRatio: numb
 	model:SetAttribute("Mutation", mutation)
 	model:SetAttribute("SizeRatio", s)
 
-	-- Root pivot at bottom center
+	-- Root pivot anchored at exact bottom center of the 4 feet (Y = 0) so :PivotTo(groundCF) never sinks legs
 	local root = makeBox("Root", Vector3.new(2.2 * s, 1.5 * s, 2.8 * s), CFrame.new(0, 1.3 * s, 0), primaryCol, mat, model)
 	root.Transparency = transparency
+	root.PivotOffset = CFrame.new(0, -1.3 * s, 0)
 	model.PrimaryPart = root
+	model.WorldPivot = CFrame.new(0, 0, 0)
 
 	-- 4 Blocky Legs
 	local legOffsets = {
@@ -128,25 +130,42 @@ function AnimalVisualBuilder.BuildAnimalModel(speciesId: string, sizeRatio: numb
 	return model
 end
 
+local BIOME_CRATE_VARIANTS: { [string]: { string } } = {
+	PineWoods = { "Pine Crate", "Timber Chest", "Forest Relic" },
+	MangroveSwamp = { "Bamboo Cage", "Mire Chest", "Lotus Pod" },
+	SavannaCamp = { "Safari Crate", "Bone Trunk", "Sun Totem" },
+	AlpinePeaks = { "Frost Chest", "Glacier Vault", "Crystal Pod" },
+	VolcanicJungle = { "Basalt Coffer", "Magma Vault", "Obsidian Pod" },
+}
+
+function AnimalVisualBuilder.GetCrateVariantInfo(biomeId: string, _rarity: Types.AnimalRarity?, variantIndex: number?): (string, number)
+	local list = BIOME_CRATE_VARIANTS[biomeId] or BIOME_CRATE_VARIANTS.PineWoods
+	local idx = ((math.max(1, math.floor(variantIndex or 1)) - 1) % #list) + 1
+	return list[idx], idx
+end
+
 function AnimalVisualBuilder.BuildCrateModel(
 	rarity: Types.AnimalRarity,
 	biomeId: string,
 	sizeScale: number?,
-	opts: { isBuried: boolean?, canCollide: boolean?, showBeacon: boolean? }?
+	opts: { isBuried: boolean?, canCollide: boolean?, showBeacon: boolean?, variant: number? }?
 ): Model
 	local s = sizeScale or GameConfig.ComputeCrateScale(rarity)
 	local rarityColor = GameConfig.RARITY_COLORS[rarity] or Color3.fromRGB(168, 182, 172)
 	local isBuried = if opts and opts.isBuried ~= nil then opts.isBuried else true
 	local canCollide = if opts and opts.canCollide ~= nil then opts.canCollide else false
 	local showBeacon = if opts and opts.showBeacon ~= nil then opts.showBeacon else isBuried
+	local crateName, styleIdx = AnimalVisualBuilder.GetCrateVariantInfo(biomeId, rarity, opts and opts.variant)
 
 	local crateModel = Instance.new("Model")
 	crateModel.Name = string.format("Crate_%s_%s", biomeId, rarity)
 	crateModel:SetAttribute("BiomeId", biomeId)
 	crateModel:SetAttribute("Rarity", rarity)
 	crateModel:SetAttribute("SizeScale", s)
+	crateModel:SetAttribute("CrateVariant", styleIdx)
+	crateModel:SetAttribute("CrateTitle", crateName)
 
-	local tilt = if isBuried then CFrame.Angles(math.rad(14), math.rad(10), math.rad(-10)) else CFrame.new()
+	local tilt = if isBuried then CFrame.Angles(math.rad(12), math.rad(10), math.rad(-8)) else CFrame.new()
 	local baseY = (2.1 * s)
 
 	-- Biome-specific palette, silhouette, and structural theme
@@ -166,7 +185,7 @@ function AnimalVisualBuilder.BuildCrateModel(
 		accentMat = Enum.Material.Neon
 		barCol = Color3.fromRGB(142, 118, 66)
 		barMat = Enum.Material.Wood
-		boxDims = Vector3.new(4.6 * s, 3.1 * s, 3.8 * s) -- wider low bamboo cage
+		boxDims = Vector3.new(4.6 * s, 3.1 * s, 3.8 * s)
 	elseif biomeId == "SavannaCamp" then
 		frameCol = Color3.fromRGB(68, 72, 82)
 		frameMat = Enum.Material.DiamondPlate
@@ -174,7 +193,7 @@ function AnimalVisualBuilder.BuildCrateModel(
 		accentMat = Enum.Material.Metal
 		barCol = Color3.fromRGB(38, 40, 46)
 		barMat = Enum.Material.Metal
-		boxDims = Vector3.new(4.0 * s, 4.1 * s, 4.6 * s) -- tall armored safari cage
+		boxDims = Vector3.new(4.0 * s, 4.1 * s, 4.6 * s)
 	elseif biomeId == "AlpinePeaks" then
 		frameCol = Color3.fromRGB(148, 222, 255)
 		frameMat = Enum.Material.Ice
@@ -194,6 +213,13 @@ function AnimalVisualBuilder.BuildCrateModel(
 		boxDims = Vector3.new(4.4 * s, 4.0 * s, 4.4 * s)
 	end
 
+	-- Distinct silhouette proportions per variant style (1: Blocky Crate, 2: Arched Trunk Chest, 3: Relic Pod on Ring Base)
+	if styleIdx == 2 then
+		boxDims = Vector3.new(boxDims.X * 1.15, boxDims.Y * 0.85, boxDims.Z * 0.88)
+	elseif styleIdx == 3 then
+		boxDims = Vector3.new(boxDims.X * 0.88, boxDims.Y * 1.12, boxDims.Z * 0.88)
+	end
+
 	local root = makeBox("CrateRoot", boxDims, CFrame.new(0, baseY, 0) * tilt, frameCol, frameMat, crateModel)
 	root.Transparency = outerTrans
 	root.CanCollide = canCollide
@@ -202,6 +228,41 @@ function AnimalVisualBuilder.BuildCrateModel(
 
 	local rootCF = root.CFrame
 	local hx, hy, hz = boxDims.X * 0.5, boxDims.Y * 0.5, boxDims.Z * 0.5
+
+	-- Textured Nest / Swirl Pedestal Ring underneath (Image 11 style!)
+	local discSize = math.max(boxDims.X, boxDims.Z) * 1.38
+	local pedestal = makeBox(
+		"PedestalBase",
+		Vector3.new(0.42 * s, discSize, discSize),
+		CFrame.new(0, 0.22 * s, 0) * CFrame.Angles(0, 0, math.rad(90)),
+		accentCol:Lerp(rarityColor, 0.38),
+		if rarity == "Legendary" or rarity == "Mythic" then Enum.Material.Neon else Enum.Material.Cobblestone,
+		crateModel
+	)
+	pedestal.Shape = Enum.PartType.Cylinder
+	pedestal.TopSurface = Enum.SurfaceType.Studs
+
+	if styleIdx == 2 then
+		-- Archetype 2: Arched Dome Lid + Side Handles
+		local archLid = makeBox(
+			"ArchedLid",
+			Vector3.new(boxDims.X * 0.94, 0.85 * s, boxDims.Z * 0.84),
+			rootCF * CFrame.new(0, hy + 0.35 * s, 0),
+			accentCol,
+			accentMat,
+			crateModel
+		)
+		archLid.TopSurface = Enum.SurfaceType.Studs
+		for _, sx in { -1, 1 } do
+			makeBox("SideHandle", Vector3.new(0.32 * s, 0.72 * s, 1.45 * s), rootCF * CFrame.new(sx * (hx + 0.2 * s), 0.1 * s, 0), rarityColor, Enum.Material.Metal, crateModel)
+		end
+	elseif styleIdx == 3 then
+		-- Archetype 3: Octagonal Relic Pod with Glowing Outer Ribs + Dome Cap
+		local podOrb = makeBox("RelicCore", Vector3.new(boxDims.X * 0.78, boxDims.Y * 1.15, boxDims.Z * 0.78), rootCF, rarityColor, Enum.Material.Neon, crateModel)
+		podOrb.Shape = Enum.PartType.Ball
+		podOrb.Transparency = 0.25
+		makeBox("RelicCap", Vector3.new(boxDims.X * 0.92, 0.5 * s, boxDims.Z * 0.92), rootCF * CFrame.new(0, hy + 0.2 * s, 0) * CFrame.Angles(0, math.rad(45), 0), accentCol, Enum.Material.SmoothPlastic, crateModel)
+	end
 
 	-- Corner structural pillars / ribs tinted with biome material + rarity
 	for _, cx in { -1, 1 } do
@@ -216,7 +277,6 @@ function AnimalVisualBuilder.BuildCrateModel(
 			)
 			pillar.TopSurface = Enum.SurfaceType.Studs
 
-			-- Top & bottom biome accents or spikes per zone
 			if biomeId == "AlpinePeaks" then
 				makeBox(
 					"IceCrystal",
@@ -313,11 +373,12 @@ function AnimalVisualBuilder.BuildCrateModel(
 	return crateModel
 end
 
-function AnimalVisualBuilder.BuildBuriedCrate(rarity: Types.AnimalRarity, biomeId: string, sizeScale: number?): Model
+function AnimalVisualBuilder.BuildBuriedCrate(rarity: Types.AnimalRarity, biomeId: string, sizeScale: number?, variantIndex: number?): Model
 	return AnimalVisualBuilder.BuildCrateModel(rarity, biomeId, sizeScale, {
 		isBuried = true,
 		canCollide = true,
 		showBeacon = true,
+		variant = variantIndex,
 	})
 end
 
@@ -406,6 +467,37 @@ function AnimalVisualBuilder.BuildLassoModel(beamColor: Color3, scaleFactor: num
 			m
 		)
 		seg.Shape = Enum.PartType.Cylinder
+	end
+	return m
+end
+
+-- Stylized Running Silhouette + Sweeping Cape Ribbon for Trails Shop ViewportFrame (Image 6 style)
+function AnimalVisualBuilder.BuildTrailRunnerPreview(colorPrimary: Color3, colorSecondary: Color3): Model
+	local m = Instance.new("Model")
+	m.Name = "TrailRunnerPreview"
+	local leanCF = CFrame.new(0, 0.3, 0) * CFrame.Angles(math.rad(-14), math.rad(16), math.rad(-6))
+	local torso = makeBox("Torso", Vector3.new(1.5, 1.85, 0.85), leanCF, colorPrimary, Enum.Material.Neon, m)
+	m.PrimaryPart = torso
+
+	makeBox("Head", Vector3.new(1.05, 1.05, 1.05), leanCF * CFrame.new(0, 1.55, -0.08), colorPrimary:Lerp(Color3.new(1, 1, 1), 0.25), Enum.Material.Neon, m)
+	makeBox("ArmL", Vector3.new(0.55, 1.55, 0.55), leanCF * CFrame.new(-1.1, 0.15, -0.35) * CFrame.Angles(math.rad(-42), 0, math.rad(10)), colorPrimary, Enum.Material.SmoothPlastic, m)
+	makeBox("ArmR", Vector3.new(0.55, 1.55, 0.55), leanCF * CFrame.new(1.1, -0.1, 0.38) * CFrame.Angles(math.rad(48), 0, math.rad(-10)), colorSecondary, Enum.Material.Neon, m)
+	makeBox("LegL", Vector3.new(0.62, 1.65, 0.62), leanCF * CFrame.new(-0.42, -1.65, -0.45) * CFrame.Angles(math.rad(-35), 0, 0), colorSecondary, Enum.Material.SmoothPlastic, m)
+	makeBox("LegR", Vector3.new(0.62, 1.65, 0.62), leanCF * CFrame.new(0.42, -1.55, 0.52) * CFrame.Angles(math.rad(42), 0, 0), colorPrimary, Enum.Material.Neon, m)
+
+	-- Sweeping Cape Trail Ribbon fanning backwards behind shoulders
+	for idx = 1, 4 do
+		local t = idx / 4
+		local col = colorPrimary:Lerp(colorSecondary, t)
+		local seg = makeBox(
+			"CapeTrail_" .. idx,
+			Vector3.new(1.6 + idx * 0.22, 0.16, 1.15),
+			leanCF * CFrame.new(0, 0.35 - idx * 0.32, 0.8 + idx * 0.72) * CFrame.Angles(math.rad(16 - idx * 5), 0, math.rad(idx * 4)),
+			col,
+			Enum.Material.Neon,
+			m
+		)
+		seg.Transparency = 0.08 * idx
 	end
 	return m
 end

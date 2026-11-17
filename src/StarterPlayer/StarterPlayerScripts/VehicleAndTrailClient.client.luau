@@ -33,6 +33,7 @@ local activeTrailLight: PointLight? = nil
 local activeVehicleModel: Model? = nil
 local vehicleBotRel = -2.5
 local activeMountModel: Model? = nil
+local mountBotRel = 0
 local activeHeldModel: Model? = nil
 local activeSitTrack: AnimationTrack? = nil
 local activeHoldTrack: AnimationTrack? = nil
@@ -452,14 +453,15 @@ local function rebuildMountVisual()
 	local speciesId = tostring(localPlayer:GetAttribute("MountedAnimalId") or "Capybara")
 	local mutation = tostring(localPlayer:GetAttribute("MountedAnimalMutation") or "Normal")
 	local sizeRatio = tonumber(localPlayer:GetAttribute("MountedAnimalSize")) or 1.0
-	local m = AnimalVisualBuilder.BuildAnimalModel(speciesId, math.clamp(sizeRatio * 0.72, 0.8, 1.35), mutation :: any, true)
+	local mountScale = math.clamp(sizeRatio * 0.72, 0.8, 1.35)
+	local m = AnimalVisualBuilder.BuildAnimalModel(speciesId, mountScale, mutation :: any, true)
 	m.Name = "MountedAnimal"
-	m.WorldPivot = CFrame.new(0, 0, 0)
+	mountBotRel = AnimalVisualBuilder.GetModelVerticalBounds(m)
 	m.Parent = Workspace
 	activeMountModel = m
 
 	if hum then
-		hum.HipHeight = defaultHipHeight + 1.1
+		hum.HipHeight = math.max(defaultHipHeight + 0.55, 2.05 * mountScale - 0.55)
 	end
 	setSitAnimation(true)
 end
@@ -663,24 +665,14 @@ RunService.RenderStepped:Connect(function(_dt: number)
 	local hum = if char then char:FindFirstChildOfClass("Humanoid") else nil
 	if not char or not root or not root:IsA("BasePart") then return end
 
-	if activeMountModel and activeMountModel.PrimaryPart then
-		local now = os.clock()
-		local vel = root.AssemblyLinearVelocity
-		local horizSpeed = Vector3.new(vel.X, 0, vel.Z).Magnitude
-		local hopY = if horizSpeed > 2 then math.abs(math.sin(now * 11)) * 0.55 else math.sin(now * 3) * 0.08
-		local pitch = if horizSpeed > 2 then math.sin(now * 11) * 0.1 else 0
-		activeMountModel:PivotTo(root.CFrame * CFrame.new(0, -3.35 + hopY, 0) * CFrame.Angles(pitch, 0, 0))
-	end
-
-	if isRidingVehicle and activeVehicleModel then
-		-- Raycast directly under character to keep tires planted 0.00 studs flush on the ground!
+	local function resolveGroundAndLook(): (number, Vector3)
 		local ignore: { Instance } = { char }
-		table.insert(ignore, activeVehicleModel)
+		if activeVehicleModel then table.insert(ignore, activeVehicleModel) end
 		if activeMountModel then table.insert(ignore, activeMountModel) end
 		for _, cm in ipairs(towedCrateVisuals) do table.insert(ignore, cm) end
 		groundRayParams.FilterDescendantsInstances = ignore
 
-		local res = Workspace:Raycast(root.Position + Vector3.new(0, 1.5, 0), Vector3.new(0, -16, 0), groundRayParams)
+		local res = Workspace:Raycast(root.Position + Vector3.new(0, 2.0, 0), Vector3.new(0, -18, 0), groundRayParams)
 		local fallbackFloorY = root.Position.Y - ((if hum then hum.HipHeight else defaultHipHeight) + root.Size.Y * 0.5)
 		local groundY = if res then res.Position.Y else fallbackFloorY
 		local flatLook = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
@@ -689,6 +681,23 @@ RunService.RenderStepped:Connect(function(_dt: number)
 		else
 			flatLook = flatLook.Unit
 		end
+		return groundY, flatLook
+	end
+
+	if activeMountModel and activeMountModel.PrimaryPart then
+		local now = os.clock()
+		local vel = root.AssemblyLinearVelocity
+		local horizSpeed = Vector3.new(vel.X, 0, vel.Z).Magnitude
+		local hopY = if horizSpeed > 2 then math.abs(math.sin(now * 11)) * 0.55 else math.abs(math.sin(now * 3)) * 0.05
+		local pitch = if horizSpeed > 2 then math.sin(now * 11) * 0.1 else 0
+		local groundY, flatLook = resolveGroundAndLook()
+		local footGroundPos = Vector3.new(root.Position.X, groundY + hopY - mountBotRel, root.Position.Z)
+		activeMountModel:PivotTo(CFrame.lookAt(footGroundPos, footGroundPos + flatLook) * CFrame.Angles(pitch, 0, 0))
+	end
+
+	if isRidingVehicle and activeVehicleModel then
+		-- Raycast directly under character to keep tires planted 0.00 studs flush on the ground!
+		local groundY, flatLook = resolveGroundAndLook()
 		local wheelGroundPos = Vector3.new(root.Position.X, groundY - vehicleBotRel, root.Position.Z)
 		activeVehicleModel:PivotTo(CFrame.lookAt(wheelGroundPos, wheelGroundPos + flatLook))
 	end

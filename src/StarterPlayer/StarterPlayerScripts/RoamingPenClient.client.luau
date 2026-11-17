@@ -31,6 +31,8 @@ type RoamingEntity = {
 	waitUntil: number,
 	phase: number,
 	paddockCF: CFrame,
+	topY: number,
+	footBotRel: number,
 }
 
 type PlacedCrateVisual = {
@@ -76,21 +78,35 @@ local function clearAllEntities()
 	table.clear(rainbowParts)
 end
 
-local function randomLocalPaddockPos(): Vector3
-	return Vector3.new(math.random(-20, 20), 0.35, math.random(-13, 13))
+local terrainGroundRayParams = RaycastParams.new()
+terrainGroundRayParams.FilterType = Enum.RaycastFilterType.Include
+terrainGroundRayParams.FilterDescendantsInstances = { Workspace.Terrain }
+
+local function randomLocalPaddockPos(paddockTopY: number?): Vector3
+	local topY = paddockTopY or 0.04
+	return Vector3.new(math.random(-20, 20), topY, math.random(-13, 13))
+end
+
+local function computeEntityGroundCFrame(paddockCF: CFrame, localX: number, topY: number, localZ: number, hopY: number, yaw: number, footBotRel: number): CFrame
+	local basePos = (paddockCF * CFrame.new(localX, topY, localZ)).Position
+	local hit = Workspace:Raycast(basePos + Vector3.new(0, 12, 0), Vector3.new(0, -16, 0), terrainGroundRayParams)
+	local surfaceY = if hit and hit.Position.Y > basePos.Y then hit.Position.Y else basePos.Y
+	local rotOnly = paddockCF - paddockCF.Position
+	return CFrame.new(basePos.X, surfaceY + hopY - footBotRel, basePos.Z) * rotOnly * CFrame.Angles(0, yaw, 0)
 end
 
 -- Deterministic 6x5 grid across the 52x36 OpenPaddockFloor supporting up to 30 hatching crates neatly
-local function computePenCrateSlotLocalPos(slotIndex: number, localX: number?, localZ: number?): Vector3
+local function computePenCrateSlotLocalPos(slotIndex: number, localX: number?, localZ: number?, paddockTopY: number?): Vector3
+	local topY = paddockTopY or 0.04
 	if type(localX) == "number" and type(localZ) == "number" then
-		return Vector3.new(math.clamp(localX, -22.5, 22.5), 0.25, math.clamp(localZ, -14.5, 14.5))
+		return Vector3.new(math.clamp(localX, -22.5, 22.5), topY, math.clamp(localZ, -14.5, 14.5))
 	end
 	local idx0 = math.clamp(slotIndex - 1, 0, GameConfig.PEN.MAX_PLACED_CRATES - 1)
 	local col = idx0 % 6
 	local row = math.floor(idx0 / 6)
 	local x = -20 + col * 8.0
 	local z = -10 + row * 6.0
-	return Vector3.new(x, 0.25, z)
+	return Vector3.new(x, topY, z)
 end
 
 local function rebuildEntities(forceReset: boolean?)
@@ -124,6 +140,7 @@ local function rebuildEntities(forceReset: boolean?)
 			local paddock = if plotModel then plotModel:FindFirstChild("OpenPaddockFloor") else nil
 			if paddock and paddock:IsA("BasePart") then
 				local paddockCF = paddock.CFrame
+				local paddockTopY = paddock.Size.Y * 0.5
 
 				-- 1. Diff/Preserve Roaming Animals inside Paddock (Equip Best NEVER resets existing pets!)
 				if not shouldHideAnimals and type(plotData.roamingAnimals) == "table" then
@@ -133,6 +150,7 @@ local function rebuildEntities(forceReset: boolean?)
 							local existing = activeEntitiesByUid[animal.uid]
 							if existing and existing.model and existing.model.Parent and existing.plotIndex == plotData.plotIndex then
 								existing.paddockCF = paddockCF
+								existing.topY = paddockTopY
 							else
 								if existing and existing.model then
 									existing.model:Destroy()
@@ -163,8 +181,10 @@ local function rebuildEntities(forceReset: boolean?)
 								lblSt.Color = Color3.fromRGB(10, 12, 16)
 								lblSt.Parent = lbl
 
-								local startLocal = randomLocalPaddockPos()
-								model:PivotTo(paddockCF * CFrame.new(startLocal))
+								local footBotRel = AnimalVisualBuilder.GetModelVerticalBounds(model)
+								local startLocal = randomLocalPaddockPos(paddockTopY)
+								local initYaw = math.random() * math.pi * 2
+								model:PivotTo(computeEntityGroundCFrame(paddockCF, startLocal.X, paddockTopY, startLocal.Z, 0, initYaw, footBotRel))
 								model.Parent = entitiesRoot
 
 								if animal.mutation == "Rainbow" then
@@ -181,12 +201,14 @@ local function rebuildEntities(forceReset: boolean?)
 									model = model,
 									isRainbow = (animal.mutation == "Rainbow"),
 									pos = startLocal,
-									targetPos = randomLocalPaddockPos(),
-									yaw = math.random() * math.pi * 2,
+									targetPos = randomLocalPaddockPos(paddockTopY),
+									yaw = initYaw,
 									speed = math.random(4, 7),
 									waitUntil = os.clock() + (idx * 0.2),
 									phase = idx * 0.9,
 									paddockCF = paddockCF,
+									topY = paddockTopY,
+									footBotRel = footBotRel,
 								}
 								activeEntitiesByUid[animal.uid] = newEnt
 								table.insert(activeEntities, newEnt)
@@ -209,14 +231,18 @@ local function rebuildEntities(forceReset: boolean?)
 							end
 							local slotIdx = tonumber(crate.placedSlot) or idx
 							local sc = tonumber(crate.sizeScale) or GameConfig.ComputeCrateScale(crate.rarity)
+							local crateSpec = AnimalConfig.GetById(crate.speciesId)
+							local variantIdx = if crateSpec then ((crateSpec.indexNumber % 3) + 1) else ((slotIdx % 3) + 1)
+							local crateTitle = AnimalVisualBuilder.GetCrateVariantInfo(crate.biomeId, crate.rarity, variantIdx)
 							local crateModel = AnimalVisualBuilder.BuildCrateModel(crate.rarity, crate.biomeId, sc, {
 								isBuried = false,
 								canCollide = false,
 								showBeacon = false,
+								variant = variantIdx,
 							})
 							crateModel.Name = string.format("PenCrate_%d_%s", slotIdx, string.sub(crate.uid, 1, 6))
 
-							local localPos = computePenCrateSlotLocalPos(slotIdx, crate.localX, crate.localZ)
+							local localPos = computePenCrateSlotLocalPos(slotIdx, crate.localX, crate.localZ, paddockTopY)
 							local yaw = ((slotIdx * 37) % 360) * math.pi / 180
 							local baseCF = paddockCF * CFrame.new(localPos) * CFrame.Angles(0, yaw, 0)
 							crateModel:PivotTo(baseCF)
@@ -226,17 +252,17 @@ local function rebuildEntities(forceReset: boolean?)
 
 							local rarityCol = GameConfig.RARITY_COLORS[crate.rarity] or Color3.new(1, 1, 1)
 							local bb = Instance.new("BillboardGui")
-							bb.Size = UDim2.fromOffset(182, 50)
+							bb.Size = UDim2.fromOffset(182, 52)
 							bb.StudsOffset = Vector3.new(0, 3.6 * sc + 1.4, 0)
 							bb.MaxDistance = 75
 							bb.Parent = cRoot
 
-							-- Clean floating text with UIStroke (NO dark rectangular background!)
+							-- Clean 2-line floating text (Image 11 style: Crate Name + Rarity/Status, NO dark box!)
 							local topLbl = Instance.new("TextLabel")
 							topLbl.Size = UDim2.new(1, -4, 0.48, 0)
 							topLbl.Position = UDim2.fromOffset(2, 2)
 							topLbl.BackgroundTransparency = 1
-							topLbl.Text = string.format("[%s] %s", string.upper(crate.rarity), crate.biomeId)
+							topLbl.Text = string.format("%s (%s)", crateTitle, crate.rarity)
 							topLbl.TextColor3 = rarityCol
 							topLbl.Font = Enum.Font.FredokaOne
 							topLbl.TextScaled = true
@@ -380,6 +406,18 @@ local function updatePlotPrivacyVisuals()
 			local treadVis = plotModel:FindFirstChild("TreadmillVisual")
 			setInstSubtreeVisible(treadVis, isMine or ownerOnTread, false)
 
+			-- Show "+X/Step" floating Treadmill badge cleanly for plot owner only (Image 2)
+			local treadAnchor = plotModel:FindFirstChild("TreadmillStandAnchor")
+			local stepBadge = if treadAnchor then treadAnchor:FindFirstChild("TreadmillStepBadge") else nil
+			if stepBadge and stepBadge:IsA("BillboardGui") then
+				stepBadge.Enabled = isMine
+				local valLbl = stepBadge:FindFirstChild("ValueLabel")
+				if valLbl and valLbl:IsA("TextLabel") and isMine then
+					local stepVal = tonumber(localPlayer:GetAttribute("StepGainPerPulse")) or 1
+					valLbl.Text = "👟 +" .. FormatUtil.Number(stepVal) .. "/Step"
+				end
+			end
+
 			-- #3 Pen & Treadmill Upgrade Boards + Other Players' Cash Collector Pads hidden & non-interactive!
 			for _, boardName in ipairs({
 				"PenUpgradeBoard", "PenUpgradeBoard_Post", "PenUpgradeBoard_WoodBase",
@@ -390,12 +428,95 @@ local function updatePlotPrivacyVisuals()
 			}) do
 				setInstSubtreeVisible(plotModel:FindFirstChild(boardName), isMine, isMine)
 			end
+
+			-- #5 Floating Owner Headshot + @username above Cage (BillboardGui always faces camera from every angle!)
+			local paddock = plotModel:FindFirstChild("OpenPaddockFloor")
+			if paddock and paddock:IsA("BasePart") then
+				local badgeAnchor = plotModel:FindFirstChild("OwnerCageBadgeAnchor")
+				if not badgeAnchor then
+					local p = Instance.new("Part")
+					p.Name = "OwnerCageBadgeAnchor"
+					p.Size = Vector3.new(1, 1, 1)
+					p.Anchored = true
+					p.CanCollide = false
+					p.CanQuery = false
+					p.CanTouch = false
+					p.Transparency = 1
+					p.CFrame = CFrame.new(paddock.Position + Vector3.new(0, 12.5, 0))
+					p.Parent = plotModel
+
+					local bb = Instance.new("BillboardGui")
+					bb.Name = "OwnerBadgeGui"
+					bb.Size = UDim2.fromOffset(172, 124)
+					bb.AlwaysOnTop = false
+					bb.Active = false
+					bb.MaxDistance = 320
+					bb.Parent = p
+
+					local avatarImg = Instance.new("ImageLabel")
+					avatarImg.Name = "AvatarHeadshot"
+					avatarImg.Size = UDim2.fromOffset(82, 82)
+					avatarImg.AnchorPoint = Vector2.new(0.5, 0)
+					avatarImg.Position = UDim2.new(0.5, 0, 0, 2)
+					avatarImg.BackgroundTransparency = 1
+					avatarImg.Parent = bb
+
+					local nameLbl = Instance.new("TextLabel")
+					nameLbl.Name = "UsernameLabel"
+					nameLbl.Size = UDim2.new(1, -4, 0, 32)
+					nameLbl.Position = UDim2.fromOffset(2, 88)
+					nameLbl.BackgroundTransparency = 1
+					nameLbl.TextColor3 = Color3.new(1, 1, 1)
+					nameLbl.Font = Enum.Font.FredokaOne
+					nameLbl.TextScaled = true
+					nameLbl.Parent = bb
+					local st = Instance.new("UIStroke")
+					st.Thickness = 2.8
+					st.Color = Color3.fromRGB(10, 12, 16)
+					st.Parent = nameLbl
+
+					badgeAnchor = p
+				end
+
+				local bb = badgeAnchor:FindFirstChild("OwnerBadgeGui") :: BillboardGui?
+				if bb then
+					if ownerId > 0 then
+						local pIdxStr = tostring(plotModel:GetAttribute("PlotIndex") or "")
+						local pSync = currentPlotsPayload and currentPlotsPayload[pIdxStr]
+						local uname = tostring(plotModel:GetAttribute("OwnerUsername") or "")
+						if uname == "" and ownerPlr then
+							uname = ownerPlr.Name
+						elseif uname == "" and pSync and type(pSync.ownerUsername) == "string" and pSync.ownerUsername ~= "" then
+							uname = pSync.ownerUsername
+						elseif uname == "" and pSync and type(pSync.ownerName) == "string" then
+							uname = pSync.ownerName
+						end
+						if uname == "" then
+							uname = "Player_" .. tostring(ownerId)
+						end
+						local avatarImg = bb:FindFirstChild("AvatarHeadshot") :: ImageLabel?
+						local nameLbl = bb:FindFirstChild("UsernameLabel") :: TextLabel?
+						if avatarImg then
+							avatarImg.Image = string.format("rbxthumb://type=AvatarHeadShot&id=%d&w=150&h=150", ownerId)
+						end
+						if nameLbl then
+							nameLbl.Text = "@" .. uname
+						end
+						bb.Enabled = true
+					else
+						bb.Enabled = false
+					end
+				end
+			end
 		end
 	end
 end
 
 local function bindPlayerPrivacySignals(p: Player)
 	p:GetAttributeChangedSignal("OnTreadmill"):Connect(updatePlotPrivacyVisuals)
+	if p == localPlayer then
+		p:GetAttributeChangedSignal("StepGainPerPulse"):Connect(updatePlotPrivacyVisuals)
+	end
 end
 for _, p in ipairs(Players:GetPlayers()) do
 	bindPlayerPrivacySignals(p)
@@ -412,6 +533,9 @@ task.spawn(function()
 	if plotsFolder then
 		for _, plotModel in ipairs(plotsFolder:GetChildren()) do
 			plotModel:GetAttributeChangedSignal("OwnerUserId"):Connect(updatePlotPrivacyVisuals)
+			plotModel:GetAttributeChangedSignal("AppliedTreadTier"):Connect(function()
+				task.defer(updatePlotPrivacyVisuals)
+			end)
 			plotModel.ChildAdded:Connect(function(ch)
 				if ch.Name == "TreadmillVisual" or string.find(ch.Name, "UpgradeBoard") or string.find(ch.Name, "CashCollectorPad") then
 					task.defer(updatePlotPrivacyVisuals)
@@ -425,6 +549,99 @@ end)
 -- ============================================================================
 -- STEAL / BREAK AN EGG HATCH REVEAL ANIMATION (#4, #6, #7)
 -- ============================================================================
+local HATCH_SHARD_STYLES: { [string]: { mat: Enum.Material, c1: Color3, c2: Color3 } } = {
+	PineWoods = { mat = Enum.Material.Wood, c1 = Color3.fromRGB(128, 86, 50), c2 = Color3.fromRGB(58, 132, 64) },
+	MangroveSwamp = { mat = Enum.Material.WoodPlanks, c1 = Color3.fromRGB(98, 78, 46), c2 = Color3.fromRGB(72, 224, 158) },
+	SavannaCamp = { mat = Enum.Material.DiamondPlate, c1 = Color3.fromRGB(68, 72, 82), c2 = Color3.fromRGB(224, 158, 52) },
+	AlpinePeaks = { mat = Enum.Material.Ice, c1 = Color3.fromRGB(148, 222, 255), c2 = Color3.fromRGB(228, 246, 255) },
+	VolcanicJungle = { mat = Enum.Material.Basalt, c1 = Color3.fromRGB(42, 34, 46), c2 = Color3.fromRGB(255, 86, 28) },
+}
+
+local function spawnMaterialShatter(originPos: Vector3, biomeId: string, rarityCol: Color3, scale: number)
+	local style = HATCH_SHARD_STYLES[biomeId] or HATCH_SHARD_STYLES.PineWoods
+	local shards: { { p: Part, vel: Vector3, rot: Vector3, baseSz: Vector3 } } = {}
+	for i = 1, 16 do
+		local ang = (i / 16) * math.pi * 2 + (math.random() - 0.5) * 0.35
+		local spd = 11 + math.random() * 14
+		local sh = Instance.new("Part")
+		sh.Name = "HatchMaterialShard"
+		local sx = (0.45 + math.random() * 0.55) * scale
+		local sy = (0.28 + math.random() * 0.45) * scale
+		local sz = (0.45 + math.random() * 0.55) * scale
+		sh.Size = Vector3.new(sx, sy, sz)
+		sh.CFrame = CFrame.new(originPos + Vector3.new(math.cos(ang) * 0.6, 0.8 * scale, math.sin(ang) * 0.6))
+			* CFrame.Angles(math.random() * 6, math.random() * 6, math.random() * 6)
+		if i % 3 == 0 then
+			sh.Color = rarityCol
+			sh.Material = Enum.Material.Neon
+		else
+			sh.Color = if i % 2 == 0 then style.c1 else style.c2
+			sh.Material = style.mat
+		end
+		sh.TopSurface = Enum.SurfaceType.Studs
+		sh.Anchored = true
+		sh.CanCollide = false
+		sh.CanQuery = false
+		sh.CanTouch = false
+		sh.Parent = Workspace
+		table.insert(shards, {
+			p = sh,
+			vel = Vector3.new(math.cos(ang) * spd, 12 + math.random() * 12, math.sin(ang) * spd),
+			rot = Vector3.new((math.random() - 0.5) * 14, (math.random() - 0.5) * 14, (math.random() - 0.5) * 14),
+			baseSz = sh.Size,
+		})
+	end
+
+	-- Sparkle particle cloud matching rarity & crate debris
+	local emitHolder = Instance.new("Part")
+	emitHolder.Size = Vector3.new(1, 1, 1)
+	emitHolder.Position = originPos + Vector3.new(0, 1.2 * scale, 0)
+	emitHolder.Transparency = 1
+	emitHolder.Anchored = true
+	emitHolder.CanCollide = false
+	emitHolder.CanQuery = false
+	emitHolder.Parent = Workspace
+	local pe = Instance.new("ParticleEmitter")
+	pe.Color = ColorSequence.new(rarityCol, Color3.new(1, 1, 1))
+	pe.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.9 * scale), NumberSequenceKeypoint.new(1, 0) })
+	pe.Lifetime = NumberRange.new(0.45, 0.8)
+	pe.Speed = NumberRange.new(10, 22)
+	pe.SpreadAngle = Vector2.new(85, 85)
+	pe.Acceleration = Vector3.new(0, -18, 0)
+	pe.LightEmission = 0.85
+	pe.Rate = 0
+	pe.Parent = emitHolder
+	pe:Emit(28)
+
+	task.spawn(function()
+		local t0 = os.clock()
+		local prev = t0
+		while os.clock() - t0 < 0.72 do
+			local nowC = os.clock()
+			local dt = math.min(0.05, nowC - prev)
+			prev = nowC
+			local alpha = (nowC - t0) / 0.72
+			for _, item in ipairs(shards) do
+				item.vel += Vector3.new(0, -48 * dt, 0)
+				local p = item.p
+				local nextPos = p.Position + item.vel * dt
+				if nextPos.Y < originPos.Y + 0.2 then
+					nextPos = Vector3.new(nextPos.X, originPos.Y + 0.2, nextPos.Z)
+					item.vel = Vector3.new(item.vel.X * 0.65, math.abs(item.vel.Y) * 0.38, item.vel.Z * 0.65)
+				end
+				p.CFrame = CFrame.new(nextPos) * (p.CFrame - p.CFrame.Position) * CFrame.Angles(item.rot.X * dt, item.rot.Y * dt, item.rot.Z * dt)
+				p.Size = item.baseSz * math.max(0.05, 1 - alpha * 0.85)
+				p.Transparency = math.clamp(alpha * 1.15 - 0.15, 0, 1)
+			end
+			RunService.RenderStepped:Wait()
+		end
+		for _, item in ipairs(shards) do
+			if item.p.Parent then item.p:Destroy() end
+		end
+		if emitHolder.Parent then emitHolder:Destroy() end
+	end)
+end
+
 Remotes.Get("CrateHatchReveal").OnClientEvent:Connect(function(data)
 	if type(data) ~= "table" then return end
 	local gw = Workspace:FindFirstChild("GameWorld")
@@ -440,13 +657,19 @@ Remotes.Get("CrateHatchReveal").OnClientEvent:Connect(function(data)
 
 	local sc = tonumber(data.sizeScale) or GameConfig.ComputeCrateScale(tostring(data.rarity or "Common"))
 	local slotIdx = tonumber(data.placedSlot) or 1
-	local localPos = computePenCrateSlotLocalPos(slotIdx, data.localX, data.localZ)
+	local localPos = computePenCrateSlotLocalPos(slotIdx, data.localX, data.localZ, paddock.Size.Y * 0.5)
 	local baseCF = paddock.CFrame * CFrame.new(localPos)
 
-	local revealCrate = AnimalVisualBuilder.BuildCrateModel((data.rarity or "Common") :: any, tostring(data.biomeId or "PineWoods"), sc, {
+	local speciesId = tostring(data.speciesId or "RustyFox")
+	local spec = AnimalConfig.GetById(speciesId)
+	local variantIdx = if spec then ((spec.indexNumber % 3) + 1) else 1
+	local biomeId = tostring(data.biomeId or "PineWoods")
+
+	local revealCrate = AnimalVisualBuilder.BuildCrateModel((data.rarity or "Common") :: any, biomeId, sc, {
 		isBuried = false,
 		canCollide = false,
 		showBeacon = false,
+		variant = variantIdx,
 	})
 	revealCrate.Name = "ClientHatchAnimCrate"
 	revealCrate:PivotTo(baseCF)
@@ -455,76 +678,166 @@ Remotes.Get("CrateHatchReveal").OnClientEvent:Connect(function(data)
 	local rarityCol = GameConfig.RARITY_COLORS[data.rarity] or Color3.fromRGB(255, 224, 96)
 
 	task.spawn(function()
-		-- Phase 1 (0.85s): Accelerating wobble & pulse anticipation
+		-- Phase 1 (0.72s): Accelerating wobble & pulse anticipation
 		local startT = os.clock()
-		while os.clock() - startT < 0.85 do
+		while os.clock() - startT < 0.72 do
 			local el = os.clock() - startT
-			local alpha = el / 0.85
-			local freq = 16 + alpha * 38
-			local amp = 0.08 + alpha * 0.24
-			local hop = math.abs(math.sin(el * 12)) * (0.35 + alpha * 0.75)
+			local alpha = el / 0.72
+			local freq = 18 + alpha * 42
+			local amp = 0.08 + alpha * 0.25
+			local hop = math.abs(math.sin(el * 13)) * (0.35 + alpha * 0.85)
 			local tilt = math.sin(el * freq) * amp
-			revealCrate:PivotTo(baseCF * CFrame.new(0, hop, 0) * CFrame.Angles(tilt, alpha * 2.5, -tilt * 0.8))
+			revealCrate:PivotTo(baseCF * CFrame.new(0, hop, 0) * CFrame.Angles(tilt, alpha * 2.2, -tilt * 0.8))
 			pcall(function()
-				revealCrate:ScaleTo(1 + math.sin(el * 20) * 0.08)
+				revealCrate:ScaleTo(1 + math.sin(el * 22) * 0.1)
 			end)
 			RunService.RenderStepped:Wait()
 		end
 
-		-- Phase 2: Burst sphere glow + destroy crate!
-		local burst = Instance.new("Part")
-		burst.Name = "HatchPopBurst"
-		burst.Shape = Enum.PartType.Ball
-		burst.Size = Vector3.new(2 * sc, 2 * sc, 2 * sc)
-		burst.CFrame = baseCF * CFrame.new(0, 1.5, 0)
-		burst.Color = rarityCol
-		burst.Material = Enum.Material.Neon
-		burst.Anchored = true
-		burst.CanCollide = false
-		burst.CanQuery = false
-		burst.Transparency = 0.15
-		burst.Parent = Workspace
-		TweenService:Create(burst, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Size = Vector3.new(12 * sc, 12 * sc, 12 * sc),
+		-- Phase 2: Material Shatter Debris + Expanding Sunburst Ring + Destroy Crate!
+		spawnMaterialShatter(baseCF.Position, biomeId, rarityCol, sc)
+
+		local ring = Instance.new("Part")
+		ring.Name = "HatchShockRing"
+		ring.Shape = Enum.PartType.Cylinder
+		ring.Size = Vector3.new(0.25, 2 * sc, 2 * sc)
+		ring.CFrame = CFrame.new(baseCF.Position + Vector3.new(0, 1.2 * sc, 0)) * CFrame.Angles(0, 0, math.rad(90))
+		ring.Color = rarityCol
+		ring.Material = Enum.Material.Neon
+		ring.Anchored = true
+		ring.CanCollide = false
+		ring.CanQuery = false
+		ring.Transparency = 0.2
+		ring.Parent = Workspace
+		TweenService:Create(ring, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = Vector3.new(0.15, 16 * sc, 16 * sc),
 			Transparency = 1,
 		}):Play()
 		task.delay(0.48, function()
-			if burst.Parent then burst:Destroy() end
+			if ring.Parent then ring:Destroy() end
 		end)
 
 		if revealCrate.Parent then
 			revealCrate:Destroy()
 		end
 
-		-- Phase 3 (0.72s): Bouncy hatched animal leaps out of crate right into player's hands/inventory!
-		local petScale = math.clamp((tonumber(data.sizeRatio) or 1.0) * 0.72, 0.7, 1.45)
-		local animPet = AnimalVisualBuilder.BuildAnimalModel(tostring(data.speciesId or "RustyFox"), petScale, (data.mutation or "None") :: any, false)
+		-- Phase 3a (0.45s): Hatched Pet erupts big facing directly toward player/camera (Image 3 style!)
+		local petScale = math.clamp((tonumber(data.sizeRatio) or 1.0) * 0.92, 0.85, 1.8)
+		local animPet = AnimalVisualBuilder.BuildAnimalModel(speciesId, petScale, (data.mutation or "None") :: any, false)
 		animPet.Name = "ClientHatchLeapAnimal"
-		local originPos = (baseCF * CFrame.new(0, 1.6, 0)).Position
+		local originPos = (baseCF * CFrame.new(0, 1.8 * sc, 0)).Position
 		animPet:PivotTo(CFrame.new(originPos))
 		animPet.Parent = Workspace
 
+		local pRoot = animPet.PrimaryPart
+		if pRoot then
+			local inc = AnimalConfig.ComputeIncomePerSec({
+				uid = "",
+				speciesId = speciesId,
+				sizeRatio = tonumber(data.sizeRatio) or 1.0,
+				weightKg = tonumber(data.weightKg) or 5.0,
+				mutation = (data.mutation or "None") :: any,
+				locked = false,
+				acquiredAt = 0,
+			})
+			local bb = Instance.new("BillboardGui")
+			bb.Size = UDim2.fromOffset(195, 62)
+			bb.StudsOffset = Vector3.new(0, 3.8 * petScale + 1.2, 0)
+			bb.AlwaysOnTop = true
+			bb.Parent = pRoot
+
+			local topTxt = Instance.new("TextLabel")
+			topTxt.Size = UDim2.fromScale(1, 0.54)
+			topTxt.BackgroundTransparency = 1
+			topTxt.Text = "$" .. FormatUtil.Number(inc) .. "/s"
+			topTxt.TextColor3 = Color3.fromRGB(108, 255, 128)
+			topTxt.Font = Enum.Font.FredokaOne
+			topTxt.TextScaled = true
+			topTxt.Parent = bb
+			local ts = Instance.new("UIStroke")
+			ts.Thickness = 2.8
+			ts.Color = Color3.fromRGB(10, 12, 16)
+			ts.Parent = topTxt
+
+			local subTxt = Instance.new("TextLabel")
+			subTxt.Size = UDim2.fromScale(1, 0.44)
+			subTxt.Position = UDim2.fromScale(0, 0.54)
+			subTxt.BackgroundTransparency = 1
+			subTxt.Text = tostring(data.rarity or "Common")
+			subTxt.TextColor3 = rarityCol
+			subTxt.Font = Enum.Font.FredokaOne
+			subTxt.TextScaled = true
+			subTxt.Parent = bb
+			local ss = Instance.new("UIStroke")
+			ss.Thickness = 2.6
+			ss.Color = Color3.fromRGB(10, 12, 16)
+			ss.Parent = subTxt
+		end
+
+		local popStart = os.clock()
+		local popDur = 0.45
+		local hoverPos = originPos + Vector3.new(0, 4.2, 0)
+		while os.clock() - popStart < popDur do
+			local a = math.clamp((os.clock() - popStart) / popDur, 0, 1)
+			local easeOut = 1 - math.pow(1 - a, 3)
+			local char = localPlayer.Character
+			local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
+			local cam = Workspace.CurrentCamera
+			local viewerPos = if root and root:IsA("BasePart")
+				then root.Position
+				elseif cam then cam.CFrame.Position
+				else (originPos + Vector3.new(0, 4, -12))
+			local curPos = originPos:Lerp(hoverPos, easeOut)
+			local lookPt = Vector3.new(viewerPos.X, curPos.Y, viewerPos.Z)
+			local faceCF = if (lookPt - curPos).Magnitude > 0.1 then CFrame.lookAt(curPos, lookPt) else CFrame.new(curPos)
+			animPet:PivotTo(faceCF)
+			pcall(function()
+				animPet:ScaleTo(0.35 + easeOut * 0.95)
+			end)
+			RunService.RenderStepped:Wait()
+		end
+
+		-- Phase 3b (0.50s): Swoops directly toward the player's body/inventory while facing the player!
 		local leapStart = os.clock()
-		local leapDur = 0.72
+		local leapDur = 0.50
 		while os.clock() - leapStart < leapDur do
 			local a = math.clamp((os.clock() - leapStart) / leapDur, 0, 1)
 			local char = localPlayer.Character
 			local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
 			local targetPos = if root and root:IsA("BasePart") then (root.Position + Vector3.new(0, 0.5, 0)) else (originPos + Vector3.new(0, 5, 0))
-			-- Bouncy double arc + overshoot bounce like Steal/Break an Egg!
-			local arcY = math.sin(a * math.pi) * 8.5 + math.abs(math.sin(a * math.pi * 2.5)) * (1 - a) * 2.2
-			local curPos = originPos:Lerp(targetPos, a * a * (3 - 2 * a)) + Vector3.new(0, arcY, 0)
+			local arcY = math.sin(a * math.pi) * 4.5
+			local curPos = hoverPos:Lerp(targetPos, a * a) + Vector3.new(0, arcY, 0)
 			local lookTarget = Vector3.new(targetPos.X, curPos.Y, targetPos.Z)
 			local lookCF = if (lookTarget - curPos).Magnitude > 0.1 then CFrame.lookAt(curPos, lookTarget) else CFrame.new(curPos)
-			animPet:PivotTo(lookCF * CFrame.Angles(0, a * math.pi * 2, 0))
-			-- Squash & stretch scale bounce
-			local scPulse = if a < 0.25 then (0.35 + (a / 0.25) * 0.95)
-				elseif a < 0.75 then (1.3 - ((a - 0.25) / 0.5) * 0.25)
-				else math.max(0.25, 1.05 - ((a - 0.75) / 0.25) * 0.8)
+			animPet:PivotTo(lookCF)
 			pcall(function()
-				animPet:ScaleTo(scPulse)
+				animPet:ScaleTo(math.max(0.18, 1.3 - a * 1.12))
 			end)
 			RunService.RenderStepped:Wait()
+		end
+
+		-- Small collect flash on player chest when hatched pet enters!
+		local charEnd = localPlayer.Character
+		local rootEnd = if charEnd then charEnd:FindFirstChild("HumanoidRootPart") else nil
+		if rootEnd and rootEnd:IsA("BasePart") then
+			local flash = Instance.new("Part")
+			flash.Shape = Enum.PartType.Ball
+			flash.Size = Vector3.new(1.5, 1.5, 1.5)
+			flash.CFrame = rootEnd.CFrame
+			flash.Color = rarityCol
+			flash.Material = Enum.Material.Neon
+			flash.Anchored = true
+			flash.CanCollide = false
+			flash.CanQuery = false
+			flash.Transparency = 0.25
+			flash.Parent = Workspace
+			TweenService:Create(flash, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Size = Vector3.new(5.5, 5.5, 5.5),
+				Transparency = 1,
+			}):Play()
+			task.delay(0.3, function()
+				if flash.Parent then flash:Destroy() end
+			end)
 		end
 
 		if animPet.Parent then
@@ -612,7 +925,7 @@ local function evaluatePenPlacement(): (boolean, number, number, Vector3?, BaseP
 		end
 	end
 
-	local snapWorld = (myPaddock.CFrame * CFrame.new(lx, 0.35, lz)).Position
+	local snapWorld = (myPaddock.CFrame * CFrame.new(lx, myPaddock.Size.Y * 0.5 + 0.1, lz)).Position
 	return valid, lx, lz, snapWorld, myPaddock
 end
 
@@ -800,12 +1113,12 @@ RunService.RenderStepped:Connect(function(dt: number)
 				hopY = math.abs(math.sin(now * 9 + ent.phase)) * 0.55
 			elseif dist <= 0.6 then
 				ent.waitUntil = now + math.random(10, 28) / 10
-				ent.targetPos = randomLocalPaddockPos()
+				ent.targetPos = randomLocalPaddockPos(ent.topY)
 			else
-				hopY = math.sin(now * 3 + ent.phase) * 0.08
+				hopY = math.abs(math.sin(now * 3 + ent.phase)) * 0.05
 			end
 
-			local worldCF = ent.paddockCF * CFrame.new(ent.pos.X, 0.35 + hopY, ent.pos.Z) * CFrame.Angles(0, ent.yaw, 0)
+			local worldCF = computeEntityGroundCFrame(ent.paddockCF, ent.pos.X, ent.topY, ent.pos.Z, hopY, ent.yaw, ent.footBotRel)
 			ent.model:PivotTo(worldCF)
 		end
 	end
