@@ -58,44 +58,44 @@ local function populateBoard(boardName: string, entries: { any }, iconStr: strin
 		local row = Instance.new("Frame")
 		row.Name = "Row_" .. tostring(i)
 		row.LayoutOrder = i
-		row.Size = UDim2.new(1, -6, 0, 56)
-		row.BackgroundColor3 = if i % 2 == 1 then Color3.fromRGB(36, 42, 54) else Color3.fromRGB(46, 54, 68)
-		row.BackgroundTransparency = 0.12
+		row.Size = UDim2.new(1, -8, 0, 68)
+		row.BackgroundColor3 = if i % 2 == 1 then Color3.fromRGB(48, 56, 72) else Color3.fromRGB(60, 70, 88)
+		row.BackgroundTransparency = 0.06
 		row.Parent = scroll
 
 		local rc = Instance.new("UICorner")
-		rc.CornerRadius = UDim.new(0, 8)
+		rc.CornerRadius = UDim.new(0, 10)
 		rc.Parent = row
-		makeStroke(row, if i <= 3 then 2.2 else 1.2, if i == 1 then Color3.fromRGB(255, 214, 54) elseif i == 2 then Color3.fromRGB(210, 224, 240) elseif i == 3 then Color3.fromRGB(224, 138, 72) else accentColor)
+		makeStroke(row, if i <= 3 then 2.6 else 1.8, if i == 1 then Color3.fromRGB(255, 214, 54) elseif i == 2 then Color3.fromRGB(210, 224, 240) elseif i == 3 then Color3.fromRGB(224, 138, 72) else accentColor)
 
-		-- Player Avatar Headshot
+		-- Player Avatar Headshot (Clean Left Padding)
 		local avatar = Instance.new("ImageLabel")
-		avatar.Size = UDim2.fromOffset(46, 46)
-		avatar.Position = UDim2.fromOffset(6, 5)
-		avatar.BackgroundColor3 = Color3.fromRGB(22, 26, 34)
+		avatar.Size = UDim2.fromOffset(52, 52)
+		avatar.Position = UDim2.fromOffset(8, 8)
+		avatar.BackgroundColor3 = Color3.fromRGB(24, 28, 36)
 		avatar.Image = string.format("rbxthumb://type=AvatarHeadShot&id=%d&w=100&h=100", tonumber(entry.userId) or 1)
 		avatar.Parent = row
 		local ac = Instance.new("UICorner")
-		ac.CornerRadius = UDim.new(0, 6)
+		ac.CornerRadius = UDim.new(0, 8)
 		ac.Parent = avatar
-		makeStroke(avatar, 1.5)
+		makeStroke(avatar, 1.8)
 
-		-- Rank Badge (#1, #2, #3...)
+		-- Rank Badge (#1, #2, #3...) neatly to the right of Avatar without overlapping face or text
 		local rankLbl = Instance.new("TextLabel")
-		rankLbl.Size = UDim2.fromOffset(44, 24)
-		rankLbl.Position = UDim2.fromOffset(48, 28)
+		rankLbl.Size = UDim2.fromOffset(44, 26)
+		rankLbl.Position = UDim2.fromOffset(66, 21)
 		rankLbl.BackgroundTransparency = 1
 		rankLbl.Text = "#" .. tostring(i)
 		rankLbl.TextColor3 = if i == 1 then Color3.fromRGB(255, 224, 62) elseif i == 2 then Color3.fromRGB(222, 232, 248) elseif i == 3 then Color3.fromRGB(238, 152, 82) else Color3.new(1, 1, 1)
 		rankLbl.Font = Enum.Font.FredokaOne
 		rankLbl.TextScaled = true
 		rankLbl.Parent = row
-		makeStroke(rankLbl, 2)
+		makeStroke(rankLbl, 2.2)
 
-		-- Value (Top Right)
+		-- Value (Top Right with breathing margin)
 		local valLbl = Instance.new("TextLabel")
-		valLbl.Size = UDim2.new(1, -102, 0, 26)
-		valLbl.Position = UDim2.fromOffset(96, 3)
+		valLbl.Size = UDim2.new(1, -124, 0, 28)
+		valLbl.Position = UDim2.fromOffset(112, 6)
 		valLbl.BackgroundTransparency = 1
 		valLbl.Text = iconStr .. " " .. formatFn(tonumber(entry.value) or 0)
 		valLbl.TextColor3 = accentColor
@@ -103,12 +103,12 @@ local function populateBoard(boardName: string, entries: { any }, iconStr: strin
 		valLbl.TextScaled = true
 		valLbl.TextXAlignment = Enum.TextXAlignment.Right
 		valLbl.Parent = row
-		makeStroke(valLbl, 2)
+		makeStroke(valLbl, 2.2)
 
-		-- Username (Bottom Right)
+		-- Username (Bottom Right with clean spacing)
 		local nameLbl = Instance.new("TextLabel")
-		nameLbl.Size = UDim2.new(1, -102, 0, 22)
-		nameLbl.Position = UDim2.fromOffset(96, 30)
+		nameLbl.Size = UDim2.new(1, -124, 0, 24)
+		nameLbl.Position = UDim2.fromOffset(112, 36)
 		nameLbl.BackgroundTransparency = 1
 		nameLbl.Text = "@" .. tostring(entry.username or "Ranger")
 		nameLbl.TextColor3 = if i <= 3 then Color3.fromRGB(255, 226, 98) else Color3.new(1, 1, 1)
@@ -116,7 +116,7 @@ local function populateBoard(boardName: string, entries: { any }, iconStr: strin
 		nameLbl.TextScaled = true
 		nameLbl.TextXAlignment = Enum.TextXAlignment.Right
 		nameLbl.Parent = row
-		makeStroke(nameLbl, 2)
+		makeStroke(nameLbl, 2.2)
 	end
 end
 
@@ -124,9 +124,8 @@ local function renderAllBoards()
 	if type(currentPayload) ~= "table" then
 		return
 	end
-	populateBoard("TopRebirthBoard", currentPayload.rebirths or {}, "♻️", Color3.fromRGB(118, 255, 118), function(v)
-		local n = math.floor(v)
-		return FormatUtil.Number(n) .. (if n == 1 then " Rebirth" else " Rebirths")
+	populateBoard("TopMoneyBoard", currentPayload.moneyPerSec or {}, "💵", Color3.fromRGB(108, 255, 118), function(v)
+		return "$" .. FormatUtil.Number(v) .. "/s"
 	end)
 	populateBoard("TopSpeedBoard", currentPayload.speed or {}, "👟", Color3.fromRGB(96, 214, 255), function(v)
 		return FormatUtil.Number(v)
@@ -161,7 +160,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 
 	local rem = math.max(0, nextRefreshAt - os.time())
 	local txt = string.format("Top 100 • Updates in %d:%02d", math.floor(rem / 60), rem % 60)
-	for _, bName in ipairs({ "TopRebirthBoard", "TopSpeedBoard", "TopPlaytimeBoard" }) do
+	for _, bName in ipairs({ "TopMoneyBoard", "TopSpeedBoard", "TopPlaytimeBoard" }) do
 		local bm = wall:FindFirstChild(bName)
 		local sp = if bm then bm:FindFirstChild("DisplaySurface") else nil
 		local bg = if sp then sp:FindFirstChild("BoardGui") else nil

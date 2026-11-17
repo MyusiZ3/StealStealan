@@ -1,6 +1,6 @@
 --!strict
 -- LeaderboardService.luau
--- Global OrderedDataStore Leaderboard for Top 100 Rebirths, Top 100 Speed, and Top 100 Playtime.
+-- Global OrderedDataStore Leaderboard for Top 100 Money/s ($/s), Top 100 Speed, and Top 100 Playtime.
 -- Refreshes every 5 minutes (300 seconds) + initial server startup load.
 
 local DataStoreService = game:GetService("DataStoreService")
@@ -16,12 +16,12 @@ local LeaderboardService = {}
 local REFRESH_INTERVAL = 300 -- 5 minutes
 local MAX_ENTRIES = 100
 
-local rebirthStore: OrderedDataStore? = nil
+local moneyStore: OrderedDataStore? = nil
 local speedStore: OrderedDataStore? = nil
 local playtimeStore: OrderedDataStore? = nil
 
 pcall(function()
-	rebirthStore = DataStoreService:GetOrderedDataStore("GlobalTopRebirths_v1")
+	moneyStore = DataStoreService:GetOrderedDataStore("GlobalTopMoneyPerSec_v1")
 	speedStore = DataStoreService:GetOrderedDataStore("GlobalTopSpeed_v1")
 	playtimeStore = DataStoreService:GetOrderedDataStore("GlobalTopPlaytime_v1")
 end)
@@ -33,7 +33,7 @@ export type LeaderboardEntry = {
 }
 
 export type LeaderboardPayload = {
-	rebirths: { LeaderboardEntry },
+	moneyPerSec: { LeaderboardEntry },
 	speed: { LeaderboardEntry },
 	playtime: { LeaderboardEntry },
 	nextRefreshAt: number,
@@ -44,7 +44,7 @@ local sessionJoinAt: { [number]: number } = {}
 local usernameCache: { [number]: string } = {}
 
 local cachedPayload: LeaderboardPayload = {
-	rebirths = {},
+	moneyPerSec = {},
 	speed = {},
 	playtime = {},
 	nextRefreshAt = os.time() + REFRESH_INTERVAL,
@@ -156,7 +156,7 @@ local function fetchTop100FromStore(
 end
 
 function LeaderboardService.RefreshGlobalLeaderboards()
-	local liveRebirths: { [number]: { username: string, value: number } } = {}
+	local liveMoney: { [number]: { username: string, value: number } } = {}
 	local liveSpeed: { [number]: { username: string, value: number } } = {}
 	local livePlaytime: { [number]: { username: string, value: number } } = {}
 
@@ -164,18 +164,18 @@ function LeaderboardService.RefreshGlobalLeaderboards()
 		local profile = DataService.GetProfile(player)
 		if profile then
 			usernameCache[player.UserId] = player.Name
-			local rb = math.max(0, math.floor(tonumber(profile.rebirths) or 0))
+			local incomePerSec = math.max(0, math.floor(tonumber(player:GetAttribute("IncomePerSec")) or 0))
 			local spd = profile.speedStat or 0
 			local pTime = getPlayerSessionPlaytime(player, profile)
 
-			liveRebirths[player.UserId] = { username = player.Name, value = rb }
+			liveMoney[player.UserId] = { username = player.Name, value = incomePerSec }
 			liveSpeed[player.UserId] = { username = player.Name, value = spd }
 			livePlaytime[player.UserId] = { username = player.Name, value = pTime }
 
 			local key = tostring(player.UserId)
-			if rebirthStore then
+			if moneyStore then
 				pcall(function()
-					rebirthStore:SetAsync(key, rb)
+					moneyStore:SetAsync(key, encodeLogValue(incomePerSec))
 				end)
 			end
 			if speedStore then
@@ -191,13 +191,13 @@ function LeaderboardService.RefreshGlobalLeaderboards()
 		end
 	end
 
-	local rebirthList = fetchTop100FromStore(rebirthStore, false, liveRebirths)
+	local moneyList = fetchTop100FromStore(moneyStore, true, liveMoney)
 	local speedList = fetchTop100FromStore(speedStore, true, liveSpeed)
 	local playList = fetchTop100FromStore(playtimeStore, false, livePlaytime)
 
 	local now = os.time()
 	cachedPayload = {
-		rebirths = rebirthList,
+		moneyPerSec = moneyList,
 		speed = speedList,
 		playtime = playList,
 		nextRefreshAt = now + REFRESH_INTERVAL,
@@ -220,13 +220,13 @@ function LeaderboardService.OnPlayerReady(player: Player)
 			return
 		end
 		local hasPlayer = false
-		for _, e in ipairs(cachedPayload.rebirths) do
+		for _, e in ipairs(cachedPayload.moneyPerSec) do
 			if e.userId == player.UserId then
 				hasPlayer = true
 				break
 			end
 		end
-		if #cachedPayload.rebirths == 0 or not hasPlayer then
+		if #cachedPayload.moneyPerSec == 0 or not hasPlayer then
 			LeaderboardService.RefreshGlobalLeaderboards()
 		else
 			LeaderboardService.SendToPlayer(player)
