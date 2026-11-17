@@ -5,6 +5,8 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local PlotVisualBuilder = require(ReplicatedStorage.Modules.PlotVisualBuilder)
+
 local SanctuarySixPlotGenerator = {}
 
 local function makePart(props: {
@@ -43,6 +45,7 @@ local function addSurfaceSign(part: BasePart, face: Enum.NormalId, titleText: st
 	local gui = Instance.new("SurfaceGui")
 	gui.Name = "SignGui"
 	gui.Face = face
+	gui.Active = false
 	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
 	gui.PixelsPerStud = 42
 	gui.LightInfluence = 0.25
@@ -262,12 +265,15 @@ local function cloneCuratedModel(name: string, targetCFrame: CFrame, scaleFactor
 	for _, d in ipairs(clone:GetDescendants()) do
 		if d:IsA("BasePart") then
 			d.Anchored = true
-			if nonCollide then
+			if nonCollide or d:IsA("SpawnLocation") then
 				d.CanCollide = false
 				d.CanQuery = false
 				d.CanTouch = false
 			end
-		elseif d:IsA("BaseScript") then
+			if d:IsA("SpawnLocation") then
+				d:Destroy()
+			end
+		elseif d:IsA("BaseScript") or d:IsA("ForceField") then
 			d:Destroy()
 		end
 	end
@@ -312,30 +318,7 @@ local function buildSingleOpenPlot(plotIndex: number, centerPos: Vector3, facing
 		parent = plotModel,
 	})
 
-	-- 2. Owner Signboard
-	local signPost = makePart({
-		name = "OwnerSignPost",
-		size = Vector3.new(1.5, 9, 1.5),
-		cframe = plotCF * CFrame.new(-24, 5.5, -29),
-		color = Color3.fromRGB(98, 68, 44),
-		material = Enum.Material.Wood,
-		canQuery = false,
-		parent = plotModel,
-	})
-	local signBoard = makePart({
-		name = "OwnerSignBoard",
-		size = Vector3.new(16, 6, 1),
-		cframe = plotCF * CFrame.new(-24, 10, -29),
-		color = Color3.fromRGB(34, 42, 56),
-		parent = plotModel,
-	})
-	addSurfaceSign(signBoard, Enum.NormalId.Front, "ZOO SANCTUARY #" .. plotIndex, "Open-Pen (0/8 Animals)", Color3.fromRGB(30, 42, 58))
-	addSurfaceSign(signBoard, Enum.NormalId.Back, "ZOO SANCTUARY #" .. plotIndex, "Open-Pen (0/8 Animals)", Color3.fromRGB(30, 42, 58))
-	signPost.CanCollide = true
-
-	cloneCuratedModel("WoodenFenceGate", plotCF * CFrame.new(-12, 3.6, -30.5), 1.3, plotModel, 1.2)
-
-	-- 3. Open-Pen Roaming Paddock (NO STALLS! Animals walk around freely inside 52 x 36 enclosure)
+	-- 2. Open-Pen Roaming Paddock (clean front entry without bulky signboard or curb gate)
 	local paddockFloor = makePart({
 		name = "OpenPaddockFloor",
 		size = Vector3.new(52, 0.5, 36),
@@ -349,70 +332,24 @@ local function buildSingleOpenPlot(plotIndex: number, centerPos: Vector3, facing
 	paddockFloor:SetAttribute("IsOpenPaddock", true)
 	paddockFloor:SetAttribute("PlotIndex", plotIndex)
 
-	-- Perimeter Fence around Open Paddock (leaving open front walkway)
-	local fenceColor = Color3.fromRGB(142, 96, 54)
-	makePart({
-		name = "FenceBack",
-		size = Vector3.new(54, 3.2, 1.4),
-		cframe = plotCF * CFrame.new(0, 2.8, 28.5),
-		color = fenceColor,
-		material = Enum.Material.Wood,
-		parent = plotModel,
-	})
-	makePart({
-		name = "FenceLeft",
-		size = Vector3.new(1.4, 3.2, 38),
-		cframe = plotCF * CFrame.new(-26.5, 2.8, 10),
-		color = fenceColor,
-		material = Enum.Material.Wood,
-		parent = plotModel,
-	})
-	makePart({
-		name = "FenceRight",
-		size = Vector3.new(1.4, 3.2, 38),
-		cframe = plotCF * CFrame.new(26.5, 2.8, 10),
-		color = fenceColor,
-		material = Enum.Material.Wood,
-		parent = plotModel,
-	})
-	-- Front Fence with 14-stud wide entrance gap in center
-	for _, xSide in { -16.5, 16.5 } do
-		makePart({
-			name = "FenceFront_" .. tostring(xSide),
-			size = Vector3.new(20, 3.2, 1.4),
-			cframe = plotCF * CFrame.new(xSide, 2.8, -8.5),
-			color = fenceColor,
-			material = Enum.Material.Wood,
-			parent = plotModel,
-		})
-	end
+	-- Perimeter Evolving Fence around Open Paddock (starts at Tier 1, evolves as pen upgrades!)
+	PlotVisualBuilder.BuildPenFences(plotModel, plotCF, 1)
 
-	-- 4. Front Functional Pads (Unbox Crate | Cash Collector | Pen Capacity Upgrade | Personal Treadmill)
-	-- Rotated +90 deg Y so SurfaceGui faces straight up for incoming players at the plot entrance (-Z local)
-	-- A. Crate Unbox Pad
-	local unboxPad = makeEnhancedPad({
-		name = "CrateUnboxPad",
-		size = Vector3.new(7.5, 0.55, 9.5),
-		cframe = plotCF * CFrame.new(-20, 1.3, -16) * CFrame.Angles(0, math.rad(90), 0),
-		accentColor = Color3.fromRGB(255, 174, 48),
-		bgColor = Color3.fromRGB(64, 34, 12),
-		titleText = "DROP & UNBOX CRATE",
-		subText = "Step here with crate!",
-		withHalo = true,
-		parent = plotModel,
-	})
-	unboxPad:SetAttribute("PlotIndex", plotIndex)
-	addPrompt(unboxPad, "Drop / Open Crate", "Crate Unbox Pad", "UnboxPadPrompt")
+	-- Prompt on OpenPaddockFloor for dropping carried crates directly inside the Pen
+	addPrompt(paddockFloor, "Drop Carried Crates", "Sanctuary Pen", "PenDropPrompt")
 
-	-- B. Cash Collector Pad
+	local surfaceY = PlotVisualBuilder.GetPlotSurfaceY(plotCF)
+
+	-- 4. Clean Front Functional Station: Compact Cash Collector + Signboards for Pen & Treadmill Upgrades
+	-- A. Compact Cash Collector Pad in front of Pen gate
 	local cashPad = makeEnhancedPad({
 		name = "CashCollectorPad",
-		size = Vector3.new(7.5, 0.55, 10.5),
-		cframe = plotCF * CFrame.new(-7, 1.3, -16) * CFrame.Angles(0, math.rad(90), 0),
+		size = Vector3.new(7.5, 0.5, 9.0),
+		cframe = plotCF * CFrame.new(-8, 1.3, -15.5) * CFrame.Angles(0, math.rad(90), 0),
 		accentColor = Color3.fromRGB(68, 252, 126),
 		bgColor = Color3.fromRGB(14, 52, 28),
-		titleText = "COLLECT CASH: $0",
-		subText = "0/s Pen Income",
+		titleText = "COLLECT: $0",
+		subText = "$0/s Pen Income",
 		canCollide = false,
 		withHalo = true,
 		parent = plotModel,
@@ -420,46 +357,40 @@ local function buildSingleOpenPlot(plotIndex: number, centerPos: Vector3, facing
 	cashPad:SetAttribute("PlotIndex", plotIndex)
 	addPrompt(cashPad, "Collect Coins", "Zoo Pen Cash", "CollectCashPrompt")
 
-	-- C. Pen Capacity Upgrade Stand (8 -> 20)
-	local upgradePad = makeEnhancedPad({
-		name = "PenUpgradePad",
-		size = Vector3.new(7.5, 0.55, 9.5),
-		cframe = plotCF * CFrame.new(6, 1.3, -16) * CFrame.Angles(0, math.rad(90), 0),
+	-- B. 3D Wooden-Post Pen Upgrade Signboard beside Pen Fence (no floor slab!)
+	PlotVisualBuilder.BuildUpgradeSignboard({
+		name = "PenUpgradeBoard",
+		boardCF = plotCF * CFrame.new(12, surfaceY, -11.5),
+		surfaceY = surfaceY,
+		titleText = "Upgrade Pen",
+		subText = "Lv. 1 > Lv. 2 (8 > 9)",
+		priceText = "$600",
 		accentColor = Color3.fromRGB(184, 102, 255),
-		bgColor = Color3.fromRGB(42, 20, 74),
-		titleText = "UPGRADE PEN (8/20)",
-		subText = "Next: $600",
-		withHalo = true,
+		promptName = "UpgradePenPrompt",
+		actionText = "Upgrade Pen",
+		objectText = "Pen Upgrade Board",
+		plotIndex = plotIndex,
 		parent = plotModel,
 	})
-	upgradePad:SetAttribute("PlotIndex", plotIndex)
-	addPrompt(upgradePad, "Upgrade Pen Capacity", "Zoo Capacity (8->20)", "UpgradePenPrompt")
 
-	-- D. Personal Upgradeable Treadmill Track (Right Front) + 3D Treadmill Model & Snap Anchor
-	local treadmillPad = makeEnhancedPad({
+	-- C. Personal Evolving Treadmill (Clean floor underneath: invisible trigger zone only!)
+	local treadmillZone = makePart({
 		name = "TreadmillPad",
-		size = Vector3.new(8.5, 0.55, 25),
-		cframe = plotCF * CFrame.new(12, 1.3, -24.5) * CFrame.Angles(0, math.rad(90), 0),
-		accentColor = Color3.fromRGB(48, 212, 255),
-		bgColor = Color3.fromRGB(14, 44, 72),
-		titleText = "TREADMILL LV.1",
-		subText = "Step on Belt to Run!",
-		withHalo = true,
+		size = Vector3.new(7.5, 6.0, 9.2),
+		cframe = plotCF * CFrame.new(12, surfaceY + 2.5, -23.5) * CFrame.Angles(0, math.pi, 0),
+		color = Color3.fromRGB(0, 255, 255),
+		canCollide = false,
+		canQuery = false,
+		transparency = 1,
 		parent = plotModel,
 	})
-	treadmillPad:SetAttribute("IsTreadmillZone", true)
-	treadmillPad:SetAttribute("PlotIndex", plotIndex)
-	addPrompt(treadmillPad, "Upgrade Treadmill", "Speed Training Lv.1", "UpgradeTreadmillPrompt")
-
-	local treadMesh = cloneCuratedModel("Hero_Treadmill_AI", plotCF * CFrame.new(12, 4.0, -24.5) * CFrame.Angles(0, math.pi, 0), 1.35, plotModel, 1.6, true)
-	if not treadMesh then
-		cloneCuratedModel("Hero_Treadmill", plotCF * CFrame.new(12, 4.0, -24.5), 1.0, plotModel, 1.6, true)
-	end
+	treadmillZone:SetAttribute("IsTreadmillZone", true)
+	treadmillZone:SetAttribute("PlotIndex", plotIndex)
 
 	local treadAnchor = makePart({
 		name = "TreadmillStandAnchor",
 		size = Vector3.new(2, 1, 2),
-		cframe = plotCF * CFrame.new(12, 4.4, -24.5) * CFrame.Angles(0, math.pi, 0),
+		cframe = plotCF * CFrame.new(12, surfaceY + 4.3, -22.5),
 		color = Color3.fromRGB(0, 255, 255),
 		canCollide = false,
 		canQuery = false,
@@ -467,6 +398,24 @@ local function buildSingleOpenPlot(plotIndex: number, centerPos: Vector3, facing
 		parent = plotModel,
 	})
 	treadAnchor:SetAttribute("PlotIndex", plotIndex)
+
+	PlotVisualBuilder.BuildTreadmillTier(plotModel, plotCF, 1)
+
+	-- D. 3D Wooden-Post Treadmill Upgrade Signboard standing beside Treadmill
+	PlotVisualBuilder.BuildUpgradeSignboard({
+		name = "TreadmillUpgradeBoard",
+		boardCF = plotCF * CFrame.new(20.5, surfaceY, -23.5),
+		surfaceY = surfaceY,
+		titleText = "Upgrade Treadmill",
+		subText = "Lv. 1 > Lv. 2",
+		priceText = "$250",
+		accentColor = Color3.fromRGB(48, 212, 255),
+		promptName = "UpgradeTreadmillPrompt",
+		actionText = "Upgrade Treadmill",
+		objectText = "Treadmill Board",
+		plotIndex = plotIndex,
+		parent = plotModel,
+	})
 end
 
 function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
@@ -534,17 +483,17 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 	spawnLoc.Duration = 0
 	spawnLoc.Parent = hub
 
-	-- 3-Board Global Leaderboard Wall (Top Money | Top Speed | Top Playtime — Top 100 each, updates every 5m)
+	-- 3-Board Global Leaderboard Wall at Front-Right Plaza (Top Rebirth | Top Speed | Top Playtime — Top 100 each)
 	local lbWall = Instance.new("Model")
 	lbWall.Name = "LeaderboardWall"
 	lbWall.Parent = hub
 
-	local wallCenterCF = CFrame.lookAt(Vector3.new(54, 0, -128), Vector3.new(42, 0, -94))
+	local wallCenterCF = CFrame.lookAt(Vector3.new(68, 0, 128), Vector3.new(10, 0, 75))
 	local boardSpecs = {
 		{
-			name = "TopMoneyBoard",
+			name = "TopRebirthBoard",
 			offsetX = 13.8,
-			title = "💵 Top Money 💵",
+			title = "♻️ Top Rebirth ♻️",
 			frameColor = Color3.fromRGB(36, 224, 92),
 			headerColor = Color3.fromRGB(28, 198, 64),
 			darkBg = Color3.fromRGB(16, 48, 28),
@@ -632,6 +581,7 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 		local boardGui = Instance.new("SurfaceGui")
 		boardGui.Name = "BoardGui"
 		boardGui.Face = Enum.NormalId.Front
+		boardGui.Active = false
 		boardGui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
 		boardGui.PixelsPerStud = 36
 		boardGui.LightInfluence = 0.2
@@ -722,114 +672,150 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 		st.Parent = lbl
 	end
 
-	-- 3. Row 1 (Z = -55): Lasso Gear Shop (Left) & Trail Multiplier Shop (Right)
-	local lassoShopPad = makeEnhancedPad({
-		name = "LassoShopPad",
-		size = Vector3.new(12, 0.75, 13),
-		cframe = CFrame.new(-9.5, 0.58, -55) * CFrame.Angles(0, math.rad(90), 0),
-		accentColor = Color3.fromRGB(255, 182, 48),
-		bgColor = Color3.fromRGB(58, 32, 12),
-		titleText = "LASSO GEAR SHOP",
-		subText = "10 Tiers: 150 -> 750Qi!",
-		withHalo = true,
-		parent = hub,
-	})
-	cloneCuratedModel("Hero_ShopBooth", CFrame.new(-20.2, 6, -55) * CFrame.Angles(0, math.rad(90), 0), 0.95, hub, 0.95, true)
-	addFloatingBoothLabel(Vector3.new(-20.2, 13.5, -55), "Lasso Shop", Color3.fromRGB(255, 198, 64))
-	addPrompt(lassoShopPad, "Open Lasso Shop", "10 Lasso Tiers", "LassoShopPrompt")
+	-- Clean Glowing Green Auto-Open Stand Zone (NO bulky black floor pads!)
+	local function makeGreenStandZone(opts: {
+		name: string,
+		pos: Vector3,
+		radius: number,
+		modalName: string,
+		labelTitle: string,
+		labelSub: string?,
+		accentColor: Color3?,
+	}): Part
+		local r = opts.radius
+		local col = opts.accentColor or Color3.fromRGB(68, 255, 118)
 
-	local trailShopPad = makeEnhancedPad({
-		name = "TrailShopPad",
-		size = Vector3.new(12, 0.75, 13),
-		cframe = CFrame.new(9.5, 0.58, -55) * CFrame.Angles(0, math.rad(90), 0),
-		accentColor = Color3.fromRGB(0, 224, 255),
-		bgColor = Color3.fromRGB(14, 44, 68),
-		titleText = "TRAIL SPEED SHOP",
-		subText = "1.25x -> 750x Speed!",
-		withHalo = true,
-		parent = hub,
-	})
-	cloneCuratedModel("Hero_ShopBooth", CFrame.new(20.2, 6, -55) * CFrame.Angles(0, math.rad(-90), 0), 0.95, hub, 0.95, true)
-	addFloatingBoothLabel(Vector3.new(20.2, 13.5, -55), "Trails Shop", Color3.fromRGB(84, 245, 138))
-	addPrompt(trailShopPad, "Open Trail Shop", "Speed Multiplier Trails", "TrailShopPrompt")
+		local outerRing = makePart({
+			name = opts.name,
+			size = Vector3.new(0.16, r * 2, r * 2),
+			cframe = CFrame.new(opts.pos.X, 0.42, opts.pos.Z) * CFrame.Angles(0, 0, math.rad(90)),
+			color = col,
+			material = Enum.Material.Neon,
+			canCollide = false,
+			canQuery = false,
+			transparency = 0.48,
+			parent = hub,
+		})
+		outerRing.Shape = Enum.PartType.Cylinder
+		outerRing.CastShadow = false
+		outerRing:SetAttribute("ShopZoneModal", opts.modalName)
+		outerRing:SetAttribute("ShopZoneRadius", r)
 
-	-- 4. Row 2 (Z = 0): Mutation & Fuse Machine (Left) & Vehicle Garage (Right)
+		local innerFill = makePart({
+			name = opts.name .. "_Inner",
+			size = Vector3.new(0.18, r * 1.66, r * 1.66),
+			cframe = CFrame.new(opts.pos.X, 0.43, opts.pos.Z) * CFrame.Angles(0, 0, math.rad(90)),
+			color = Color3.fromRGB(28, 168, 68),
+			material = Enum.Material.SmoothPlastic,
+			canCollide = false,
+			canQuery = false,
+			transparency = 0.55,
+			parent = hub,
+		})
+		innerFill.Shape = Enum.PartType.Cylinder
+		innerFill.CastShadow = false
+
+		local bb = Instance.new("BillboardGui")
+		bb.Size = UDim2.fromOffset(172, 46)
+		bb.StudsOffsetWorldSpace = Vector3.new(0, 3.2, 0)
+		bb.MaxDistance = 75
+		bb.AlwaysOnTop = true
+		bb.Parent = outerRing
+		local lbl = Instance.new("TextLabel")
+		lbl.Size = UDim2.fromScale(1, 1)
+		lbl.BackgroundTransparency = 1
+		lbl.Text = if opts.labelSub then (opts.labelTitle .. "\n" .. opts.labelSub) else opts.labelTitle
+		lbl.TextColor3 = Color3.fromRGB(142, 255, 168)
+		lbl.Font = Enum.Font.FredokaOne
+		lbl.TextScaled = true
+		lbl.Parent = bb
+		local st = Instance.new("UIStroke")
+		st.Thickness = 2.5
+		st.Color = Color3.fromRGB(10, 14, 12)
+		st.Parent = lbl
+
+		return outerRing
+	end
+
+	-- 3. FRONT-LEFT PLAZA (Z ~ 120..132): Merge Pets Machine (using Hero_RebirthPortal 3D) + Lasso Shop!
 	local fuseZone = Instance.new("Model")
 	fuseZone.Name = "FuseAndMergePlaza"
 	fuseZone.Parent = hub
 
-	local fusePad = makeEnhancedPad({
-		name = "FusePad",
-		size = Vector3.new(12, 0.75, 13),
-		cframe = CFrame.new(-9.5, 0.58, 0) * CFrame.Angles(0, math.rad(90), 0),
-		accentColor = Color3.fromRGB(192, 92, 255),
-		bgColor = Color3.fromRGB(40, 18, 72),
-		titleText = "FUSE & MUTATION",
-		subText = "Merge -> Rainbow/Celestial!",
-		withHalo = true,
+	local fuseHero = cloneCuratedModel("Hero_RebirthPortal", CFrame.new(-56, 5.5, 128) * CFrame.Angles(0, math.rad(165), 0), 0.78, fuseZone, 0.45)
+		or cloneCuratedModel("Hero_FuseMachine_HQ", CFrame.new(-56, 5.5, 128) * CFrame.Angles(0, math.rad(165), 0), 1.18, fuseZone, 0.45)
+	local mergeAnchor = makePart({
+		name = "MergePromptAnchor",
+		size = Vector3.new(6, 5, 6),
+		cframe = CFrame.new(-56, 3.0, 126.5),
+		color = Color3.fromRGB(168, 92, 255),
+		canCollide = false,
+		canQuery = false,
+		transparency = if fuseHero then 1 else 0.2,
 		parent = fuseZone,
 	})
-	local fuseHero = cloneCuratedModel("Hero_FuseMachine", CFrame.new(-19.5, 5.2, 0), 0.9, fuseZone, 0.95)
-	local fusePromptPart: BasePart = fusePad
-	if fuseHero then
-		for _, p in ipairs(fuseHero:GetDescendants()) do
-			if p:IsA("BasePart") then
-				fusePromptPart = p
-				break
-			end
-		end
-	end
-	addPrompt(fusePad, "Open Fuse Machine", "Mutation & Fuse Machine", "FusePrompt")
-	if fusePromptPart ~= fusePad then
-		addPrompt(fusePromptPart, "Open Fuse Machine", "Mutation & Fuse Machine", "FusePrompt")
-	end
-	addFloatingBoothLabel(Vector3.new(-19.5, 13.5, 0), "Animal Merging", Color3.fromRGB(112, 224, 255))
+	local mergePrompt = addPrompt(mergeAnchor, "Hold [E] to Merge Pets", "Merge Machine", "FusePrompt")
+	mergePrompt.HoldDuration = 0.6
+	mergePrompt.MaxActivationDistance = 16
+	addFloatingBoothLabel(Vector3.new(-56, 13.8, 128), "Merge Pets", Color3.fromRGB(142, 212, 255))
 
-	local vehicleShopPad = makeEnhancedPad({
-		name = "VehicleGaragePad",
-		size = Vector3.new(12, 0.75, 13),
-		cframe = CFrame.new(9.5, 0.58, 0) * CFrame.Angles(0, math.rad(90), 0),
-		accentColor = Color3.fromRGB(58, 238, 152),
-		bgColor = Color3.fromRGB(14, 50, 36),
-		titleText = "VEHICLE GARAGE",
-		subText = "Spawn & Upgrade Ride!",
-		withHalo = true,
-		parent = hub,
+	-- Lasso Shop right beside Merge Machine on the Front-Left!
+	cloneCuratedModel("Hero_ShopBooth", CFrame.new(-34, 6, 132) * CFrame.Angles(0, math.rad(180), 0), 0.95, hub, 0.45, true)
+	addFloatingBoothLabel(Vector3.new(-34, 13.5, 132), "Lasso Shop", Color3.fromRGB(255, 198, 64))
+	makeGreenStandZone({
+		name = "LassoShopZone",
+		pos = Vector3.new(-34, 0.42, 122),
+		radius = 5.5,
+		modalName = "Lassos",
+		labelTitle = "LASSO SHOP",
+		labelSub = "Stand Here",
+		accentColor = Color3.fromRGB(84, 255, 132),
 	})
-	cloneCuratedModel("Hero_SafariATV", CFrame.new(19.5, 3.6, 0) * CFrame.Angles(0, math.rad(-145), 0), 1.15, hub, 0.95)
-	addFloatingBoothLabel(Vector3.new(19.5, 11.5, 0), "Vehicle Garage", Color3.fromRGB(84, 245, 162))
-	addPrompt(vehicleShopPad, "Open Vehicle Garage", "Expedition Vehicles", "VehicleShopPrompt")
 
-	-- 5. Row 3 (Z = 58): Rebirth Shrine (Left) & Animal Merchant / Index Board (Right)
-	local rebirthPad = makeEnhancedPad({
-		name = "RebirthAltarPad",
-		size = Vector3.new(12, 0.75, 13),
-		cframe = CFrame.new(-9.5, 0.58, 58) * CFrame.Angles(0, math.rad(90), 0),
-		accentColor = Color3.fromRGB(255, 78, 146),
-		bgColor = Color3.fromRGB(58, 16, 36),
-		titleText = "REBIRTH & DAILY",
-		subText = "Permanent Multiplier!",
-		withHalo = true,
-		parent = hub,
+	-- 4. FRONT-RIGHT PLAZA (Z ~ 120..132): Trail Shop + 3-Board Leaderboard Wall!
+	cloneCuratedModel("Hero_ShopBooth", CFrame.new(34, 6, 132) * CFrame.Angles(0, math.rad(180), 0), 0.95, hub, 0.45, true)
+	addFloatingBoothLabel(Vector3.new(34, 13.5, 132), "Trails Shop", Color3.fromRGB(84, 245, 255))
+	makeGreenStandZone({
+		name = "TrailShopZone",
+		pos = Vector3.new(34, 0.42, 122),
+		radius = 5.5,
+		modalName = "Trails",
+		labelTitle = "TRAILS SHOP",
+		labelSub = "Stand Here",
+		accentColor = Color3.fromRGB(84, 255, 132),
 	})
-	cloneCuratedModel("Hero_RebirthPortal", CFrame.new(-19.8, 6, 58), 0.72, hub, 0.95, true)
-	addFloatingBoothLabel(Vector3.new(-19.8, 13.5, 58), "Rebirth Shrine", Color3.fromRGB(255, 112, 182))
-	addPrompt(rebirthPad, "Open Rebirth / Daily", "Ranger Prestige", "RebirthPrompt")
 
-	local merchantPad = makeEnhancedPad({
-		name = "AnimalMerchantPad",
-		size = Vector3.new(12, 0.75, 13),
-		cframe = CFrame.new(9.5, 0.58, 58) * CFrame.Angles(0, math.rad(90), 0),
-		accentColor = Color3.fromRGB(255, 218, 64),
-		bgColor = Color3.fromRGB(54, 38, 12),
-		titleText = "INDEX & MERCHANT",
-		subText = "Sell Extras & Claim 63 Index!",
-		withHalo = true,
-		parent = hub,
+	-- 5. MID-HUB BOULEVARD STATIONS (Green Stand Zones, NO Black Floor Pads!)
+	-- Vehicle Garage (Right side mid-hub)
+	local garageZone = Instance.new("Model")
+	garageZone.Name = "VehicleGaragePlaza"
+	garageZone.Parent = hub
+	cloneCuratedModel("Hero_VehicleGarage", CFrame.new(19, 6.0, 68) * CFrame.Angles(0, math.rad(-90), 0), 1.15, garageZone, 0.45, false)
+	cloneCuratedModel("Hero_SafariATV", CFrame.new(15.5, 3.0, 60.5) * CFrame.Angles(0, math.rad(-145), 0), 1.0, garageZone, 0.45, false)
+	addFloatingBoothLabel(Vector3.new(19, 15.2, 68), "Vehicle Garage", Color3.fromRGB(84, 245, 162))
+	makeGreenStandZone({
+		name = "VehicleShopZone",
+		pos = Vector3.new(8.5, 0.42, 68),
+		radius = 5.8,
+		modalName = "Vehicles",
+		labelTitle = "VEHICLE GARAGE",
+		labelSub = "Stand Here",
+		accentColor = Color3.fromRGB(84, 255, 132),
 	})
-	cloneCuratedModel("Hero_ShopBooth", CFrame.new(20.2, 6, 58) * CFrame.Angles(0, math.rad(-90), 0), 0.95, hub, 0.95, true)
-	addFloatingBoothLabel(Vector3.new(20.2, 13.5, 58), "Index & Sell", Color3.fromRGB(255, 224, 72))
-	addPrompt(merchantPad, "Open Index / Sell", "Animal Index & Merchant", "IndexPrompt")
+
+	-- Rebirth is accessed directly from the HUD button (former 3D Portal asset is now the Merge Machine)
+	-- Animal Index & Merchant Booth (Right side boulevard)
+	cloneCuratedModel("Hero_ShopBooth", CFrame.new(18, 6, 12) * CFrame.Angles(0, math.rad(-90), 0), 0.95, hub, 0.45, true)
+	addFloatingBoothLabel(Vector3.new(18, 13.5, 12), "Index & Sell", Color3.fromRGB(255, 224, 72))
+	makeGreenStandZone({
+		name = "IndexMerchantZone",
+		pos = Vector3.new(8.5, 0.42, 12),
+		radius = 5.5,
+		modalName = "Index",
+		labelTitle = "INDEX & SELL",
+		labelSub = "Stand Here",
+		accentColor = Color3.fromRGB(84, 255, 132),
+	})
 
 	-- 6. Grand Sanctuary Safe-Zone Exit Gate at Z = 148
 	local gateFolder = Instance.new("Model")

@@ -12,6 +12,7 @@ local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
 
 local DataService = require(script.Parent.DataService)
 local PlotService = require(script.Parent.PlotService)
+local LeaderboardService = require(script.Parent.LeaderboardService)
 local AnalyticsTracker = require(script.Parent.AnalyticsTracker)
 
 local EconomyService = {}
@@ -103,6 +104,7 @@ function EconomyService.Init()
 		if not def or not profile then return end
 		if profile.ownedVehicles[vehicleId] then
 			profile.equippedVehicle = vehicleId
+			PlotService.RefreshPlotBoardVisuals(player)
 			DataService.SyncProfile(player)
 			return
 		end
@@ -114,6 +116,7 @@ function EconomyService.Init()
 		profile.ownedVehicles[vehicleId] = true
 		profile.equippedVehicle = vehicleId
 		AnalyticsTracker.LogEconomy(player, false, "Coins", def.cost, profile.coins, "Shop", "Vehicle_" .. vehicleId)
+		PlotService.RefreshPlotBoardVisuals(player)
 		DataService.SyncProfile(player)
 		Remotes.Get("NotifyClient"):FireClient(player, "Unlocked " .. def.name .. "!", Color3.fromRGB(84, 245, 148))
 	end)
@@ -123,23 +126,13 @@ function EconomyService.Init()
 		local profile = DataService.GetProfile(player)
 		if profile and profile.ownedVehicles[vehicleId] then
 			profile.equippedVehicle = vehicleId
+			PlotService.RefreshPlotBoardVisuals(player)
 			DataService.SyncProfile(player)
 		end
 	end)
 
 	Remotes.Get("UpgradeTreadmill").OnServerEvent:Connect(function(player)
-		local profile = DataService.GetProfile(player)
-		if not profile then return end
-		local cost = math.floor(GameConfig.TREADMILL.UPGRADE_BASE_COST * math.pow(GameConfig.TREADMILL.UPGRADE_GROWTH, profile.treadmillLevel - 1))
-		if profile.coins < cost then
-			Remotes.Get("NotifyClient"):FireClient(player, "Need $" .. FormatUtil.Number(cost) .. " to upgrade Treadmill!", Color3.fromRGB(255, 96, 96))
-			return
-		end
-		profile.coins -= cost
-		profile.treadmillLevel += 1
-		PlotService.RefreshPlotBoardVisuals(player)
-		DataService.SyncProfile(player)
-		Remotes.Get("NotifyClient"):FireClient(player, "Treadmill upgraded to Lv." .. profile.treadmillLevel .. "!", Color3.fromRGB(58, 188, 255))
+		PlotService.UpgradeTreadmill(player)
 	end)
 
 	Remotes.Get("ToggleLockAnimal").OnServerEvent:Connect(function(player, animalUid)
@@ -154,24 +147,38 @@ function EconomyService.Init()
 	end)
 
 	Remotes.Get("SellAnimal").OnServerEvent:Connect(function(player, animalUid)
-		if typeof(animalUid) ~= "string" then return end
+		if typeof(animalUid) ~= "string" or animalUid == "" then return end
 		local profile = DataService.GetProfile(player)
 		if not profile then return end
+		if DataService.IsUidConsumed(profile, animalUid) then
+			profile.inventoryAnimals[animalUid] = nil
+			return
+		end
+		if not DataService.AcquireTransactionLock(player.UserId, { animalUid }) then
+			return
+		end
 		local animal = profile.inventoryAnimals[animalUid]
-		if not animal then return end
+		if not animal then
+			DataService.ReleaseTransactionLock(player.UserId, { animalUid })
+			return
+		end
 		if animal.locked then
+			DataService.ReleaseTransactionLock(player.UserId, { animalUid })
 			Remotes.Get("NotifyClient"):FireClient(player, "Animal is locked! Unlock it before selling.", Color3.fromRGB(255, 196, 62))
 			return
 		end
 		local sellValue = math.floor(AnimalConfig.ComputeIncomePerSec(animal) * 35)
+		-- Consume pet & record tombstone FIRST before granting coins
 		profile.inventoryAnimals[animalUid] = nil
-		for i, uid in ipairs(profile.roamingAnimalUids) do
-			if uid == animalUid then
+		for i = #profile.roamingAnimalUids, 1, -1 do
+			if profile.roamingAnimalUids[i] == animalUid then
 				table.remove(profile.roamingAnimalUids, i)
-				break
 			end
 		end
+		DataService.MarkUidConsumed(profile, animalUid)
 		profile.coins += sellValue
+		DataService.ReleaseTransactionLock(player.UserId, { animalUid })
+
 		PlotService.RefreshPlotBoardVisuals(player)
 		PlotService.BroadcastAllPlotsSync()
 		DataService.SyncProfile(player)
@@ -247,14 +254,14 @@ function EconomyService.Init()
 			return
 		end
 		profile.rebirths += 1
-		profile.coins = GameConfig.ECONOMY.STARTING_COINS
-		profile.speedStat = 0
-		profile.unclaimedPenCoins = 0
+		-- Rebirth only resets Coins (preserves Speed, Pets, Crates, Tools, and Upgrades!)
+		profile.coins = 0
 		PlotService.RefreshPlotBoardVisuals(player)
 		DataService.SyncProfile(player)
+		task.spawn(LeaderboardService.RefreshGlobalLeaderboards)
 		Remotes.Get("NotifyClient"):FireClient(
 			player,
-			string.format("REBIRTH %d COMPLETE! Permanent +%d%% Cash Bonus!", profile.rebirths, profile.rebirths * 75),
+			string.format("REBIRTH %d COMPLETE! Only Coins reset — Permanent +%d%% Cash Bonus!", profile.rebirths, profile.rebirths * 75),
 			Color3.fromRGB(255, 86, 178)
 		)
 	end)

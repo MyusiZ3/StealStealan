@@ -1,6 +1,6 @@
 --!strict
 -- LeaderboardClient.client.luau
--- Renders up to 100 entries on each of the 3 3D Hub Leaderboards (Top Money, Top Speed, Top Playtime)
+-- Renders up to 100 entries on each of the 3 3D Hub Leaderboards (Top Rebirths, Top Speed, Top Playtime)
 -- with avatar thumbnails, rank badges, formatted values, and 5-minute refresh countdown.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -124,8 +124,9 @@ local function renderAllBoards()
 	if type(currentPayload) ~= "table" then
 		return
 	end
-	populateBoard("TopMoneyBoard", currentPayload.money or {}, "💵", Color3.fromRGB(118, 255, 118), function(v)
-		return "$" .. FormatUtil.Number(v) .. "/s"
+	populateBoard("TopRebirthBoard", currentPayload.rebirths or {}, "♻️", Color3.fromRGB(118, 255, 118), function(v)
+		local n = math.floor(v)
+		return FormatUtil.Number(n) .. (if n == 1 then " Rebirth" else " Rebirths")
 	end)
 	populateBoard("TopSpeedBoard", currentPayload.speed or {}, "👟", Color3.fromRGB(96, 214, 255), function(v)
 		return FormatUtil.Number(v)
@@ -160,7 +161,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 
 	local rem = math.max(0, nextRefreshAt - os.time())
 	local txt = string.format("Top 100 • Updates in %d:%02d", math.floor(rem / 60), rem % 60)
-	for _, bName in ipairs({ "TopMoneyBoard", "TopSpeedBoard", "TopPlaytimeBoard" }) do
+	for _, bName in ipairs({ "TopRebirthBoard", "TopSpeedBoard", "TopPlaytimeBoard" }) do
 		local bm = wall:FindFirstChild(bName)
 		local sp = if bm then bm:FindFirstChild("DisplaySurface") else nil
 		local bg = if sp then sp:FindFirstChild("BoardGui") else nil

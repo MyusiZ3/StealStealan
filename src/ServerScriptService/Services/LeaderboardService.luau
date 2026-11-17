@@ -1,6 +1,6 @@
 --!strict
 -- LeaderboardService.luau
--- Global OrderedDataStore Leaderboard for Top 100 Money/s, Top 100 Speed, and Top 100 Playtime.
+-- Global OrderedDataStore Leaderboard for Top 100 Rebirths, Top 100 Speed, and Top 100 Playtime.
 -- Refreshes every 5 minutes (300 seconds) + initial server startup load.
 
 local DataStoreService = game:GetService("DataStoreService")
@@ -10,19 +10,18 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 
 local DataService = require(script.Parent.DataService)
-local PlotService = require(script.Parent.PlotService)
 
 local LeaderboardService = {}
 
 local REFRESH_INTERVAL = 300 -- 5 minutes
 local MAX_ENTRIES = 100
 
-local moneyStore: OrderedDataStore? = nil
+local rebirthStore: OrderedDataStore? = nil
 local speedStore: OrderedDataStore? = nil
 local playtimeStore: OrderedDataStore? = nil
 
 pcall(function()
-	moneyStore = DataStoreService:GetOrderedDataStore("GlobalTopMoneyRate_v1")
+	rebirthStore = DataStoreService:GetOrderedDataStore("GlobalTopRebirths_v1")
 	speedStore = DataStoreService:GetOrderedDataStore("GlobalTopSpeed_v1")
 	playtimeStore = DataStoreService:GetOrderedDataStore("GlobalTopPlaytime_v1")
 end)
@@ -34,7 +33,7 @@ export type LeaderboardEntry = {
 }
 
 export type LeaderboardPayload = {
-	money: { LeaderboardEntry },
+	rebirths: { LeaderboardEntry },
 	speed: { LeaderboardEntry },
 	playtime: { LeaderboardEntry },
 	nextRefreshAt: number,
@@ -45,7 +44,7 @@ local sessionJoinAt: { [number]: number } = {}
 local usernameCache: { [number]: string } = {}
 
 local cachedPayload: LeaderboardPayload = {
-	money = {},
+	rebirths = {},
 	speed = {},
 	playtime = {},
 	nextRefreshAt = os.time() + REFRESH_INTERVAL,
@@ -157,7 +156,7 @@ local function fetchTop100FromStore(
 end
 
 function LeaderboardService.RefreshGlobalLeaderboards()
-	local liveMoney: { [number]: { username: string, value: number } } = {}
+	local liveRebirths: { [number]: { username: string, value: number } } = {}
 	local liveSpeed: { [number]: { username: string, value: number } } = {}
 	local livePlaytime: { [number]: { username: string, value: number } } = {}
 
@@ -165,18 +164,18 @@ function LeaderboardService.RefreshGlobalLeaderboards()
 		local profile = DataService.GetProfile(player)
 		if profile then
 			usernameCache[player.UserId] = player.Name
-			local perSec = PlotService.ComputePlayerIncomePerSec(player, profile)
+			local rb = math.max(0, math.floor(tonumber(profile.rebirths) or 0))
 			local spd = profile.speedStat or 0
 			local pTime = getPlayerSessionPlaytime(player, profile)
 
-			liveMoney[player.UserId] = { username = player.Name, value = perSec }
+			liveRebirths[player.UserId] = { username = player.Name, value = rb }
 			liveSpeed[player.UserId] = { username = player.Name, value = spd }
 			livePlaytime[player.UserId] = { username = player.Name, value = pTime }
 
 			local key = tostring(player.UserId)
-			if moneyStore then
+			if rebirthStore then
 				pcall(function()
-					moneyStore:SetAsync(key, encodeLogValue(perSec))
+					rebirthStore:SetAsync(key, rb)
 				end)
 			end
 			if speedStore then
@@ -192,13 +191,13 @@ function LeaderboardService.RefreshGlobalLeaderboards()
 		end
 	end
 
-	local moneyList = fetchTop100FromStore(moneyStore, true, liveMoney)
+	local rebirthList = fetchTop100FromStore(rebirthStore, false, liveRebirths)
 	local speedList = fetchTop100FromStore(speedStore, true, liveSpeed)
 	local playList = fetchTop100FromStore(playtimeStore, false, livePlaytime)
 
 	local now = os.time()
 	cachedPayload = {
-		money = moneyList,
+		rebirths = rebirthList,
 		speed = speedList,
 		playtime = playList,
 		nextRefreshAt = now + REFRESH_INTERVAL,
@@ -221,13 +220,13 @@ function LeaderboardService.OnPlayerReady(player: Player)
 			return
 		end
 		local hasPlayer = false
-		for _, e in ipairs(cachedPayload.money) do
+		for _, e in ipairs(cachedPayload.rebirths) do
 			if e.userId == player.UserId then
 				hasPlayer = true
 				break
 			end
 		end
-		if #cachedPayload.money == 0 or not hasPlayer then
+		if #cachedPayload.rebirths == 0 or not hasPlayer then
 			LeaderboardService.RefreshGlobalLeaderboards()
 		else
 			LeaderboardService.SendToPlayer(player)
