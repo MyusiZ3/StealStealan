@@ -84,9 +84,34 @@ Remotes.Get("CrateDelivered").OnClientEvent:Connect(function()
 	playSFX(SoundConfig.SFX.CoinCollect, 0.85)
 end)
 
+Remotes.Get("CrateHatchReveal").OnClientEvent:Connect(function()
+	-- Multi-stage Hatch SFX: shake/crack ticks -> burst pop -> happy reveal chime!
+	playSFX(SoundConfig.SFX.LassoPullTick, 0.7)
+	task.delay(0.28, function()
+		playSFX(SoundConfig.SFX.LassoPullTick, 0.85)
+	end)
+	task.delay(0.56, function()
+		playSFX(SoundConfig.SFX.LassoPullTick, 0.95)
+	end)
+	task.delay(0.86, function()
+		playSFX(SoundConfig.SFX.CratePop, 1.0)
+	end)
+	task.delay(1.18, function()
+		playSFX(SoundConfig.SFX.MergeSuccess, 0.92)
+	end)
+end)
+
 Remotes.Get("PoacherAlertSync").OnClientEvent:Connect(function(active)
 	inBossChase = (active == true)
 	if inBossChase then
+		playSFX(SoundConfig.SFX.PoacherAlarm, 0.85)
+		switchBGM(SoundConfig.BGM.Boss)
+	end
+end)
+
+localPlayer:GetAttributeChangedSignal("TowedCrateCount"):Connect(function()
+	local cnt = tonumber(localPlayer:GetAttribute("TowedCrateCount")) or 0
+	if cnt > 0 then
 		playSFX(SoundConfig.SFX.PoacherAlarm, 0.85)
 		switchBGM(SoundConfig.BGM.Boss)
 	end
@@ -120,7 +145,8 @@ RunService.Heartbeat:Connect(function(dt: number)
 	accum += dt
 	if accum < 1.0 then return end
 	accum = 0
-	if inBossChase then
+	local carrying = (tonumber(localPlayer:GetAttribute("TowedCrateCount")) or 0) > 0
+	if inBossChase or carrying then
 		switchBGM(SoundConfig.BGM.Boss)
 		return
 	end

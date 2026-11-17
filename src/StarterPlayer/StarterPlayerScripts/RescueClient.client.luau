@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
+local RunService = game:GetService("RunService")
 local LassoConfig = require(ReplicatedStorage.Config.LassoConfig)
 local GameConfig = require(ReplicatedStorage.Config.GameConfig)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
@@ -16,6 +17,15 @@ local localPlayer = Players.LocalPlayer
 local equippedLassoId = "RopeLasso"
 local isSlowMode = false
 local beamPart: Part? = nil
+local ropeBeam: Beam? = nil
+local ropeAttach0Part: Part? = nil
+local ropeAttach1Part: Part? = nil
+local loopRingParts: { Part } = {}
+local digVfxPart: Part? = nil
+local digDirtEmitter: ParticleEmitter? = nil
+local digSparkEmitter: ParticleEmitter? = nil
+local isPullActive = false
+local activeCratePos: Vector3? = nil
 local activePullGui: ScreenGui? = nil
 local pullFillBar: Frame? = nil
 local pullLabel: TextLabel? = nil
@@ -93,36 +103,204 @@ local function ensurePullUI()
 	activePullGui = sg
 end
 
+local function destroyLassoRopeVisuals()
+	if beamPart then
+		beamPart:Destroy()
+		beamPart = nil
+	end
+	if ropeBeam then
+		ropeBeam:Destroy()
+		ropeBeam = nil
+	end
+	if ropeAttach0Part then
+		ropeAttach0Part:Destroy()
+		ropeAttach0Part = nil
+	end
+	if ropeAttach1Part then
+		ropeAttach1Part:Destroy()
+		ropeAttach1Part = nil
+	end
+	for _, seg in ipairs(loopRingParts) do
+		if seg then seg:Destroy() end
+	end
+	table.clear(loopRingParts)
+	if digVfxPart then
+		digVfxPart:Destroy()
+		digVfxPart = nil
+		digDirtEmitter = nil
+		digSparkEmitter = nil
+	end
+	localPlayer:SetAttribute("ClientPullingCrate", false)
+end
+
 local function updateBeam(cratePos: Vector3?)
 	if not cratePos then
-		if beamPart then
-			beamPart:Destroy()
-			beamPart = nil
-		end
+		destroyLassoRopeVisuals()
 		return
 	end
 	local char = localPlayer.Character
 	local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
 	if not root or not root:IsA("BasePart") then return end
 
+	-- Anchor rope visually at player's Right Hand / held lasso coil!
+	local hand = char and (char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm"))
+	local startPos = if hand and hand:IsA("BasePart")
+		then (hand.CFrame * CFrame.new(0, -0.15, -0.35)).Position
+		else (root.CFrame * CFrame.new(1.1, 0.3, -0.6)).Position
+	local targetLoopPos = cratePos + Vector3.new(0, 0.45, 0)
+	local lassoCol = getLassoColor()
+
 	if not beamPart then
 		local p = Instance.new("Part")
-		p.Name = "ClientLassoBeam"
+		p.Name = "ClientLassoRope3D"
+		p.Shape = Enum.PartType.Cylinder
 		p.Anchored = true
 		p.CanCollide = false
 		p.CanQuery = false
+		p.CanTouch = false
+		p.CastShadow = false
 		p.Material = Enum.Material.Neon
 		p.Parent = Workspace
 		beamPart = p
 	end
 
-	local startPos = root.Position + Vector3.new(0, 0.5, 0)
-	local dist = (cratePos - startPos).Magnitude
+	if not ropeAttach0Part then
+		local a0p = Instance.new("Part")
+		a0p.Name = "LassoAttachA0"
+		a0p.Size = Vector3.new(0.2, 0.2, 0.2)
+		a0p.Transparency = 1
+		a0p.Anchored = true
+		a0p.CanCollide = false
+		a0p.CanQuery = false
+		a0p.Parent = Workspace
+		local att0 = Instance.new("Attachment", a0p)
+		att0.Name = "Att0"
+		ropeAttach0Part = a0p
+
+		local a1p = Instance.new("Part")
+		a1p.Name = "LassoAttachA1"
+		a1p.Size = Vector3.new(0.2, 0.2, 0.2)
+		a1p.Transparency = 1
+		a1p.Anchored = true
+		a1p.CanCollide = false
+		a1p.CanQuery = false
+		a1p.Parent = Workspace
+		local att1 = Instance.new("Attachment", a1p)
+		att1.Name = "Att1"
+		ropeAttach1Part = a1p
+
+		local b = Instance.new("Beam")
+		b.Name = "LassoEnergyBeam"
+		b.Attachment0 = att0
+		b.Attachment1 = att1
+		b.Width0 = 0.42
+		b.Width1 = 0.56
+		b.LightEmission = 0.9
+		b.FaceCamera = true
+		b.Parent = a0p
+		ropeBeam = b
+	end
+
+	if #loopRingParts == 0 then
+		for i = 1, 6 do
+			local seg = Instance.new("Part")
+			seg.Name = "LassoLoopSeg_" .. i
+			seg.Size = Vector3.new(0.26, 0.26, 2.2)
+			seg.Anchored = true
+			seg.CanCollide = false
+			seg.CanQuery = false
+			seg.CanTouch = false
+			seg.CastShadow = false
+			seg.Material = Enum.Material.Neon
+			seg.Parent = Workspace
+			table.insert(loopRingParts, seg)
+		end
+	end
+
+	local delta = targetLoopPos - startPos
+	local dist = math.max(0.2, delta.Magnitude)
+	local mid = (startPos + targetLoopPos) * 0.5
+
 	local bp = beamPart :: Part
-	bp.Size = Vector3.new(0.28, 0.28, dist)
-	bp.Color = getLassoColor()
-	bp.CFrame = CFrame.lookAt(startPos, cratePos) * CFrame.new(0, 0, -dist / 2)
+	bp.Size = Vector3.new(dist, 0.26, 0.26)
+	bp.Color = lassoCol
+	bp.CFrame = CFrame.lookAt(mid, targetLoopPos) * CFrame.Angles(0, math.pi * 0.5, 0)
+
+	if ropeAttach0Part and ropeAttach1Part and ropeBeam then
+		ropeAttach0Part.Position = startPos
+		ropeAttach1Part.Position = targetLoopPos
+		ropeBeam.Color = ColorSequence.new(lassoCol, Color3.new(1, 1, 1))
+		local t = os.clock() * 14
+		ropeBeam.CurveSize0 = math.sin(t) * 1.4
+		ropeBeam.CurveSize1 = math.cos(t) * 1.2
+	end
+
+	local spin = os.clock() * 5.2
+	local radius = 2.65
+	local segCount = #loopRingParts
+	for i, seg in ipairs(loopRingParts) do
+		local a = spin + ((i - 1) / segCount) * math.pi * 2
+		local ringPos = targetLoopPos + Vector3.new(math.cos(a) * radius, math.sin(spin * 1.3 + i) * 0.2, math.sin(a) * radius)
+		seg.Color = lassoCol
+		seg.CFrame = CFrame.lookAt(ringPos, targetLoopPos) * CFrame.Angles(0, math.pi * 0.5, 0)
+	end
+
+	-- Active Digging Earth Dust + Lasso Spark VFX around the crate being pulled
+	if not digVfxPart then
+		local dp = Instance.new("Part")
+		dp.Name = "LassoDigVFXPart"
+		dp.Size = Vector3.new(3.2, 0.4, 3.2)
+		dp.Transparency = 1
+		dp.Anchored = true
+		dp.CanCollide = false
+		dp.CanQuery = false
+		dp.CanTouch = false
+		dp.Parent = Workspace
+		digVfxPart = dp
+
+		local dirt = Instance.new("ParticleEmitter")
+		dirt.Name = "DigDirtEmitter"
+		dirt.Rate = 30
+		dirt.Lifetime = NumberRange.new(0.45, 0.9)
+		dirt.Speed = NumberRange.new(8, 17)
+		dirt.SpreadAngle = Vector2.new(58, 58)
+		dirt.Acceleration = Vector3.new(0, -32, 0)
+		dirt.EmissionDirection = Enum.NormalId.Top
+		dirt.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.55), NumberSequenceKeypoint.new(1, 0) })
+		dirt.Color = ColorSequence.new(Color3.fromRGB(148, 106, 68), Color3.fromRGB(92, 66, 42))
+		dirt.RotSpeed = NumberRange.new(-180, 180)
+		dirt.Parent = dp
+		digDirtEmitter = dirt
+
+		local sparks = Instance.new("ParticleEmitter")
+		sparks.Name = "DigSparkEmitter"
+		sparks.Rate = 24
+		sparks.Lifetime = NumberRange.new(0.3, 0.65)
+		sparks.Speed = NumberRange.new(10, 22)
+		sparks.SpreadAngle = Vector2.new(70, 70)
+		sparks.Acceleration = Vector3.new(0, -14, 0)
+		sparks.EmissionDirection = Enum.NormalId.Top
+		sparks.LightEmission = 1
+		sparks.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.38), NumberSequenceKeypoint.new(1, 0) })
+		sparks.Color = ColorSequence.new(lassoCol, Color3.new(1, 1, 1))
+		sparks.Parent = dp
+		digSparkEmitter = sparks
+	end
+	if digVfxPart then
+		digVfxPart.Position = Vector3.new(cratePos.X, math.max(0.4, cratePos.Y - 0.6), cratePos.Z)
+		if digSparkEmitter then
+			digSparkEmitter.Color = ColorSequence.new(lassoCol, Color3.new(1, 1, 1))
+		end
+	end
 end
+
+RunService.RenderStepped:Connect(function()
+	if isPullActive and activeCratePos then
+		updateBeam(activeCratePos)
+	elseif beamPart then
+		destroyLassoRopeVisuals()
+	end
+end)
 
 Remotes.Get("ProfileSync").OnClientEvent:Connect(function(profile)
 	if type(profile) == "table" and profile.equippedLasso then
@@ -134,6 +312,9 @@ Remotes.Get("PullProgressSync").OnClientEvent:Connect(function(data)
 	ensurePullUI()
 	if not activePullGui then return end
 	if data.active then
+		isPullActive = true
+		activeCratePos = data.cratePos
+		localPlayer:SetAttribute("ClientPullingCrate", true)
 		activePullGui.Enabled = true
 		if pullFillBar then
 			pullFillBar.Size = UDim2.fromScale(math.clamp(data.progress or 0, 0, 1), 1)
@@ -143,6 +324,9 @@ Remotes.Get("PullProgressSync").OnClientEvent:Connect(function(data)
 		end
 		updateBeam(data.cratePos)
 	else
+		isPullActive = false
+		activeCratePos = nil
+		localPlayer:SetAttribute("ClientPullingCrate", false)
 		activePullGui.Enabled = false
 		updateBeam(nil)
 	end
@@ -156,7 +340,7 @@ end
 
 UserInputService.InputBegan:Connect(function(input, gp)
 	if gp then return end
-	if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
+	if input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then
 		toggleSlowMode()
 	elseif input.KeyCode == Enum.KeyCode.Space and activePullGui and activePullGui.Enabled then
 		Remotes.Get("LassoTapBoost"):FireServer()
