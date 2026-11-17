@@ -1,6 +1,6 @@
 --!strict
 -- PoacherAISystem.luau
--- Manages Biome Poachers & Bosses: Waypoint Patrol, Aggro Pursuit on Crate Pull, Safe-Zone Boundary, & Shield/GodMode checks
+-- Manages Biome Poachers & Bosses: Waypoint Patrol, Biome-Scoped End-to-End Chase to Safe Zone, & Shield/GodMode checks
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -28,13 +28,12 @@ type PoacherAgent = {
 	root: Part,
 	waypoints: { Vector3 },
 	wpIndex: number,
-	aggroTarget: Player?,
-	aggroUntil: number,
 	baseScale: number,
 }
 
 local agents: { PoacherAgent } = {}
 local playerShields: { [number]: number } = {}
+local playerBiomeAggro: { [number]: { [string]: boolean } } = {}
 local onCatchCallbacks: { (Player, Vector3) -> () } = {}
 
 function PoacherAISystem.OnPlayerCaught(cb: (Player, Vector3) -> ())
@@ -55,14 +54,33 @@ function PoacherAISystem.ResetShieldsForPlayer(player: Player)
 end
 
 function PoacherAISystem.TriggerBiomeAggro(biomeId: string, player: Player)
-	local now = os.clock()
-	for _, ag in ipairs(agents) do
-		if ag.biomeId == biomeId then
-			ag.aggroTarget = player
-			ag.aggroUntil = now + 22
-		end
-	end
+	local uid = player.UserId
+	playerBiomeAggro[uid] = playerBiomeAggro[uid] or {}
+	playerBiomeAggro[uid][biomeId] = true
 	Remotes.Get("PoacherAlertSync"):FireClient(player, true, biomeId)
+end
+
+function PoacherAISystem.ClearBiomeAggro(player: Player, biomeId: string?)
+	local uid = player.UserId
+	local map = playerBiomeAggro[uid]
+	if not map then
+		Remotes.Get("PoacherAlertSync"):FireClient(player, false, "")
+		return
+	end
+	if biomeId then
+		map[biomeId] = nil
+	else
+		table.clear(map)
+	end
+	local hasAny = next(map) ~= nil
+	if not hasAny then
+		Remotes.Get("PoacherAlertSync"):FireClient(player, false, "")
+	end
+end
+
+local function hasAggroInBiome(userId: number, biomeId: string): boolean
+	local map = playerBiomeAggro[userId]
+	return map ~= nil and map[biomeId] == true
 end
 
 local function buildPoacherModel(name: string, isBoss: boolean, accentColor: Color3, pos: Vector3, parent: Instance): (Model, Part, number)
@@ -159,22 +177,36 @@ function PoacherAISystem.Init()
 			}
 		end
 
-		-- Spawn 1 Patrol Guard & 1 Biome Boss
-		local guardM, guardRoot, gScale = buildPoacherModel(biome.id .. " Guard", false, biome.accentColor, waypoints[1], activeFolder)
+		-- Spawn 2 Biome-Scoped Patrol Guards & 1 Biome Boss
+		local guard1M, guard1Root, g1Scale = buildPoacherModel(biome.id .. " Guard #1", false, biome.accentColor, waypoints[1], activeFolder)
 		table.insert(agents, {
-			id = biome.id .. "_Guard",
+			id = biome.id .. "_Guard1",
 			biomeId = biome.id,
 			isBoss = false,
 			baseSpeed = biome.poacherSpeed,
 			zMin = biome.zStart + 8,
 			zMax = biome.zEnd - 8,
-			model = guardM,
-			root = guardRoot,
+			model = guard1M,
+			root = guard1Root,
 			waypoints = waypoints,
 			wpIndex = 2,
-			aggroTarget = nil,
-			aggroUntil = 0,
-			baseScale = gScale,
+			baseScale = g1Scale,
+		})
+
+		local g2Start = waypoints[#waypoints]
+		local guard2M, guard2Root, g2Scale = buildPoacherModel(biome.id .. " Guard #2", false, biome.accentColor, g2Start, activeFolder)
+		table.insert(agents, {
+			id = biome.id .. "_Guard2",
+			biomeId = biome.id,
+			isBoss = false,
+			baseSpeed = biome.poacherSpeed * 1.05,
+			zMin = biome.zStart + 8,
+			zMax = biome.zEnd - 8,
+			model = guard2M,
+			root = guard2Root,
+			waypoints = waypoints,
+			wpIndex = math.max(1, #waypoints - 1),
+			baseScale = g2Scale,
 		})
 
 		local bossPos = waypoints[math.min(3, #waypoints)]
@@ -190,8 +222,6 @@ function PoacherAISystem.Init()
 			root = bossRoot,
 			waypoints = waypoints,
 			wpIndex = 1,
-			aggroTarget = nil,
-			aggroUntil = 0,
 			baseScale = bScale,
 		})
 	end
@@ -202,30 +232,54 @@ function PoacherAISystem.Init()
 		local now = os.clock()
 		local speedMult = AdminService.GetPoacherSpeedMultiplier()
 
+		-- Clear aggro immediately once a fleeing player makes it back inside the Safe Zone
+		for _, p in ipairs(Players:GetPlayers()) do
+			local map = playerBiomeAggro[p.UserId]
+			if map and next(map) ~= nil then
+				local pChar = p.Character
+				local pRoot = if pChar then pChar:FindFirstChild("HumanoidRootPart") else nil
+				if pRoot and pRoot:IsA("BasePart") and pRoot.Position.Z <= GameConfig.WORLD.SAFE_ZONE_Z_MAX then
+					PoacherAISystem.ClearBiomeAggro(p, nil)
+				end
+			end
+		end
+
 		for _, ag in ipairs(agents) do
+			local currPos = ag.root.Position
 			local targetPos = ag.waypoints[ag.wpIndex]
 			local chasingPlayer: Player? = nil
+			local bestDistSq = math.huge
 
-			if ag.aggroTarget and now < ag.aggroUntil and ag.aggroTarget.Parent == Players then
-				local pChar = ag.aggroTarget.Character
-				local pRoot = if pChar then pChar:FindFirstChild("HumanoidRootPart") else nil
-				if pRoot and pRoot:IsA("BasePart") then
-					if pRoot.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX + 4 and not AdminService.HasGodMode(ag.aggroTarget) then
-						chasingPlayer = ag.aggroTarget
-						targetPos = Vector3.new(pRoot.Position.X, 3.5, math.clamp(pRoot.Position.Z, ag.zMin, ag.zMax))
-					else
-						ag.aggroTarget = nil
-						Remotes.Get("PoacherAlertSync"):FireClient(ag.aggroTarget, false, ag.biomeId)
+			-- Find closest thief who stole from THIS agent's biome and is outside Safe Zone
+			for _, candidate in ipairs(Players:GetPlayers()) do
+				if hasAggroInBiome(candidate.UserId, ag.biomeId) and not AdminService.HasGodMode(candidate) then
+					local cChar = candidate.Character
+					local cHum = if cChar then cChar:FindFirstChildOfClass("Humanoid") else nil
+					local cRoot = if cChar then cChar:FindFirstChild("HumanoidRootPart") else nil
+					if cHum and cHum.Health > 0 and cRoot and cRoot:IsA("BasePart") and cRoot.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX + 2 then
+						local d = (cRoot.Position - currPos)
+						local distSq = d.X * d.X + d.Z * d.Z
+						if distSq < bestDistSq then
+							bestDistSq = distSq
+							chasingPlayer = candidate
+						end
 					end
 				end
-			else
-				ag.aggroTarget = nil
 			end
 
-			local currPos = ag.root.Position
+			if chasingPlayer then
+				local pChar = chasingPlayer.Character
+				local pRoot = if pChar then pChar:FindFirstChild("HumanoidRootPart") else nil
+				if pRoot and pRoot:IsA("BasePart") then
+					-- End-to-end chase across ALL zones up to the Safe Zone boundary!
+					targetPos = Vector3.new(pRoot.Position.X, 3.5, math.max(GameConfig.WORLD.SAFE_ZONE_Z_MAX + 2, pRoot.Position.Z))
+				end
+			end
+
 			local delta = Vector3.new(targetPos.X - currPos.X, 0, targetPos.Z - currPos.Z)
 			local dist = delta.Magnitude
-			local moveSpeed = ag.baseSpeed * speedMult * (if chasingPlayer then 1.0 else 0.65)
+			local isReturningHome = (not chasingPlayer) and (currPos.Z < ag.zMin - 4 or currPos.Z > ag.zMax + 4)
+			local moveSpeed = ag.baseSpeed * speedMult * (if chasingPlayer then 1.0 elseif isReturningHome then 1.65 else 0.65)
 
 			if dist > 1.5 then
 				local step = math.min(dist, moveSpeed * dt)
@@ -237,12 +291,12 @@ function PoacherAISystem.Init()
 				ag.wpIndex = (ag.wpIndex % #ag.waypoints) + 1
 			end
 
-			-- Horizontal XZ-plane hit detection (immune to jumping/noclip float exploits)
+			-- Horizontal XZ-plane hit detection scoped strictly to players aggroed on THIS biome
 			for _, player in ipairs(Players:GetPlayers()) do
-				if not AdminService.HasGodMode(player) then
+				if hasAggroInBiome(player.UserId, ag.biomeId) and not AdminService.HasGodMode(player) then
 					local char = player.Character
 					local pRoot = if char then char:FindFirstChild("HumanoidRootPart") else nil
-					if pRoot and pRoot:IsA("BasePart") and pRoot.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX + 6 then
+					if pRoot and pRoot:IsA("BasePart") and pRoot.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX + 3 then
 						local xzDist = Vector2.new(pRoot.Position.X - ag.root.Position.X, pRoot.Position.Z - ag.root.Position.Z).Magnitude
 						local catchRadius = if ag.isBoss then 7.2 else 5.4
 						if xzDist <= catchRadius and (now - (lastCatchTick[player.UserId] or 0)) > 2.5 then
@@ -252,7 +306,6 @@ function PoacherAISystem.Init()
 								playerShields[player.UserId] = shields - 1
 								Remotes.Get("NotifyClient"):FireClient(player, "Armor Shield absorbed Poacher tackle!", Color3.fromRGB(255, 206, 62))
 							else
-								-- Knockback / Ragdoll at impact spot (NO teleport to Safe Zone!) & drop carried crates
 								local away = Vector3.new(pRoot.Position.X - ag.root.Position.X, 0, pRoot.Position.Z - ag.root.Position.Z)
 								if away.Magnitude < 0.1 then
 									away = Vector3.new(0, 0, -1)
@@ -263,8 +316,7 @@ function PoacherAISystem.Init()
 								player:SetAttribute("StunnedUntil", os.clock() + 1.5)
 								Remotes.Get("PlayerKnockback"):FireClient(player, knockDir, 1.4)
 
-								ag.aggroTarget = nil
-								Remotes.Get("PoacherAlertSync"):FireClient(player, false, ag.biomeId)
+								PoacherAISystem.ClearBiomeAggro(player, nil)
 								for _, cb in ipairs(onCatchCallbacks) do
 									cb(player, pRoot.Position)
 								end
@@ -275,6 +327,12 @@ function PoacherAISystem.Init()
 				end
 			end
 		end
+	end)
+
+	Players.PlayerRemoving:Connect(function(player)
+		playerShields[player.UserId] = nil
+		playerBiomeAggro[player.UserId] = nil
+		lastCatchTick[player.UserId] = nil
 	end)
 end
 

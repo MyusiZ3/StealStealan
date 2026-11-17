@@ -20,6 +20,7 @@ local function makeBlock(props: {
 	studded: boolean?,
 	canCollide: boolean?,
 	canQuery: boolean?,
+	castShadow: boolean?,
 	transparency: number?,
 	parent: Instance,
 }): Part
@@ -37,70 +38,25 @@ local function makeBlock(props: {
 	p.Anchored = true
 	p.CanCollide = if props.canCollide ~= nil then props.canCollide else true
 	p.CanQuery = if props.canQuery ~= nil then props.canQuery else true
+	p.CastShadow = if props.castShadow ~= nil then props.castShadow else false
 	p.Transparency = props.transparency or 0
 	p.Parent = props.parent
 	return p
 end
 
-local function addBiomeArchSign(zPos: number, biome: any, parent: Instance)
-	local signModel = Instance.new("Model")
-	signModel.Name = "BiomeGate_" .. biome.id
-	signModel.Parent = parent
-
-	for _, x in { -23, 23 } do
-		makeBlock({
-			name = "Pillar",
-			size = Vector3.new(4, 18, 4),
-			cframe = CFrame.new(x, 9, zPos),
-			color = biome.cliffColor,
-			material = Enum.Material.Slate,
-			parent = signModel,
-		})
-	end
-
-	local banner = makeBlock({
-		name = "Banner",
-		size = Vector3.new(50, 6, 2.5),
-		cframe = CFrame.new(0, 17, zPos),
-		color = Color3.fromRGB(30, 34, 44),
-		material = Enum.Material.SmoothPlastic,
+local function addBiomeDividerLine(zPos: number, biome: any, parent: Instance)
+	-- Clean ground-level zone divider strip without towering archway blockers
+	makeBlock({
+		name = "BiomeDivider_" .. biome.id,
+		size = Vector3.new(188, 0.25, 2.2),
+		cframe = CFrame.new(0, 0.22, zPos),
+		color = biome.accentColor,
+		material = Enum.Material.Neon,
 		studded = false,
-		parent = signModel,
+		canCollide = false,
+		canQuery = false,
+		parent = parent,
 	})
-
-	for _, face in { Enum.NormalId.Front, Enum.NormalId.Back } do
-		local gui = Instance.new("SurfaceGui")
-		gui.Face = face
-		gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-		gui.PixelsPerStud = 30
-		gui.Parent = banner
-
-		local frame = Instance.new("Frame")
-		frame.Size = UDim2.fromScale(1, 1)
-		frame.BackgroundColor3 = Color3.fromRGB(24, 28, 38)
-		frame.BorderSizePixel = 0
-		frame.Parent = gui
-
-		local lbl = Instance.new("TextLabel")
-		lbl.Size = UDim2.fromScale(0.92, 0.55)
-		lbl.Position = UDim2.fromScale(0.04, 0.08)
-		lbl.BackgroundTransparency = 1
-		lbl.Text = string.format("ZONE %d: %s", biome.order, string.upper(biome.name))
-		lbl.TextColor3 = biome.accentColor
-		lbl.Font = Enum.Font.FredokaOne
-		lbl.TextScaled = true
-		lbl.Parent = frame
-
-		local sub = Instance.new("TextLabel")
-		sub.Size = UDim2.fromScale(0.92, 0.30)
-		sub.Position = UDim2.fromScale(0.04, 0.65)
-		sub.BackgroundTransparency = 1
-		sub.Text = string.format("%s | Boss: %s (Rec. Speed: %d)", biome.subtitle, biome.bossName, biome.recommendedSpeed)
-		sub.TextColor3 = Color3.fromRGB(235, 240, 248)
-		sub.Font = Enum.Font.GothamBold
-		sub.TextScaled = true
-		sub.Parent = frame
-	end
 end
 
 local function findCuratedTemplate(packPath: { string }): Instance?
@@ -119,7 +75,7 @@ local function placeDecorProp(template: Instance?, pos: Vector3, yawRad: number,
 		return
 	end
 	local clone = template:Clone()
-	if clone:IsA("Model") then
+		if clone:IsA("Model") then
 		if scaleMult ~= 1 then
 			pcall(function()
 				clone:ScaleTo(clone:GetScale() * scaleMult)
@@ -130,6 +86,7 @@ local function placeDecorProp(template: Instance?, pos: Vector3, yawRad: number,
 				d.Anchored = true
 				d.CanQuery = false
 				d.CanTouch = false
+				d.CastShadow = false
 			elseif d:IsA("BaseScript") then
 				d:Destroy()
 			end
@@ -392,7 +349,7 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder)
 		local lenZ = biome.zEnd - biome.zStart
 		local centerZ = (biome.zStart + biome.zEnd) / 2
 
-		-- 1. Main Blocky Studded Ground Floor (Split into stepped checkerboard tiles for blocky visual depth)
+		-- 1. Custom Blocky Checkerboard Studded Ground + Stepped Terrain Islands (Steal an Egg style!)
 		local terrainGroup = Instance.new("Folder")
 		terrainGroup.Name = "BlockyTerrain"
 		terrainGroup.Parent = biomeModel
@@ -408,41 +365,113 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder)
 			parent = terrainGroup,
 		})
 
-		-- Central Expedition Road (clear driving strip down the middle)
+		-- Mosaic Checkerboard Stud Tiles flanking the center trail for lively blocky terrain texture
+		local tileW = 24
+		local tileZ = 28
+		local rowIdx = 0
+		for z = biome.zStart + tileZ * 0.5, biome.zEnd - tileZ * 0.5, tileZ do
+			rowIdx += 1
+			for colIdx, cx in ipairs({ -74, -50, -28, 28, 50, 74 }) do
+				if (rowIdx + colIdx) % 2 == 0 then
+					makeBlock({
+						name = "MosaicTile",
+						size = Vector3.new(tileW - 1, 0.14, tileZ - 1),
+						cframe = CFrame.new(cx, 0.05, z),
+						color = biome.groundColor:Lerp(biome.accentColor, 0.24),
+						material = biome.materialName,
+						materialVariant = biome.materialVariant,
+						studded = true,
+						canCollide = false,
+						canQuery = false,
+						parent = terrainGroup,
+					})
+				end
+			end
+		end
+
+		-- Walkable Stepped Terrain Mounds / Knolls on outer sides (breaks up flat planes organically)
+		for idx = 1, 6 do
+			local sideSign = if idx % 2 == 0 then 1 else -1
+			local mz = biome.zStart + 32 + ((idx - 1) / 5) * (lenZ - 64)
+			local mx = sideSign * rng:NextNumber(52, 74)
+			local mw = rng:NextNumber(18, 28)
+			local md = rng:NextNumber(22, 34)
+			makeBlock({
+				name = "TerrainKnollLow",
+				size = Vector3.new(mw, 0.9, md),
+				cframe = CFrame.new(mx, 0.45, mz),
+				color = biome.groundColor:Lerp(Color3.new(1, 1, 1), 0.08),
+				material = biome.materialName,
+				materialVariant = biome.materialVariant,
+				studded = true,
+				parent = terrainGroup,
+			})
+			makeBlock({
+				name = "TerrainKnollTop",
+				size = Vector3.new(mw * 0.58, 0.85, md * 0.58),
+				cframe = CFrame.new(mx + sideSign * 2.5, 1.25, mz),
+				color = biome.groundColor:Lerp(biome.accentColor, 0.2),
+				material = biome.materialName,
+				materialVariant = biome.materialVariant,
+				studded = true,
+				parent = terrainGroup,
+			})
+		end
+
+		-- Central Stepped Cobble / Accent Expedition Road (clear driving strip down the middle)
 		makeBlock({
 			name = "ExpeditionTrail",
-			size = Vector3.new(34, 0.5, lenZ),
+			size = Vector3.new(34, 0.45, lenZ),
 			cframe = CFrame.new(0, 0.2, centerZ),
 			color = biome.accentColor,
 			material = Enum.Material.SmoothPlastic,
 			studded = true,
 			parent = terrainGroup,
 		})
-
-		-- 2. Wide Stepped Blocky Cliff Plateaus along Left & Right Edges (Y = 26.5 top terrace)
-		local cliffHeight = 24
-		local capThickness = 2.5
-		local plateauTopY = cliffHeight + capThickness -- 26.5
-		local plateauWidth = 68
-		local plateauCenterX = 94 + plateauWidth * 0.5 -- X spans 94..162
-
-		for _, sideSign in { -1, 1 } do
-			-- Main vertical cliff wall (stone/earth tone)
+		for _, curbX in { -17.5, 17.5 } do
 			makeBlock({
-				name = "CliffWall_" .. tostring(sideSign),
-				size = Vector3.new(plateauWidth, cliffHeight, lenZ),
-				cframe = CFrame.new(sideSign * plateauCenterX, cliffHeight * 0.5, centerZ),
-				color = biome.cliffColor,
-				material = Enum.Material.Brick,
+				name = "TrailBorderTrim",
+				size = Vector3.new(1.8, 0.55, lenZ),
+				cframe = CFrame.new(curbX, 0.25, centerZ),
+				color = biome.accentColor:Lerp(Color3.new(1, 1, 1), 0.25),
+				material = Enum.Material.Cobblestone,
 				studded = true,
 				canQuery = false,
 				parent = terrainGroup,
 			})
-			-- Biome-colored top plateau cap (matches floor color/material cleanly like Steal an Egg!)
+		end
+
+		-- 2. Custom Cartoon Cliff Walls (Warm Terraced Canyon / Basalt / Ice Walls + Overhanging Turf Cap!)
+		local cliffHeight = 24
+		local capThickness = 3.0
+		local plateauTopY = cliffHeight + capThickness -- 27.0
+		local plateauWidth = 68
+		local plateauCenterX = 94 + plateauWidth * 0.5 -- X spans 94..162
+
+		local warmCliffTint = if biome.id == "PineWoods" then Color3.fromRGB(186, 108, 86)
+			elseif biome.id == "MangroveSwamp" then Color3.fromRGB(108, 84, 66)
+			elseif biome.id == "SavannaCamp" then Color3.fromRGB(204, 134, 72)
+			elseif biome.id == "AlpinePeaks" then Color3.fromRGB(132, 168, 206)
+			else Color3.fromRGB(48, 36, 52)
+
+		for _, sideSign in { -1, 1 } do
+			makeBlock({
+				name = "CliffWall_" .. tostring(sideSign),
+				size = Vector3.new(plateauWidth, cliffHeight, lenZ),
+				cframe = CFrame.new(sideSign * plateauCenterX, cliffHeight * 0.5, centerZ),
+				color = warmCliffTint,
+				material = Enum.Material.Slate,
+				materialVariant = "CartoonCliffWall",
+				studded = false,
+				canQuery = false,
+				castShadow = true,
+				parent = terrainGroup,
+			})
+			-- Overhanging Biome Turf Cap (extends 2.4 studs over cliff lip for stylized Steal an Egg silhouette!)
 			makeBlock({
 				name = "CliffTopPlateau_" .. tostring(sideSign),
-				size = Vector3.new(plateauWidth + 1.5, capThickness, lenZ),
-				cframe = CFrame.new(sideSign * plateauCenterX, cliffHeight + capThickness * 0.5, centerZ),
+				size = Vector3.new(plateauWidth + 4.8, capThickness, lenZ),
+				cframe = CFrame.new(sideSign * (plateauCenterX - 2.4), cliffHeight + capThickness * 0.5, centerZ),
 				color = biome.groundColor,
 				material = biome.materialName,
 				materialVariant = biome.materialVariant,
@@ -450,15 +479,27 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder)
 				canQuery = false,
 				parent = terrainGroup,
 			})
-			-- Front lower cliff ledge steps for silhouette variety
-			local sliceStep = 72
-			for z = biome.zStart + 36, biome.zEnd - 36, sliceStep do
-				local ledgeH = rng:NextInteger(8, 13)
+			-- Multi-tiered Rock Outcrops & Cliff Benches
+			local sliceStep = 64
+			for z = biome.zStart + 32, biome.zEnd - 32, sliceStep do
+				local ledgeH = rng:NextInteger(7, 13)
+				local lw = rng:NextInteger(10, 15)
 				makeBlock({
 					name = "CliffLedge",
-					size = Vector3.new(12, ledgeH, 34),
-					cframe = CFrame.new(sideSign * 88, ledgeH * 0.5, z),
-					color = biome.cliffColor:Lerp(Color3.new(0, 0, 0), 0.12),
+					size = Vector3.new(lw, ledgeH, 32),
+					cframe = CFrame.new(sideSign * 89, ledgeH * 0.5, z),
+					color = warmCliffTint:Lerp(Color3.new(0, 0, 0), 0.14),
+					material = Enum.Material.Slate,
+					materialVariant = "CartoonCliffWall",
+					studded = false,
+					canQuery = false,
+					parent = terrainGroup,
+				})
+				makeBlock({
+					name = "CliffLedgeCap",
+					size = Vector3.new(lw + 1.4, 1.8, 33),
+					cframe = CFrame.new(sideSign * 89, ledgeH + 0.9, z),
+					color = biome.groundColor,
 					material = biome.materialName,
 					materialVariant = biome.materialVariant,
 					studded = true,
@@ -468,28 +509,102 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder)
 			end
 		end
 
-		-- Biome-specific blocky hazards/props (Mud pools in Mangrove, Ice slabs in Alpine, Lava channels in Volcanic)
-		if biome.id == "MangroveSwamp" then
-			for z = biome.zStart + 45, biome.zEnd - 45, 75 do
+		-- Biome-specific custom terrain pools, ruins, stepping islands, & stylized accents
+		if biome.id == "PineWoods" then
+			for z = biome.zStart + 55, biome.zEnd - 45, 95 do
+				local side = if math.floor(z) % 2 == 0 then 1 else -1
 				makeBlock({
-					name = "SwampMudPool",
-					size = Vector3.new(46, 0.35, 32),
-					cframe = CFrame.new(rng:NextNumber(-45, 45), 0.15, z),
+					name = "ForestMossClearing",
+					size = Vector3.new(26, 0.35, 22),
+					cframe = CFrame.new(side * 44, 0.18, z),
+					color = Color3.fromRGB(118, 206, 86),
+					material = Enum.Material.Grass,
+					materialVariant = "BlockyStudGrass",
+					studded = true,
+					parent = terrainGroup,
+				})
+			end
+		elseif biome.id == "MangroveSwamp" then
+			for z = biome.zStart + 45, biome.zEnd - 45, 72 do
+				local poolX = rng:NextNumber(-46, 46)
+				if math.abs(poolX) < 28 then poolX = (if poolX >= 0 then 38 else -38) end
+				makeBlock({
+					name = "SwampMudRim",
+					size = Vector3.new(44, 0.4, 34),
+					cframe = CFrame.new(poolX, 0.16, z),
 					color = Color3.fromRGB(64, 52, 34),
 					material = Enum.Material.Mud,
 					materialVariant = "BlockyStudMud",
 					studded = true,
 					parent = terrainGroup,
 				})
+				makeBlock({
+					name = "SwampLagoonWater",
+					size = Vector3.new(34, 0.45, 24),
+					cframe = CFrame.new(poolX, 0.2, z),
+					color = Color3.fromRGB(58, 168, 138),
+					material = Enum.Material.Glass,
+					studded = false,
+					transparency = 0.25,
+					canCollide = false,
+					parent = terrainGroup,
+				})
+				-- Mossy stepping stones
+				makeBlock({
+					name = "SwampStepStone",
+					size = Vector3.new(8, 0.65, 8),
+					cframe = CFrame.new(poolX - 6, 0.32, z + 3) * CFrame.Angles(0, 0.3, 0),
+					color = Color3.fromRGB(88, 174, 98),
+					material = Enum.Material.Grass,
+					studded = true,
+					parent = terrainGroup,
+				})
+			end
+		elseif biome.id == "SavannaCamp" then
+			for z = biome.zStart + 55, biome.zEnd - 55, 110 do
+				local oasisX = if z % 220 < 110 then -48 else 48
+				makeBlock({
+					name = "OasisSandRim",
+					size = Vector3.new(34, 0.45, 28),
+					cframe = CFrame.new(oasisX, 0.2, z),
+					color = Color3.fromRGB(238, 198, 112),
+					material = Enum.Material.Sand,
+					materialVariant = "BlockyStudSavanna",
+					studded = true,
+					parent = terrainGroup,
+				})
+				makeBlock({
+					name = "OasisWater",
+					size = Vector3.new(24, 0.5, 18),
+					cframe = CFrame.new(oasisX, 0.26, z),
+					color = Color3.fromRGB(52, 198, 224),
+					material = Enum.Material.Glass,
+					studded = false,
+					transparency = 0.22,
+					canCollide = false,
+					parent = terrainGroup,
+				})
 			end
 		elseif biome.id == "AlpinePeaks" then
-			for z = biome.zStart + 45, biome.zEnd - 45, 80 do
+			for z = biome.zStart + 45, biome.zEnd - 45, 78 do
+				local px = rng:NextNumber(-48, 48)
+				if math.abs(px) < 28 then px = (if px >= 0 then 42 else -42) end
 				makeBlock({
 					name = "GlacierIcePatch",
-					size = Vector3.new(40, 0.4, 34),
-					cframe = CFrame.new(rng:NextNumber(-42, 42), 0.18, z),
-					color = Color3.fromRGB(148, 226, 255),
+					size = Vector3.new(38, 0.55, 32),
+					cframe = CFrame.new(px, 0.24, z),
+					color = Color3.fromRGB(132, 224, 255),
 					material = Enum.Material.Ice,
+					studded = true,
+					parent = terrainGroup,
+				})
+				makeBlock({
+					name = "SnowBankShelf",
+					size = Vector3.new(22, 1.35, 18),
+					cframe = CFrame.new(-px, 0.65, z + 12),
+					color = Color3.fromRGB(240, 248, 255),
+					material = Enum.Material.Snow,
+					materialVariant = "BlockyStudSnow",
 					studded = true,
 					parent = terrainGroup,
 				})
@@ -498,8 +613,8 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder)
 			for z = biome.zStart + 55, biome.zEnd - 55, 85 do
 				makeBlock({
 					name = "LavaTrench",
-					size = Vector3.new(150, 0.3, 18),
-					cframe = CFrame.new(0, 0.12, z),
+					size = Vector3.new(152, 0.32, 18),
+					cframe = CFrame.new(0, 0.14, z),
 					color = Color3.fromRGB(255, 92, 28),
 					material = Enum.Material.Neon,
 					studded = false,
@@ -508,7 +623,7 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder)
 				-- Safe Obsidian Bridge across the lava trench
 				makeBlock({
 					name = "ObsidianBridge",
-					size = Vector3.new(36, 1.2, 22),
+					size = Vector3.new(36, 1.25, 22),
 					cframe = CFrame.new(0, 0.65, z),
 					color = Color3.fromRGB(48, 42, 58),
 					material = Enum.Material.Basalt,
@@ -516,14 +631,25 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder)
 					studded = true,
 					parent = terrainGroup,
 				})
+				-- Side stepping basalt islands over magma
+				for _, sx in { -44, 44 } do
+					makeBlock({
+						name = "BasaltIsland",
+						size = Vector3.new(16, 1.1, 14),
+						cframe = CFrame.new(sx, 0.52, z),
+						color = Color3.fromRGB(62, 50, 68),
+						material = Enum.Material.Basalt,
+						materialVariant = "BlockyStudVolcanic",
+						studded = true,
+						parent = terrainGroup,
+					})
+				end
 			end
 		end
 
-		-- 3. Biome Arch Gate
-		if biome.order == 1 then
-			addBiomeArchSign(biome.zStart + 10, biome, biomeModel)
-		else
-			addBiomeArchSign(biome.zStart, biome, biomeModel)
+		-- 3. Subtle Ground Zone Divider (no bulky arch gate; zone banner triggers in top HUD)
+		if biome.order > 1 then
+			addBiomeDividerLine(biome.zStart, biome, biomeModel)
 		end
 
 		-- 4. Curated Creator Store Foliage & Props (Arena Floor + Rich Upper Cliff Skyline!)

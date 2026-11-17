@@ -22,7 +22,7 @@ local BiomeConfig: { Types.BiomeDefinition } = {
 		bossSpeed = 24,
 		poacherSpeed = 19,
 		crateBaseResistance = 320,
-		recommendedSpeed = 18,
+		recommendedSpeed = 50,
 		indexCount = 10,
 	},
 	{
@@ -42,7 +42,7 @@ local BiomeConfig: { Types.BiomeDefinition } = {
 		bossSpeed = 34,
 		poacherSpeed = 26,
 		crateBaseResistance = 240000, -- 240K
-		recommendedSpeed = 45,
+		recommendedSpeed = 50000, -- 50K
 		indexCount = 12,
 	},
 	{
@@ -62,7 +62,7 @@ local BiomeConfig: { Types.BiomeDefinition } = {
 		bossSpeed = 48,
 		poacherSpeed = 36,
 		crateBaseResistance = 480000000, -- 480M
-		recommendedSpeed = 90,
+		recommendedSpeed = 5000000, -- 5M
 		indexCount = 12,
 	},
 	{
@@ -82,7 +82,7 @@ local BiomeConfig: { Types.BiomeDefinition } = {
 		bossSpeed = 66,
 		poacherSpeed = 50,
 		crateBaseResistance = 2400000000000, -- 2.4T
-		recommendedSpeed = 140,
+		recommendedSpeed = 2500000000, -- 2.5B
 		indexCount = 14,
 	},
 	{
@@ -102,7 +102,7 @@ local BiomeConfig: { Types.BiomeDefinition } = {
 		bossSpeed = 88,
 		poacherSpeed = 68,
 		crateBaseResistance = 15000000000000000, -- 15Qa
-		recommendedSpeed = 200,
+		recommendedSpeed = 500000000000, -- 500B
 		indexCount = 15,
 	},
 }
