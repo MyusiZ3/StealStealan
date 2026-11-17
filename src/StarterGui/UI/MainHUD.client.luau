@@ -430,9 +430,18 @@ makeTextStroke(inviteFriendsBtn, 2)
 makeGradient(inviteFriendsBtn, Color3.fromRGB(102, 186, 255), Color3.fromRGB(48, 114, 218))
 inviteFriendsBtn.MouseButton1Click:Connect(function()
 	playClickSFX()
-	pcall(function()
-		SocialService:PromptGameInvite(localPlayer)
+	local okCan, canInvite = pcall(function()
+		return SocialService:CanSendGameInviteAsync(localPlayer)
 	end)
+	local okPrompt = false
+	if okCan and canInvite then
+		okPrompt = pcall(function()
+			SocialService:PromptGameInvite(localPlayer)
+		end)
+	end
+	if not (okCan and canInvite and okPrompt) then
+		toastUI.show("Friend Invite is only available in live Roblox servers!", Color3.fromRGB(255, 196, 62))
+	end
 end)
 
 -- Top-Center Biome Entry Banner (leaves Top-Right free for Roblox leaderstats PlayerList!)
@@ -486,20 +495,273 @@ crateAnnounceFeed.ZIndex = 19
 crateAnnounceFeed.Visible = false
 crateAnnounceFeed.Parent = gui
 
-local toastLbl = Instance.new("TextLabel")
-toastLbl.Name = "ToastLabel"
-toastLbl.AnchorPoint = Vector2.new(0.5, 0)
-toastLbl.Size = UDim2.fromOffset(460, 30)
-toastLbl.Position = UDim2.new(0.5, 0, 0, 108)
-toastLbl.BackgroundColor3 = Color3.fromRGB(18, 22, 30)
-toastLbl.BackgroundTransparency = 0.2
-toastLbl.TextColor3 = Color3.new(1, 1, 1)
-toastLbl.Font = Enum.Font.FredokaOne
-toastLbl.TextScaled = true
-toastLbl.Visible = false
-toastLbl.Parent = gui
-makeCorner(toastLbl, 8)
-makeTextStroke(toastLbl, 2)
+-- Topmost ScreenGui Popup Notification Stack (renders above ALL modals, TopBar, & Admin overlay)
+local toastUI: {
+	stack: Frame,
+	latestLabel: TextLabel,
+	show: (string, Color3?) -> (),
+	isVisible: () -> boolean,
+}
+do
+	local popupGui = Instance.new("ScreenGui")
+	popupGui.Name = "PopupToastGui"
+	popupGui.ResetOnSpawn = false
+	popupGui.IgnoreGuiInset = false
+	popupGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	popupGui.DisplayOrder = 999
+	popupGui.Parent = playerGui
+
+	local popupStack = Instance.new("Frame")
+	popupStack.Name = "PopupStack"
+	popupStack.AnchorPoint = Vector2.new(0.5, 0)
+	popupStack.Size = UDim2.fromOffset(620, 150)
+	popupStack.Position = UDim2.new(0.5, 0, 0, 48)
+	popupStack.BackgroundTransparency = 1
+	popupStack.Active = false
+	popupStack.Interactable = false
+	popupStack.Parent = popupGui
+
+	local stackLayout = Instance.new("UIListLayout")
+	stackLayout.FillDirection = Enum.FillDirection.Vertical
+	stackLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	stackLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+	stackLayout.Padding = UDim.new(0, 6)
+	stackLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	stackLayout.Parent = popupStack
+
+	local compatLabel = Instance.new("TextLabel")
+	compatLabel.Name = "ToastLabel"
+	compatLabel.Size = UDim2.fromOffset(460, 30)
+	compatLabel.BackgroundTransparency = 1
+	compatLabel.Text = ""
+	compatLabel.Visible = false
+	compatLabel.Active = false
+	compatLabel.Interactable = false
+	compatLabel.Parent = popupGui
+
+	local function playDenySFX()
+		local s = Instance.new("Sound")
+		s.SoundId = SoundConfig.SFX.ButtonClick
+		local sfxGroup = SoundService:FindFirstChild(SoundConfig.GROUPS.SFX)
+		if sfxGroup and sfxGroup:IsA("SoundGroup") then
+			s.SoundGroup = sfxGroup
+		end
+		s.PlaybackSpeed = 0.74
+		s.Volume = 0.55
+		s.Parent = SoundService
+		s:Play()
+		s.Ended:Connect(function()
+			s:Destroy()
+		end)
+	end
+
+	type PopupEntry = {
+		rawMsg: string,
+		wrap: Frame,
+		pill: Frame,
+		pillStroke: UIStroke,
+		lbl: TextLabel,
+		lblStroke: UIStroke,
+		scale: UIScale,
+		serial: number,
+	}
+
+	local activeEntries: { PopupEntry } = {}
+	local orderSeq = 0
+
+	local function pruneEntries()
+		for i = #activeEntries, 1, -1 do
+			if not activeEntries[i].wrap.Parent then
+				table.remove(activeEntries, i)
+			end
+		end
+	end
+
+	local function shakePill(pill: Frame, entry: PopupEntry, curSerial: number)
+		task.spawn(function()
+			for _, offsetX in ipairs({ -7, 7, -4, 0 }) do
+				if not pill.Parent or entry.serial ~= curSerial then
+					return
+				end
+				TweenService:Create(pill, TweenInfo.new(0.04, Enum.EasingStyle.Linear), {
+					Position = UDim2.new(0.5, offsetX, 0.5, 0),
+				}):Play()
+				task.wait(0.04)
+			end
+		end)
+	end
+
+	local function scheduleDismiss(entry: PopupEntry, curSerial: number)
+		task.delay(2.5, function()
+			if entry.serial ~= curSerial or not entry.wrap.Parent then
+				return
+			end
+			TweenService:Create(entry.pill, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+				Position = UDim2.new(0.5, 0, 0.5, -12),
+				BackgroundTransparency = 1,
+			}):Play()
+			TweenService:Create(entry.pillStroke, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+				Transparency = 1,
+			}):Play()
+			TweenService:Create(entry.lbl, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+				TextTransparency = 1,
+			}):Play()
+			TweenService:Create(entry.lblStroke, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+				Transparency = 1,
+			}):Play()
+			task.wait(0.30)
+			if entry.serial == curSerial and entry.wrap.Parent then
+				entry.wrap:Destroy()
+				pruneEntries()
+			end
+		end)
+	end
+
+	local function showPopup(rawMsg: string, rawColor: Color3?)
+		local msgStr = tostring(rawMsg or "")
+		if msgStr == "" then
+			return
+		end
+		local col = if typeof(rawColor) == "Color3" then rawColor else Color3.new(1, 1, 1)
+		local isWarnOrErr = (col.R > 0.85 and col.G <= 0.81 and col.B < 0.65)
+		if isWarnOrErr then
+			playDenySFX()
+		end
+
+		local startsWithTag = string.sub(msgStr, 1, 3) == "⚠"
+			or string.sub(msgStr, 1, 3) == "❌"
+			or string.sub(msgStr, 1, 4) == "🔒"
+			or string.sub(msgStr, 1, 3) == "⚡"
+			or string.sub(msgStr, 1, 4) == "🚫"
+			or string.sub(msgStr, 1, 3) == "✅"
+		local displayMsg = msgStr
+		if isWarnOrErr and not startsWithTag then
+			displayMsg = (if col.G < 0.50 then "❌ " else "⚠️ ") .. msgStr
+		end
+
+		compatLabel.Text = displayMsg
+		compatLabel.TextColor3 = col
+
+		pruneEntries()
+		local newest = activeEntries[#activeEntries]
+		if newest and newest.rawMsg == msgStr and newest.wrap.Parent then
+			newest.serial += 1
+			local curSerial = newest.serial
+			newest.pill.BackgroundTransparency = 0.08
+			newest.pillStroke.Transparency = 0
+			newest.pillStroke.Color = col
+			newest.lbl.Text = displayMsg
+			newest.lbl.TextTransparency = 0
+			newest.lbl.TextColor3 = col:Lerp(Color3.new(1, 1, 1), 0.18)
+			newest.lblStroke.Transparency = 0
+			newest.pill.Position = UDim2.fromScale(0.5, 0.5)
+			newest.scale.Scale = 0.88
+			TweenService:Create(newest.scale, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+				Scale = 1.0,
+			}):Play()
+			if isWarnOrErr then
+				shakePill(newest.pill, newest, curSerial)
+			end
+			scheduleDismiss(newest, curSerial)
+			return
+		end
+
+		while #activeEntries >= 3 do
+			local oldest = table.remove(activeEntries, 1)
+			if oldest and oldest.wrap.Parent then
+				oldest.wrap:Destroy()
+			end
+		end
+
+		orderSeq += 1
+		local wrap = Instance.new("Frame")
+		wrap.Name = "PopupEntry_" .. tostring(orderSeq)
+		wrap.LayoutOrder = orderSeq
+		wrap.Size = UDim2.new(1, 0, 0, 38)
+		wrap.BackgroundTransparency = 1
+		wrap.Active = false
+		wrap.Interactable = false
+		wrap.Parent = popupStack
+
+		local pill = Instance.new("Frame")
+		pill.Name = "PopupPill"
+		pill.AnchorPoint = Vector2.new(0.5, 0.5)
+		pill.Position = UDim2.fromScale(0.5, 0.5)
+		pill.Size = UDim2.fromOffset(0, 36)
+		pill.AutomaticSize = Enum.AutomaticSize.X
+		pill.BackgroundColor3 = Color3.fromRGB(16, 18, 26)
+		pill.BackgroundTransparency = 0.08
+		pill.Active = false
+		pill.Interactable = false
+		pill.Parent = wrap
+		makeCorner(pill, 10)
+		local pillStroke = makeStroke(pill, 2.4, col)
+
+		local pPad = Instance.new("UIPadding")
+		pPad.PaddingLeft = UDim.new(0, 16)
+		pPad.PaddingRight = UDim.new(0, 16)
+		pPad.PaddingTop = UDim.new(0, 4)
+		pPad.PaddingBottom = UDim.new(0, 4)
+		pPad.Parent = pill
+
+		local pMax = Instance.new("UISizeConstraint")
+		pMax.MaxSize = Vector2.new(590, 44)
+		pMax.Parent = pill
+
+		local pScale = Instance.new("UIScale")
+		pScale.Scale = 0.74
+		pScale.Parent = pill
+
+		local lbl = Instance.new("TextLabel")
+		lbl.Name = "PopupText"
+		lbl.AutomaticSize = Enum.AutomaticSize.X
+		lbl.Size = UDim2.fromOffset(0, 26)
+		lbl.BackgroundTransparency = 1
+		lbl.Font = Enum.Font.FredokaOne
+		lbl.TextSize = 20
+		lbl.TextColor3 = col:Lerp(Color3.new(1, 1, 1), 0.18)
+		lbl.Text = displayMsg
+		lbl.TextWrapped = false
+		lbl.TextTruncate = Enum.TextTruncate.AtEnd
+		lbl.Active = false
+		lbl.Interactable = false
+		lbl.Parent = pill
+		local lblStroke = makeTextStroke(lbl, 2.6, Color3.fromRGB(10, 12, 16))
+		local lMax = Instance.new("UISizeConstraint")
+		lMax.MaxSize = Vector2.new(556, 30)
+		lMax.Parent = lbl
+
+		local entry: PopupEntry = {
+			rawMsg = msgStr,
+			wrap = wrap,
+			pill = pill,
+			pillStroke = pillStroke,
+			lbl = lbl,
+			lblStroke = lblStroke,
+			scale = pScale,
+			serial = 1,
+		}
+		table.insert(activeEntries, entry)
+
+		TweenService:Create(pScale, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Scale = 1.0,
+		}):Play()
+		if isWarnOrErr then
+			shakePill(pill, entry, entry.serial)
+		end
+		scheduleDismiss(entry, entry.serial)
+	end
+
+	toastUI = {
+		stack = popupStack,
+		latestLabel = compatLabel,
+		show = showPopup,
+		isVisible = function()
+			pruneEntries()
+			return #activeEntries > 0
+		end,
+	}
+end
 
 -- Danger Red Edge Vignette & Bold "RUN!" Chase Banner (shown while carrying crates / hunted by Poachers)
 local runVignette = Instance.new("Frame")
@@ -511,30 +773,32 @@ runVignette.Visible = false
 runVignette.Parent = gui
 
 local runEdgeStrips: { { bar: Frame, grad: UIGradient } } = {}
-local edgeDefs = {
-	{ size = UDim2.new(1, 0, 0.16, 0), pos = UDim2.fromScale(0, 0), rot = 90 },
-	{ size = UDim2.new(1, 0, 0.16, 0), pos = UDim2.fromScale(0, 0.84), rot = 270 },
-	{ size = UDim2.new(0.11, 0, 1, 0), pos = UDim2.fromScale(0, 0), rot = 0 },
-	{ size = UDim2.new(0.11, 0, 1, 0), pos = UDim2.fromScale(0.89, 0), rot = 180 },
-}
-for idx, ed in ipairs(edgeDefs) do
-	local bar = Instance.new("Frame")
-	bar.Name = "RunEdge_" .. idx
-	bar.Size = ed.size
-	bar.Position = ed.pos
-	bar.BackgroundColor3 = Color3.fromRGB(255, 22, 36)
-	bar.BorderSizePixel = 0
-	bar.ZIndex = 1
-	bar.Parent = runVignette
-	local gr = Instance.new("UIGradient")
-	gr.Rotation = ed.rot
-	gr.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.12),
-		NumberSequenceKeypoint.new(0.65, 0.72),
-		NumberSequenceKeypoint.new(1, 1.0),
-	})
-	gr.Parent = bar
-	table.insert(runEdgeStrips, { bar = bar, grad = gr })
+do
+	local edgeDefs = {
+		{ size = UDim2.new(1, 0, 0.16, 0), pos = UDim2.fromScale(0, 0), rot = 90 },
+		{ size = UDim2.new(1, 0, 0.16, 0), pos = UDim2.fromScale(0, 0.84), rot = 270 },
+		{ size = UDim2.new(0.11, 0, 1, 0), pos = UDim2.fromScale(0, 0), rot = 0 },
+		{ size = UDim2.new(0.11, 0, 1, 0), pos = UDim2.fromScale(0.89, 0), rot = 180 },
+	}
+	for idx, ed in ipairs(edgeDefs) do
+		local bar = Instance.new("Frame")
+		bar.Name = "RunEdge_" .. idx
+		bar.Size = ed.size
+		bar.Position = ed.pos
+		bar.BackgroundColor3 = Color3.fromRGB(255, 22, 36)
+		bar.BorderSizePixel = 0
+		bar.ZIndex = 1
+		bar.Parent = runVignette
+		local gr = Instance.new("UIGradient")
+		gr.Rotation = ed.rot
+		gr.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.12),
+			NumberSequenceKeypoint.new(0.65, 0.72),
+			NumberSequenceKeypoint.new(1, 1.0),
+		})
+		gr.Parent = bar
+		table.insert(runEdgeStrips, { bar = bar, grad = gr })
+	end
 end
 
 local runAlertBanner = Instance.new("TextLabel")
@@ -762,6 +1026,21 @@ do
 	friendPlusBtn.Parent = friendRow
 	makeCorner(friendPlusBtn, 8)
 	makeStroke(friendPlusBtn, 1.4)
+	friendPlusBtn.MouseButton1Click:Connect(function()
+		playClickSFX()
+		local okCan, canInvite = pcall(function()
+			return SocialService:CanSendGameInviteAsync(localPlayer)
+		end)
+		local okPrompt = false
+		if okCan and canInvite then
+			okPrompt = pcall(function()
+				SocialService:PromptGameInvite(localPlayer)
+			end)
+		end
+		if not (okCan and canInvite and okPrompt) then
+			toastUI.show("Friend Invite is only available in live Roblox servers!", Color3.fromRGB(255, 196, 62))
+		end
+	end)
 
 	-- 2. Diamond / Gems Row (Image 3)
 	local diamondRow = Instance.new("Frame")
@@ -1175,11 +1454,33 @@ do
 end
 
 drawerTopActionBtn.MouseButton1Click:Connect(function()
+	playClickSFX()
 	if drawerMode == "Active" then
 		Remotes.Get("UpgradePen"):FireServer()
 	elseif profile then
-		for uid, _ in pairs(profile.pendingCrates) do
-			Remotes.Get("OpenPendingCrate"):FireServer(uid)
+		local nowUnix = math.floor(Workspace:GetServerTimeNow())
+		local totalCount = 0
+		local readyUids: { string } = {}
+		local minRem: number? = nil
+		for uid, c in pairs(profile.pendingCrates) do
+			totalCount += 1
+			local rem = math.max(0, (c.unlockAt or 0) - nowUnix)
+			if rem <= 0 then
+				table.insert(readyUids, uid)
+			else
+				if not minRem or rem < minRem then
+					minRem = rem
+				end
+			end
+		end
+		if totalCount == 0 then
+			toastUI.show("No crates placed in your Pen yet!", Color3.fromRGB(255, 196, 62))
+		elseif #readyUids == 0 then
+			toastUI.show("Crates still hatching! Ready in " .. FormatUtil.Time(minRem or 1), Color3.fromRGB(255, 196, 62))
+		else
+			for _, uid in ipairs(readyUids) do
+				Remotes.Get("OpenPendingCrate"):FireServer(uid)
+			end
 		end
 	end
 end)
@@ -1363,6 +1664,10 @@ do
 	luckyPlusBtn.Parent = luckyTrack
 	makeCorner(luckyPlusBtn, 9)
 	makeStroke(luckyPlusBtn, 1.4)
+	luckyPlusBtn.MouseButton1Click:Connect(function()
+		playClickSFX()
+		Remotes.Get("PromptProduct"):FireServer("ServerLuckBoost")
+	end)
 
 	-- Ultra Lucky Cage Bar (Purple)
 	local ultraTrack = Instance.new("Frame")
@@ -1400,6 +1705,10 @@ do
 	ultraPlusBtn.Parent = ultraTrack
 	makeCorner(ultraPlusBtn, 9)
 	makeStroke(ultraPlusBtn, 1.4)
+	ultraPlusBtn.MouseButton1Click:Connect(function()
+		playClickSFX()
+		Remotes.Get("PromptProduct"):FireServer("ServerLuckBoost")
+	end)
 end
 
 local hotbar = Instance.new("Frame")
@@ -3050,8 +3359,7 @@ local function renderFuseModal()
 	mergeBtn.MouseButton1Click:Connect(function()
 		playClickSFX()
 		if #orderedUids < 3 then
-			localPlayer:SetAttribute("ClientToastSeq", (tonumber(localPlayer:GetAttribute("ClientToastSeq")) or 0) + 1)
-			localPlayer:SetAttribute("ClientToastText", "Add 3 of the same pets first!")
+			toastUI.show(string.format("Need %d more identical Backpack pet%s to Merge!", remaining, if remaining == 1 then "" else "s"), Color3.fromRGB(255, 112, 92))
 			return
 		end
 		Remotes.Get("RequestMergeAnimals"):FireServer(orderedUids)
@@ -3486,7 +3794,13 @@ do
 					74,
 					20,
 					function()
-						Remotes.Get("ClaimDailyReward"):FireServer()
+						if st == "CLAIMED" then
+							toastUI.show("Day " .. tostring(def.day) .. " already claimed!", Color3.fromRGB(255, 196, 62))
+						elseif st == "LOCKED" and not isNext then
+							toastUI.show("Locked! Claim Day " .. tostring(nextDay) .. " first!", Color3.fromRGB(255, 112, 92))
+						else
+							Remotes.Get("ClaimDailyReward"):FireServer()
+						end
 					end
 				)
 				card.Size = UDim2.new(0.232, 0, 0.482, 0)
@@ -3504,7 +3818,13 @@ do
 					108,
 					28,
 					function()
-						Remotes.Get("ClaimDailyReward"):FireServer()
+						if st == "CLAIMED" then
+							toastUI.show("Day 7 already claimed!", Color3.fromRGB(255, 196, 62))
+						elseif st == "LOCKED" and not isNext then
+							toastUI.show("Locked! Claim Day " .. tostring(nextDay) .. " first!", Color3.fromRGB(255, 112, 92))
+						else
+							Remotes.Get("ClaimDailyReward"):FireServer()
+						end
 					end
 				)
 				card.Size = UDim2.fromScale(0.264, 0.997)
@@ -4193,7 +4513,11 @@ do
 		makeTextStroke(claimBtn, 2.0)
 		claimBtn.MouseButton1Click:Connect(function()
 			playClickSFX()
-			if selEntry and not selEntry.rewardClaimed then
+			if not selIsDisc then
+				toastUI.show("Not found yet! Rescue crates in " .. biomeName .. " first!", Color3.fromRGB(255, 112, 92))
+			elseif selEntry.rewardClaimed then
+				toastUI.show("Index reward for " .. selSpec.name .. " already claimed!", Color3.fromRGB(255, 196, 62))
+			else
 				Remotes.Get("ClaimIndexReward"):FireServer(selSpec.id)
 			end
 		end)
@@ -5021,14 +5345,7 @@ localPlayer.AttributeChanged:Connect(function(attrName)
 	elseif attrName == "ClientToastSeq" then
 		local msg = tostring(localPlayer:GetAttribute("ClientToastText") or "")
 		if msg ~= "" then
-			toastLbl.Text = msg
-			toastLbl.TextColor3 = Color3.fromRGB(255, 196, 62)
-			toastLbl.Visible = true
-			task.delay(3.5, function()
-				if toastLbl.Text == msg then
-					toastLbl.Visible = false
-				end
-			end)
+			toastUI.show(msg, Color3.fromRGB(255, 196, 62))
 		end
 	elseif attrName == "EffectiveSpeedStat" or attrName == "TotalSpeedMult" or attrName == "BaseSpeedMult" or attrName == "VehicleSpeedMult" or attrName == "CashMult" or attrName == "IncomePerSec" then
 		if attrName == "IncomePerSec" then
@@ -5422,12 +5739,7 @@ Remotes.Get("BiomeWaveSync").OnClientEvent:Connect(function(info)
 end)
 
 Remotes.Get("NotifyClient").OnClientEvent:Connect(function(msg, color)
-	toastLbl.Text = tostring(msg)
-	toastLbl.TextColor3 = if typeof(color) == "Color3" then color else Color3.new(1, 1, 1)
-	toastLbl.Visible = true
-	task.delay(3.5, function()
-		if toastLbl.Text == tostring(msg) then toastLbl.Visible = false end
-	end)
+	toastUI.show(tostring(msg), if typeof(color) == "Color3" then color else nil)
 end)
 
 Remotes.Get("GlobalEventBanner").OnClientEvent:Connect(function(msg, color, duration)
@@ -5444,11 +5756,11 @@ end)
 local function updateCrateAnnouncePosition()
 	if not crateAnnounceFeed.Visible then return end
 	local targetY = 56
-	if rescueSuccessLbl.Visible or (eventBanner.Visible and toastLbl.Visible) then
+	if rescueSuccessLbl.Visible or (eventBanner.Visible and toastUI.isVisible()) then
 		targetY = 142
 	elseif runAlertBanner.Visible then
 		targetY = 128
-	elseif eventBanner.Visible or toastLbl.Visible then
+	elseif eventBanner.Visible or toastUI.isVisible() then
 		targetY = 108
 	end
 	crateAnnounceFeed.Position = UDim2.new(0.5, 0, 0, targetY)
@@ -5916,7 +6228,7 @@ do
 		crateAnnounceFeed,
 		runAlertBanner,
 		rescueSuccessLbl,
-		toastLbl,
+		toastUI.stack,
 		leftStack,
 		statsCorner,
 		rightEdgeBtns,
@@ -5977,7 +6289,7 @@ do
 		-- Reposition stacked/sibling containers relative to the live HUD scale
 		eventBanner.Position = UDim2.new(0.5, 0, 0, math.round(8 + 62 * hudScale))
 		rescueSuccessLbl.Position = UDim2.new(0.5, 0, 0, math.round(8 + 88 * hudScale))
-		toastLbl.Position = UDim2.new(0.5, 0, 0, math.round(8 + 100 * hudScale))
+		toastUI.stack.Position = UDim2.new(0.5, 0, 0, math.round(10 + 36 * hudScale))
 		rightDrawerWrap.Position = UDim2.new(1, -math.round(10 + 52 * hudScale), 0.45, 0)
 		invWindow.Position = UDim2.new(0.5, 0, 1, -math.round(22 + 70 * hudScale))
 	end
