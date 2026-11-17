@@ -22,6 +22,7 @@ type PoacherAgent = {
 	biomeId: string,
 	isBoss: boolean,
 	baseSpeed: number,
+	recommendedSpeed: number,
 	zMin: number,
 	zMax: number,
 	model: Model,
@@ -83,7 +84,15 @@ local function hasAggroInBiome(userId: number, biomeId: string): boolean
 	return map ~= nil and map[biomeId] == true
 end
 
-local function buildPoacherModel(name: string, isBoss: boolean, accentColor: Color3, pos: Vector3, parent: Instance): (Model, Part, number)
+local ENEMY_TIERS: { [string]: { emoji: string, label: string, color: Color3 } } = {
+	PineWoods = { emoji = "😠", label = "Easy", color = Color3.fromRGB(118, 245, 118) },
+	MangroveSwamp = { emoji = "😢", label = "Medium", color = Color3.fromRGB(255, 168, 52) },
+	SavannaCamp = { emoji = "😰", label = "Hard", color = Color3.fromRGB(255, 102, 58) },
+	AlpinePeaks = { emoji = "😡", label = "Extreme", color = Color3.fromRGB(255, 58, 78) },
+	VolcanicJungle = { emoji = "😈", label = "Nightmare", color = Color3.fromRGB(218, 76, 255) },
+}
+
+local function buildPoacherModel(name: string, isBoss: boolean, biomeId: string, accentColor: Color3, pos: Vector3, parent: Instance): (Model, Part, number)
 	local ca = ReplicatedStorage:FindFirstChild("CuratedAssets")
 	local heroSrc = if ca then ca:FindFirstChild("Hero_PoacherBoss") else nil
 
@@ -127,23 +136,35 @@ local function buildPoacherModel(name: string, isBoss: boolean, accentColor: Col
 		body.Parent = m
 	end
 
-	-- Overhead Nameplate
+	-- Minimal Floating Emoji + Single-Word Difficulty Badge (Image 10 style — no box background!)
+	local tierInfo = ENEMY_TIERS[biomeId] or ENEMY_TIERS.PineWoods
 	local bb = Instance.new("BillboardGui")
-	bb.Size = UDim2.fromOffset(160, 44)
-	bb.StudsOffset = Vector3.new(0, 4.5 * scale, 0)
+	bb.Size = UDim2.fromOffset(132, 74)
+	bb.StudsOffset = Vector3.new(0, 4.8 * scale + 1.2, 0)
 	bb.AlwaysOnTop = false
 	bb.MaxDistance = 120
 	bb.Parent = root
 
+	local emojiLbl = Instance.new("TextLabel")
+	emojiLbl.Size = UDim2.fromScale(1, 0.54)
+	emojiLbl.BackgroundTransparency = 1
+	emojiLbl.Text = if isBoss then "😈" else tierInfo.emoji
+	emojiLbl.TextScaled = true
+	emojiLbl.Parent = bb
+
 	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.fromScale(1, 1)
-	lbl.BackgroundColor3 = Color3.fromRGB(24, 18, 22)
-	lbl.BackgroundTransparency = 0.25
-	lbl.Text = if isBoss then ("BOSS: " .. name) else ("Poacher: " .. name)
-	lbl.TextColor3 = if isBoss then Color3.fromRGB(255, 86, 86) else Color3.fromRGB(255, 206, 84)
+	lbl.Size = UDim2.fromScale(1, 0.44)
+	lbl.Position = UDim2.fromScale(0, 0.54)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = if isBoss then "Boss" else tierInfo.label
+	lbl.TextColor3 = if isBoss then Color3.fromRGB(255, 68, 68) else tierInfo.color
 	lbl.Font = Enum.Font.FredokaOne
 	lbl.TextScaled = true
 	lbl.Parent = bb
+	local lblSt = Instance.new("UIStroke")
+	lblSt.Thickness = 2.8
+	lblSt.Color = Color3.fromRGB(10, 12, 16)
+	lblSt.Parent = lbl
 
 	m.Parent = parent
 	return m, root, scale
@@ -178,12 +199,13 @@ function PoacherAISystem.Init()
 		end
 
 		-- Spawn 2 Biome-Scoped Patrol Guards & 1 Biome Boss
-		local guard1M, guard1Root, g1Scale = buildPoacherModel(biome.id .. " Guard #1", false, biome.accentColor, waypoints[1], activeFolder)
+		local guard1M, guard1Root, g1Scale = buildPoacherModel(biome.id .. " Guard #1", false, biome.id, biome.accentColor, waypoints[1], activeFolder)
 		table.insert(agents, {
 			id = biome.id .. "_Guard1",
 			biomeId = biome.id,
 			isBoss = false,
 			baseSpeed = biome.poacherSpeed,
+			recommendedSpeed = biome.recommendedSpeed,
 			zMin = biome.zStart + 8,
 			zMax = biome.zEnd - 8,
 			model = guard1M,
@@ -194,12 +216,13 @@ function PoacherAISystem.Init()
 		})
 
 		local g2Start = waypoints[#waypoints]
-		local guard2M, guard2Root, g2Scale = buildPoacherModel(biome.id .. " Guard #2", false, biome.accentColor, g2Start, activeFolder)
+		local guard2M, guard2Root, g2Scale = buildPoacherModel(biome.id .. " Guard #2", false, biome.id, biome.accentColor, g2Start, activeFolder)
 		table.insert(agents, {
 			id = biome.id .. "_Guard2",
 			biomeId = biome.id,
 			isBoss = false,
 			baseSpeed = biome.poacherSpeed * 1.05,
+			recommendedSpeed = biome.recommendedSpeed,
 			zMin = biome.zStart + 8,
 			zMax = biome.zEnd - 8,
 			model = guard2M,
@@ -210,12 +233,13 @@ function PoacherAISystem.Init()
 		})
 
 		local bossPos = waypoints[math.min(3, #waypoints)]
-		local bossM, bossRoot, bScale = buildPoacherModel(biome.bossName, true, Color3.fromRGB(255, 62, 62), bossPos, activeFolder)
+		local bossM, bossRoot, bScale = buildPoacherModel(biome.bossName, true, biome.id, Color3.fromRGB(255, 62, 62), bossPos, activeFolder)
 		table.insert(agents, {
 			id = biome.id .. "_Boss",
 			biomeId = biome.id,
 			isBoss = true,
 			baseSpeed = biome.bossSpeed,
+			recommendedSpeed = biome.recommendedSpeed,
 			zMin = biome.zStart + 8,
 			zMax = biome.zEnd - 8,
 			model = bossM,
@@ -279,7 +303,11 @@ function PoacherAISystem.Init()
 			local delta = Vector3.new(targetPos.X - currPos.X, 0, targetPos.Z - currPos.Z)
 			local dist = delta.Magnitude
 			local isReturningHome = (not chasingPlayer) and (currPos.Z < ag.zMin - 4 or currPos.Z > ag.zMax + 4)
-			local moveSpeed = ag.baseSpeed * speedMult * (if chasingPlayer then 1.0 elseif isReturningHome then 1.65 else 0.65)
+			local recWalkSpeed = GameConfig.SPEED.BASE_WALK_SPEED + math.log10(1 + math.max(10, ag.recommendedSpeed)) * GameConfig.SPEED.STAT_TO_WALKSPEED_LOG_SCALE
+			local alertChaseSpeed = math.max(ag.baseSpeed, recWalkSpeed * (if ag.isBoss then 1.12 else 0.98))
+			local moveSpeed = if chasingPlayer
+				then (alertChaseSpeed * speedMult)
+				else (ag.baseSpeed * speedMult * (if isReturningHome then 1.65 else 0.65))
 
 			if dist > 1.5 then
 				local step = math.min(dist, moveSpeed * dt)

@@ -66,6 +66,8 @@ local EVENT_NAMES = {
 	"AdminCommand",
 	"AdminStateSync",
 	"GlobalEventBanner",
+	"BiomeWaveSync",
+	"CrateSpawnAnnounce",
 	-- Monetization
 	"PromptGamePass",
 	"PromptProduct",

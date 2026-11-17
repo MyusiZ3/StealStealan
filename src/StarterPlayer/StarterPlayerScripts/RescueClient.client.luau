@@ -65,7 +65,7 @@ local function ensurePullUI()
 	lbl.Size = UDim2.new(1, -20, 0, 28)
 	lbl.Position = UDim2.fromOffset(10, 6)
 	lbl.BackgroundTransparency = 1
-	lbl.Text = "PULLING CRATE... TAP SPACE / BUTTON!"
+	lbl.Text = "CLICK / TAP FAST TO PULL!"
 	lbl.TextColor3 = Color3.new(1, 1, 1)
 	lbl.Font = Enum.Font.FredokaOne
 	lbl.TextScaled = true
@@ -87,10 +87,10 @@ local function ensurePullUI()
 	pullFillBar = fill
 
 	local tapBtn = Instance.new("TextButton")
-	tapBtn.Size = UDim2.new(0.7, 0, 0, 28)
-	tapBtn.Position = UDim2.new(0.15, 0, 0, 62)
+	tapBtn.Size = UDim2.new(0.76, 0, 0, 28)
+	tapBtn.Position = UDim2.new(0.12, 0, 0, 62)
 	tapBtn.BackgroundColor3 = Color3.fromRGB(255, 178, 44)
-	tapBtn.Text = "YANK HARDER! (TAP / SPACE)"
+	tapBtn.Text = "CLICK / TAP / SPACE TO PULL!"
 	tapBtn.TextColor3 = Color3.fromRGB(22, 22, 26)
 	tapBtn.Font = Enum.Font.FredokaOne
 	tapBtn.TextScaled = true
@@ -316,11 +316,20 @@ Remotes.Get("PullProgressSync").OnClientEvent:Connect(function(data)
 		activeCratePos = data.cratePos
 		localPlayer:SetAttribute("ClientPullingCrate", true)
 		activePullGui.Enabled = true
+		local weak = data.tooWeak == true
 		if pullFillBar then
 			pullFillBar.Size = UDim2.fromScale(math.clamp(data.progress or 0, 0, 1), 1)
+			pullFillBar.BackgroundColor3 = if weak then Color3.fromRGB(255, 76, 68) else Color3.fromRGB(84, 245, 148)
 		end
 		if pullLabel then
-			pullLabel.Text = string.format("PULLING [%s] CRATE — %d%%", string.upper(tostring(data.rarity or "")), math.floor((data.progress or 0) * 100))
+			local pct = math.floor((data.progress or 0) * 100)
+			if weak then
+				pullLabel.Text = string.format("⚠️ LASSO TOO WEAK! [%s] %d%%", string.upper(tostring(data.rarity or "")), pct)
+				pullLabel.TextColor3 = Color3.fromRGB(255, 118, 108)
+			else
+				pullLabel.Text = string.format("TAP FAST! [%s] %d%%", string.upper(tostring(data.rarity or "")), pct)
+				pullLabel.TextColor3 = Color3.new(1, 1, 1)
+			end
 		end
 		updateBeam(data.cratePos)
 	else
@@ -339,11 +348,13 @@ local function toggleSlowMode()
 end
 
 UserInputService.InputBegan:Connect(function(input, gp)
+	if isPullActive and (input.KeyCode == Enum.KeyCode.Space or (not gp and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch))) then
+		Remotes.Get("LassoTapBoost"):FireServer()
+		return
+	end
 	if gp then return end
 	if input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then
 		toggleSlowMode()
-	elseif input.KeyCode == Enum.KeyCode.Space and activePullGui and activePullGui.Enabled then
-		Remotes.Get("LassoTapBoost"):FireServer()
 	end
 end)
 

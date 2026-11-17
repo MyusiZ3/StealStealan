@@ -32,6 +32,8 @@ type WorldCrate = {
 	biomeId: string,
 	rarity: Types.AnimalRarity,
 	speciesId: string,
+	crateTitle: string,
+	variantIdx: number,
 	sizeScale: number,
 	resistance: number,
 	progress: number,
@@ -41,6 +43,8 @@ type WorldCrate = {
 	lassoPrompt: ProximityPrompt,
 	grabPrompt: ProximityPrompt,
 	pullers: { [number]: number }, -- userId -> lastTapBoostTime
+	pullStartedAt: number?,
+	hadPeakProgress: boolean?,
 	isExtracted: boolean,
 	extractedAt: number?,
 	isTaken: boolean,
@@ -51,6 +55,7 @@ type TowedCrateRecord = {
 	biomeId: string,
 	rarity: Types.AnimalRarity,
 	speciesId: string,
+	variantIdx: number,
 	sizeScale: number,
 	hookedAt: number,
 	originPos: Vector3,
@@ -72,6 +77,41 @@ local playerPullingCrateId: { [number]: string } = {}
 local playerTowedCrates: { [number]: { TowedCrateRecord } } = {}
 local claimedWorldTokens: { [string]: boolean } = {}
 local deliveringUsers: { [number]: boolean } = {}
+local wavePhase: "OPEN" | "RESETTING" = "OPEN"
+local waveEndsAt = os.time() + 300
+local waveTotalSec = 300
+
+local BIOME_ZONE_NAMES: { [string]: string } = {
+	PineWoods = "Pine Wood Zone",
+	MangroveSwamp = "Swamp Zone",
+	SavannaCamp = "Savanna Zone",
+	AlpinePeaks = "Alpine Zone",
+	VolcanicJungle = "Volcanic Zone",
+}
+
+local RARITY_ANNOUNCE_ICON: { [Types.AnimalRarity]: string } = {
+	Common = "📦",
+	Uncommon = "📦",
+	Rare = "💠",
+	Epic = "💎",
+	Legendary = "🔥",
+	Mythic = "🌟",
+}
+
+local function announceCrateSpawn(rarity: Types.AnimalRarity, crateTitle: string, biomeId: string)
+	local zoneName = BIOME_ZONE_NAMES[biomeId] or biomeId
+	local icon = RARITY_ANNOUNCE_ICON[rarity] or "📦"
+	local col = GameConfig.RARITY_COLORS[rarity] or Color3.fromRGB(255, 224, 92)
+	local msg = string.format("%s %s Crate (%s) spawned in %s!", icon, rarity, crateTitle, zoneName)
+	Remotes.Get("CrateSpawnAnnounce"):FireAllClients({
+		message = msg,
+		rarity = rarity,
+		crateTitle = crateTitle,
+		biomeId = biomeId,
+		zoneName = zoneName,
+		color = col,
+	})
+end
 
 local function syncPlayerTowAttributes(player: Player)
 	local list = playerTowedCrates[player.UserId] or {}
@@ -150,9 +190,9 @@ local RARITY_RESISTANCE_MULT: { [Types.AnimalRarity]: number } = {
 	Mythic = 95.0,
 }
 
-local function spawnCrateAt(biomeId: string, spawnPos: Vector3, isOnboarding: boolean, forcedRarity: Types.AnimalRarity?)
+local function spawnCrateAt(biomeId: string, spawnPos: Vector3, isOnboarding: boolean, forcedRarity: Types.AnimalRarity?, announceSpawn: boolean?): WorldCrate?
 	local cratesFolder = Workspace:FindFirstChild("GameWorld") and Workspace.GameWorld:FindFirstChild("ActiveCrates")
-	if not cratesFolder then return end
+	if not cratesFolder then return nil end
 
 	local biome = getBiomeDef(biomeId)
 	local luckMult = PassManager.GetServerLuckMultiplier() * AdminService.GetMutationLuckMultiplier()
@@ -166,28 +206,32 @@ local function spawnCrateAt(biomeId: string, spawnPos: Vector3, isOnboarding: bo
 		else biome.crateBaseResistance * (RARITY_RESISTANCE_MULT[rarity] or 1.0)
 
 	local id = HttpService:GenerateGUID(false)
-	local model = AnimalVisualBuilder.BuildBuriedCrate(rarity, biomeId, sizeScale)
+	local variantIdx = (spec.indexNumber % 3) + 1
+	local crateTitle = AnimalVisualBuilder.GetCrateVariantInfo(biomeId, rarity, variantIdx)
+	local model = AnimalVisualBuilder.BuildBuriedCrate(rarity, biomeId, sizeScale, variantIdx)
 	model.Name = "Crate_" .. id
 	model:SetAttribute("CrateId", id)
 	model:SetAttribute("BiomeId", biomeId)
 	model:SetAttribute("Rarity", rarity)
+	model:SetAttribute("CrateTitle", crateTitle)
+	model:SetAttribute("CrateVariant", variantIdx)
 	model:SetAttribute("SizeScale", sizeScale)
 	model:SetAttribute("Resistance", resistance)
 	model:PivotTo(CFrame.new(spawnPos))
 
-	-- Floating transparent label above crate (NO dark box background, NO Power Needed text!)
+	-- Clean 2-Line Floating Crate Label (Image 11 style: Crate Name top + Rarity bottom, NO dark box!)
 	local root = model.PrimaryPart :: BasePart
 	local bb = Instance.new("BillboardGui")
-	bb.Size = UDim2.fromOffset(190, 44)
+	bb.Size = UDim2.fromOffset(185, 52)
 	bb.StudsOffset = Vector3.new(0, 4.4 * sizeScale + 1.1, 0)
-	bb.MaxDistance = 75
+	bb.MaxDistance = 85
 	bb.Parent = root
 
 	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.fromScale(1, 1)
+	lbl.Size = UDim2.fromScale(1, 0.52)
 	lbl.BackgroundTransparency = 1
-	lbl.Text = string.format("[%s] Trapped Crate", string.upper(rarity))
-	lbl.TextColor3 = GameConfig.RARITY_COLORS[rarity] or Color3.new(1, 1, 1)
+	lbl.Text = crateTitle
+	lbl.TextColor3 = Color3.new(1, 1, 1)
 	lbl.Font = Enum.Font.FredokaOne
 	lbl.TextScaled = true
 	lbl.Parent = bb
@@ -195,6 +239,20 @@ local function spawnCrateAt(biomeId: string, spawnPos: Vector3, isOnboarding: bo
 	lblStroke.Thickness = 2.6
 	lblStroke.Color = Color3.fromRGB(10, 12, 16)
 	lblStroke.Parent = lbl
+
+	local rarityLbl = Instance.new("TextLabel")
+	rarityLbl.Size = UDim2.fromScale(1, 0.44)
+	rarityLbl.Position = UDim2.fromScale(0, 0.52)
+	rarityLbl.BackgroundTransparency = 1
+	rarityLbl.Text = rarity
+	rarityLbl.TextColor3 = GameConfig.RARITY_COLORS[rarity] or Color3.new(1, 1, 1)
+	rarityLbl.Font = Enum.Font.FredokaOne
+	rarityLbl.TextScaled = true
+	rarityLbl.Parent = bb
+	local rarStroke = Instance.new("UIStroke")
+	rarStroke.Thickness = 2.4
+	rarStroke.Color = Color3.fromRGB(10, 12, 16)
+	rarStroke.Parent = rarityLbl
 
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "LassoPullPrompt"
@@ -223,6 +281,8 @@ local function spawnCrateAt(biomeId: string, spawnPos: Vector3, isOnboarding: bo
 		biomeId = biomeId,
 		rarity = rarity,
 		speciesId = spec.id,
+		crateTitle = crateTitle,
+		variantIdx = variantIdx,
 		sizeScale = sizeScale,
 		resistance = resistance,
 		progress = 0,
@@ -244,15 +304,23 @@ local function spawnCrateAt(biomeId: string, spawnPos: Vector3, isOnboarding: bo
 	grabPrompt.Triggered:Connect(function(player)
 		LassoRescueSystem.GrabExtractedCrate(player, id)
 	end)
+	if announceSpawn then
+		announceCrateSpawn(rarity, crateTitle, biomeId)
+	end
+	return rec
 end
 
 function LassoRescueSystem.StartPull(player: Player, crateId: string)
+	if wavePhase ~= "OPEN" then
+		Remotes.Get("NotifyClient"):FireClient(player, "Biome gate is resetting! Please wait.", Color3.fromRGB(255, 196, 62))
+		return
+	end
 	local crate = worldCrates[crateId]
 	if not crate or crate.isTaken or crate.isExtracted then return end
 
 	local towed = playerTowedCrates[player.UserId] or {}
 	if #towed >= getTowCapacity(player) then
-		Remotes.Get("NotifyClient"):FireClient(player, "Hands full! Cross into Safe Zone to bank crates into Inventory!", Color3.fromRGB(255, 196, 62))
+		Remotes.Get("NotifyClient"):FireClient(player, "Hands full! Cross into Safe Zone first!", Color3.fromRGB(255, 196, 62))
 		return
 	end
 
@@ -267,13 +335,18 @@ function LassoRescueSystem.StartPull(player: Player, crateId: string)
 		return
 	end
 
+	local now = os.clock()
 	playerPullingCrateId[player.UserId] = crateId
-	crate.pullers[player.UserId] = 0
+	crate.pullers[player.UserId] = now
+	if not crate.pullStartedAt then
+		crate.pullStartedAt = now
+	end
 	Remotes.Get("PullProgressSync"):FireClient(player, {
 		active = true,
 		crateId = crateId,
 		progress = crate.progress,
 		rarity = crate.rarity,
+		tooWeak = false,
 		cratePos = cratePos,
 	})
 end
@@ -309,7 +382,7 @@ function LassoRescueSystem.CompletePull(crate: WorldCrate)
 	crate.model:PivotTo(CFrame.new(uprightPos))
 	crate.lassoPrompt.Enabled = false
 	crate.grabPrompt.Enabled = true
-	crate.billboardLabel.Text = string.format("[%s] Grab Crate [E]", string.upper(crate.rarity))
+	crate.billboardLabel.Text = "✨ Grab! [E]"
 	crate.billboardLabel.TextColor3 = Color3.fromRGB(108, 255, 132)
 end
 
@@ -345,6 +418,7 @@ function LassoRescueSystem.GrabExtractedCrate(player: Player, crateId: string)
 		biomeId = crate.biomeId,
 		rarity = crate.rarity,
 		speciesId = crate.speciesId,
+		variantIdx = crate.variantIdx,
 		sizeScale = crate.sizeScale,
 		hookedAt = os.clock(),
 		originPos = cRoot.Position,
@@ -379,7 +453,7 @@ function LassoRescueSystem.DropPlayerCrates(player: Player, dropOrigin: Vector3)
 		local dropPos = Vector3.new(dropX, 1.4, dropZ)
 
 		local dropId = HttpService:GenerateGUID(false)
-		local model = AnimalVisualBuilder.BuildBuriedCrate(rec.rarity, rec.biomeId, rec.sizeScale)
+		local model = AnimalVisualBuilder.BuildBuriedCrate(rec.rarity, rec.biomeId, rec.sizeScale, rec.variantIdx)
 		model.Name = "DroppedCrate_" .. dropId
 		model:PivotTo(CFrame.new(dropPos))
 
@@ -461,8 +535,10 @@ function LassoRescueSystem.DropPlayerCrates(player: Player, dropOrigin: Vector3)
 					if model.Parent then
 						model:Destroy()
 					end
-					-- Return crate to its original biome spawn position
-					spawnCrateAt(rec.biomeId, rec.originSpawnPos, rec.isOnboarding, rec.rarity)
+					-- Return crate to its original biome spawn position if current wave is still open
+					if wavePhase == "OPEN" then
+						spawnCrateAt(rec.biomeId, rec.originSpawnPos, rec.isOnboarding, rec.rarity, true)
+					end
 					break
 				end
 				if lbl.Parent then
@@ -509,6 +585,7 @@ function LassoRescueSystem.TryDeliverToPen(player: Player)
 
 	local remaining: { TowedCrateRecord } = {}
 	local deliveredCount = 0
+	local lastDeliveredUid: string? = nil
 	for _, rec in ipairs(list) do
 		if not claimedWorldTokens[rec.worldToken] then
 			claimedWorldTokens[rec.worldToken] = true
@@ -517,9 +594,7 @@ function LassoRescueSystem.TryDeliverToPen(player: Player)
 			})
 			if cUid then
 				deliveredCount += 1
-				task.delay(if rec.isOnboarding then 5 else 12, function()
-					spawnCrateAt(rec.biomeId, rec.originSpawnPos, rec.isOnboarding, nil)
-				end)
+				lastDeliveredUid = cUid
 			else
 				claimedWorldTokens[rec.worldToken] = nil
 				table.insert(remaining, rec)
@@ -533,22 +608,197 @@ function LassoRescueSystem.TryDeliverToPen(player: Player)
 	deliveringUsers[uid] = nil
 	if deliveredCount > 0 then
 		PoacherAISystem.ClearBiomeAggro(player, nil)
-		Remotes.Get("CrateDelivered"):FireClient(player, deliveredCount)
-		Remotes.Get("NotifyClient"):FireClient(player, string.format("Stored %d crate(s) in your Backpack/Hotbar! Grab more or place inside your Pen!", deliveredCount), Color3.fromRGB(84, 245, 148))
+		Remotes.Get("CrateDelivered"):FireClient(player, deliveredCount, lastDeliveredUid)
 		if profile and profile.analyticsMeta.onboardingStep == 0 then
 			profile.analyticsMeta.onboardingStep = 1
 		end
 	end
 end
 
+local RARITY_WAVE_POINTS: { [Types.AnimalRarity]: number } = {
+	Common = 1,
+	Uncommon = 2,
+	Rare = 4,
+	Epic = 7,
+	Legendary = 11,
+	Mythic = 16,
+}
+
+local CRATES_PER_BIOME_WAVE: { [string]: number } = {
+	PineWoods = 12,
+	MangroveSwamp = 11,
+	SavannaCamp = 11,
+	AlpinePeaks = 11,
+	VolcanicJungle = 11,
+}
+
+local biomeGroundRayParams = RaycastParams.new()
+biomeGroundRayParams.FilterType = Enum.RaycastFilterType.Include
+
+local function updateStartGateVisuals(isClosed: boolean, remainingSec: number)
+	local gw = Workspace:FindFirstChild("GameWorld")
+	local hub = if gw then gw:FindFirstChild("SanctuaryHub") else nil
+	local gate = if hub then hub:FindFirstChild("SanctuaryExitGate") else nil
+	if not gate then return end
+
+	local barrier = gate:FindFirstChild("BiomeResetBarrier") :: Part?
+	if not barrier then
+		local p = Instance.new("Part")
+		p.Name = "BiomeResetBarrier"
+		p.Size = Vector3.new(260, 28, 3)
+		p.CFrame = CFrame.new(0, 14, 148)
+		p.Color = Color3.fromRGB(255, 64, 64)
+		p.Material = Enum.Material.ForceField
+		p.Anchored = true
+		p.CanQuery = false
+		p.CastShadow = false
+		p.Parent = gate
+		barrier = p
+	end
+	if barrier then
+		barrier.CanCollide = isClosed
+		barrier.Transparency = if isClosed then 0.42 else 1
+	end
+
+	local banner = gate:FindFirstChild("GateBanner")
+	if banner then
+		local timeStr = FormatUtil.Time(math.max(0, remainingSec))
+		for _, d in ipairs(banner:GetChildren()) do
+			if d:IsA("SurfaceGui") then
+				if d.Name == "Sign_Front" or (d.Face == Enum.NormalId.Front) then
+					d.Enabled = true
+					for _, child in ipairs(d:GetDescendants()) do
+						if child:IsA("TextLabel") then
+							if child.LayoutOrder == 1 or string.find(child.Text, "SAFE") or string.find(child.Text, "GATE") or string.find(child.Text, "LEAVING") then
+								child.Text = if isClosed then "🔒 GATE CLOSED" else "🟢 GATE OPEN ->"
+							else
+								child.Text = if isClosed then ("Spawning New Animals: " .. timeStr) else ("Biome Reset In: " .. timeStr)
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+local function sampleBiomeCrateGroundPos(biome: Types.BiomeDefinition, zMinOverride: number?, zMaxOverride: number?): Vector3
+	local gw = Workspace:FindFirstChild("GameWorld")
+	local biomesFolder = if gw then gw:FindFirstChild("Biomes") else nil
+	local bFolder = if biomesFolder then biomesFolder:FindFirstChild(biome.id) else nil
+	local blocky = if bFolder then bFolder:FindFirstChild("BlockyTerrain") else nil
+
+	local rx = if math.random() < 0.5 then math.random(-66, -12) else math.random(12, 66)
+	local zLo = math.floor(zMinOverride or (biome.zStart + 22))
+	local zHi = math.ceil(zMaxOverride or (biome.zEnd - 22))
+	if zHi < zLo then
+		zHi = zLo
+	end
+	local rz = math.random(zLo, zHi)
+
+	local targets: { Instance } = { Workspace.Terrain }
+	if blocky then
+		table.insert(targets, blocky)
+	elseif bFolder then
+		table.insert(targets, bFolder)
+	end
+	biomeGroundRayParams.FilterDescendantsInstances = targets
+	local hit = Workspace:Raycast(Vector3.new(rx, 45, rz), Vector3.new(0, -80, 0), biomeGroundRayParams)
+	local y = if hit then hit.Position.Y else 0.15
+	return Vector3.new(rx, y + 0.1, rz)
+end
+
+local function clearFieldCratesForReset()
+	for uid, crate in pairs(worldCrates) do
+		if crate.model and crate.model.Parent then
+			crate.model:Destroy()
+		end
+		worldCrates[uid] = nil
+	end
+	for uid, _ in pairs(playerPullingCrateId) do
+		local p = Players:GetPlayerByUserId(uid)
+		playerPullingCrateId[uid] = nil
+		if p then
+			Remotes.Get("PullProgressSync"):FireClient(p, { active = false })
+		end
+	end
+	for id, dRec in pairs(droppedCrates) do
+		dRec.pickedUp = true
+		if dRec.model and dRec.model.Parent then
+			dRec.model:Destroy()
+		end
+		droppedCrates[id] = nil
+	end
+end
+
+local function spawnSingleBiomeWaveBatch(biome: Types.BiomeDefinition, announceHighlights: boolean?): number
+	local count = CRATES_PER_BIOME_WAVE[biome.id] or 10
+	local spawned: { WorldCrate } = {}
+	local totalRarityScore = 0
+	for i = 1, count do
+		local isOnboard = (biome.id == "PineWoods" and i == 1)
+		local pos = if isOnboard
+			then sampleBiomeCrateGroundPos(biome, 166, 200)
+			else sampleBiomeCrateGroundPos(biome)
+		local rec = spawnCrateAt(biome.id, pos, isOnboard, nil, false)
+		if rec then
+			table.insert(spawned, rec)
+		end
+	end
+	if announceHighlights and #spawned > 0 then
+		table.sort(spawned, function(a, b)
+			return (RARITY_WAVE_POINTS[a.rarity] or 1) > (RARITY_WAVE_POINTS[b.rarity] or 1)
+		end)
+		announceCrateSpawn(spawned[1].rarity, spawned[1].crateTitle, biome.id)
+		if spawned[2] and (RARITY_WAVE_POINTS[spawned[2].rarity] or 1) >= (RARITY_WAVE_POINTS.Epic or 7) then
+			announceCrateSpawn(spawned[2].rarity, spawned[2].crateTitle, biome.id)
+		end
+	end
+	for _, crate in pairs(worldCrates) do
+		if crate.biomeId == biome.id then
+			totalRarityScore += RARITY_WAVE_POINTS[crate.rarity] or 1
+		end
+	end
+	return totalRarityScore
+end
+
+local function computeWaveOpenSeconds(): number
+	local sum = 0
+	local count = 0
+	for _, crate in pairs(worldCrates) do
+		sum += RARITY_WAVE_POINTS[crate.rarity] or 1
+		count += 1
+	end
+	local avg = if count > 0 then (sum / count) else 1.5
+	local t = math.clamp((avg - 1.2) / 3.4, 0, 1)
+	return math.round(240 + t * 240) -- 4:00 to 8:00 scaled dynamically by accumulated rarity!
+end
+
+local function broadcastWaveState()
+	local rem = math.max(0, waveEndsAt - os.time())
+	updateStartGateVisuals(wavePhase == "RESETTING", rem)
+	Remotes.Get("BiomeWaveSync"):FireAllClients({
+		phase = wavePhase,
+		remainingSec = rem,
+		totalSec = waveTotalSec,
+		endsAt = waveEndsAt,
+	})
+end
+
 function LassoRescueSystem.SpawnCrateRain()
 	local rarities: { Types.AnimalRarity } = { "Epic", "Legendary", "Mythic" }
 	for _, biome in ipairs(BiomeConfig) do
+		local best: WorldCrate? = nil
 		for i = 1, 5 do
-			local rx = math.random(-55, 55)
-			local rz = math.random(biome.zStart + 25, biome.zEnd - 25)
+			local pos = sampleBiomeCrateGroundPos(biome)
 			local rar = rarities[math.random(1, #rarities)]
-			spawnCrateAt(biome.id, Vector3.new(rx, 0.2, rz), false, rar)
+			local rec = spawnCrateAt(biome.id, pos, false, rar, false)
+			if rec and (not best or (RARITY_WAVE_POINTS[rec.rarity] or 1) > (RARITY_WAVE_POINTS[best.rarity] or 1)) then
+				best = rec
+			end
+		end
+		if best then
+			announceCrateSpawn(best.rarity, best.crateTitle, biome.id)
 		end
 	end
 end
@@ -564,20 +814,139 @@ function LassoRescueSystem.Init()
 	AdminService.RegisterCrateRainCallback(LassoRescueSystem.SpawnCrateRain)
 	PlotService.RegisterPenDropHandler(LassoRescueSystem.TryDeliverToPen)
 
-	-- Spawn initial buried crates across all 5 Biomes
-	local biomesFolder = gw:WaitForChild("Biomes")
+	-- Initial random biome-scoped crate wave
 	for _, biome in ipairs(BiomeConfig) do
-		local bModel = biomesFolder:FindFirstChild(biome.id)
-		local spawns = if bModel then bModel:FindFirstChild("CrateSpawns") else nil
-		if spawns then
-			for _, sp in ipairs(spawns:GetChildren()) do
-				if sp:IsA("BasePart") then
-					local isOnboard = sp:GetAttribute("IsOnboarding") == true
-					spawnCrateAt(biome.id, sp.Position, isOnboard, nil)
+		spawnSingleBiomeWaveBatch(biome)
+	end
+	wavePhase = "OPEN"
+	waveTotalSec = computeWaveOpenSeconds()
+	waveEndsAt = os.time() + waveTotalSec
+	broadcastWaveState()
+
+	Players.PlayerAdded:Connect(function(p)
+		task.delay(1.0, function()
+			if p.Parent then
+				Remotes.Get("BiomeWaveSync"):FireClient(p, {
+					phase = wavePhase,
+					remainingSec = math.max(0, waveEndsAt - os.time()),
+					totalSec = waveTotalSec,
+					endsAt = waveEndsAt,
+				})
+			end
+		end)
+	end)
+
+	-- Autonomous 4-8m Open Window & 20-40s Gate-Closed Random Respawn Wave Loop + Live Random Crate Spawns
+	local nextLiveSpawnAt = os.clock() + 18
+	local firstJoinAnnounced = false
+	task.spawn(function()
+		while true do
+			task.wait(1)
+			local rem = waveEndsAt - os.time()
+			if wavePhase == "OPEN" then
+				-- On first wave after first player finishes loading, spawn or announce one fresh wild crate soon
+				if not firstJoinAnnounced and #Players:GetPlayers() > 0 then
+					firstJoinAnnounced = true
+					nextLiveSpawnAt = math.min(nextLiveSpawnAt, os.clock() + 8)
+				end
+				if rem > 15 and os.clock() >= nextLiveSpawnAt then
+					nextLiveSpawnAt = os.clock() + math.random(22, 35)
+					local countsByBiome: { [string]: number } = {}
+					local totalActive = 0
+					for _, wc in pairs(worldCrates) do
+						countsByBiome[wc.biomeId] = (countsByBiome[wc.biomeId] or 0) + 1
+						totalActive += 1
+					end
+					local candidates: { Types.BiomeDefinition } = {}
+					for _, b in ipairs(BiomeConfig) do
+						local cur = countsByBiome[b.id] or 0
+						local target = CRATES_PER_BIOME_WAVE[b.id] or 10
+						if cur < target then
+							table.insert(candidates, b)
+						end
+					end
+					if #candidates == 0 and totalActive < 64 then
+						for _, b in ipairs(BiomeConfig) do
+							local cur = countsByBiome[b.id] or 0
+							local target = CRATES_PER_BIOME_WAVE[b.id] or 10
+							if cur < target + 2 then
+								table.insert(candidates, b)
+							end
+						end
+					end
+					if #candidates > 0 then
+						local picked = candidates[math.random(1, #candidates)]
+						local pos = sampleBiomeCrateGroundPos(picked)
+						spawnCrateAt(picked.id, pos, false, nil, true)
+					end
+				end
+
+				if rem <= 0 then
+					local resetDur = math.random(20, 40)
+					wavePhase = "RESETTING"
+					waveTotalSec = resetDur
+					waveEndsAt = os.time() + resetDur
+					broadcastWaveState()
+
+					Remotes.Get("GlobalEventBanner"):FireAllClients(
+						string.format("🔒 BIOME GATE CLOSED! Spawning new animals (%ds)...", resetDur),
+						Color3.fromRGB(255, 96, 84),
+						resetDur
+					)
+
+					-- Safely bring players back inside Safe Zone (banking carried crates!) & clear old field crates
+					for _, p in ipairs(Players:GetPlayers()) do
+						LassoRescueSystem.CancelPull(p)
+						if playerTowedCrates[p.UserId] and #playerTowedCrates[p.UserId] > 0 then
+							LassoRescueSystem.TryDeliverToPen(p)
+						end
+						PoacherAISystem.ClearBiomeAggro(p, nil)
+						local char = p.Character
+						local hrp = if char then char:FindFirstChild("HumanoidRootPart") else nil
+						if hrp and hrp:IsA("BasePart") and hrp.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX - 2 then
+							hrp.CFrame = CFrame.new(math.random(-8, 8), 4.5, 134)
+							Remotes.Get("NotifyClient"):FireClient(p, "Gate closed for biome reset! Returning to Safe Zone...", Color3.fromRGB(255, 206, 62))
+						end
+					end
+
+					clearFieldCratesForReset()
+					-- Stagger random spawn smoothly across the 20-40s closure window before reopening gate
+					local stepWait = math.max(1.2, (resetDur - 6) / #BiomeConfig)
+					for _, biome in ipairs(BiomeConfig) do
+						task.wait(stepWait)
+						spawnSingleBiomeWaveBatch(biome, true)
+					end
+				else
+					broadcastWaveState()
+				end
+			else
+				-- Guard Safe Zone boundary while RESETTING
+				for _, p in ipairs(Players:GetPlayers()) do
+					local char = p.Character
+					local hrp = if char then char:FindFirstChild("HumanoidRootPart") else nil
+					if hrp and hrp:IsA("BasePart") and hrp.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX - 1 then
+						hrp.CFrame = CFrame.new(math.clamp(hrp.Position.X, -80, 80), 4.5, 138)
+					end
+				end
+
+				if rem <= 0 then
+					local openSec = computeWaveOpenSeconds()
+					wavePhase = "OPEN"
+					waveTotalSec = openSec
+					waveEndsAt = os.time() + openSec
+					nextLiveSpawnAt = os.clock() + math.random(22, 35)
+					broadcastWaveState()
+					Remotes.Get("GlobalEventBanner"):FireAllClients(
+						string.format("🟢 BIOME GATE OPEN! New animals spawned (Reset in %s)!", FormatUtil.Time(openSec)),
+						Color3.fromRGB(88, 255, 132),
+						8
+					)
+				else
+					broadcastWaveState()
 				end
 			end
 		end
-	end
+	end)
 
 	PoacherAISystem.OnPlayerCaught(function(player, catchPos)
 		LassoRescueSystem.CancelPull(player)
@@ -598,12 +967,25 @@ function LassoRescueSystem.Init()
 		local cid = playerPullingCrateId[player.UserId]
 		if not cid then return end
 		local crate = worldCrates[cid]
-		if not crate then return end
+		if not crate or crate.isExtracted or crate.isTaken then return end
 		local now = os.clock()
 		local lastTap = crate.pullers[player.UserId] or 0
-		if now - lastTap >= 0.25 then
+		if now - lastTap >= 0.08 then
 			crate.pullers[player.UserId] = now
-			crate.progress = math.min(1, crate.progress + 0.08)
+			if not crate.pullStartedAt then
+				crate.pullStartedAt = now
+			end
+			local pwr, _ = computePlayerPullPower(player)
+			local effRes = math.max(1, crate.resistance * AdminService.GetResistanceMultiplier())
+			local ratio = pwr / effRes
+			local tapGain = if AdminService.HasInstantPull(player)
+				then 1.0
+				elseif ratio >= 0.45 then math.clamp(0.11 + math.min(ratio, 3.0) * 0.05, 0.11, 0.25)
+				else math.clamp(0.025 + ratio * 0.08, 0.025, 0.06)
+			crate.progress = math.min(1, crate.progress + tapGain)
+			if crate.progress >= 0.05 then
+				crate.hadPeakProgress = true
+			end
 		end
 	end)
 
@@ -626,28 +1008,30 @@ function LassoRescueSystem.Init()
 		LassoRescueSystem.TryDeliverToPen(player)
 	end)
 
-	-- Server-authoritative Pull Progress Tick + Auto-Bank into Inventory on Safe Zone Crossing
+	-- Server-authoritative Tug-of-War Pull Tick (Tap to gain, slips & fails if Lasso is too weak!)
 	RunService.Heartbeat:Connect(function(dt: number)
 		local resMult = AdminService.GetResistanceMultiplier()
 		local nowClk = os.clock()
 
 		for _, crate in pairs(worldCrates) do
 			if crate.isExtracted and not crate.isTaken and crate.extractedAt and (nowClk - crate.extractedAt) > 35 then
-				-- Reset ungrabbed crate cleanly back into trapped state
 				crate.isExtracted = false
 				crate.extractedAt = nil
 				crate.progress = 0
+				crate.pullStartedAt = nil
+				crate.hadPeakProgress = false
 				crate.model:PivotTo(CFrame.new(crate.spawnPos))
 				crate.lassoPrompt.Enabled = true
 				crate.grabPrompt.Enabled = false
-				crate.billboardLabel.Text = string.format("[%s] Trapped Crate", string.upper(crate.rarity))
-				crate.billboardLabel.TextColor3 = GameConfig.RARITY_COLORS[crate.rarity] or Color3.new(1, 1, 1)
+				crate.billboardLabel.Text = crate.crateTitle
+				crate.billboardLabel.TextColor3 = Color3.new(1, 1, 1)
 			elseif not crate.isTaken and not crate.isExtracted then
 				local totalPower = 0
 				local pullerCount = 0
+				local latestTap = 0
 				local validPullers: { Player } = {}
 
-				for uid, _ in pairs(crate.pullers) do
+				for uid, tapTime in pairs(crate.pullers) do
 					local p = Players:GetPlayerByUserId(uid)
 					local char = if p then p.Character else nil
 					local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
@@ -657,6 +1041,7 @@ function LassoRescueSystem.Init()
 						if (root.Position - cRoot.Position).Magnitude <= maxR + 10 then
 							totalPower += pwr
 							pullerCount += 1
+							if tapTime > latestTap then latestTap = tapTime end
 							table.insert(validPullers, p)
 						else
 							LassoRescueSystem.CancelPull(p)
@@ -670,38 +1055,83 @@ function LassoRescueSystem.Init()
 					if pullerCount > 1 then
 						totalPower *= 1.25 -- Co-op Dual Lasso bonus
 					end
+					if not crate.pullStartedAt then
+						crate.pullStartedAt = nowClk
+					end
 					local effectiveResistance = math.max(1, crate.resistance * resMult)
-					local rate = totalPower / effectiveResistance
+					local ratio = totalPower / effectiveResistance
+					local hasInstant = false
 					for _, p in ipairs(validPullers) do
 						if AdminService.HasInstantPull(p) then
-							rate = 10
+							hasInstant = true
+							crate.progress = 1
 							break
 						end
 					end
-					crate.progress = math.min(1, crate.progress + math.max(0.18, rate) * dt)
 
-					-- Lift crate visually out of the ground as it's pulled
-					local liftY = crate.progress * 2.4
-					crate.model:PivotTo(CFrame.new(crate.spawnPos + Vector3.new(0, liftY, 0)))
-
-					for _, p in ipairs(validPullers) do
-						Remotes.Get("PullProgressSync"):FireClient(p, {
-							active = true,
-							crateId = crate.id,
-							progress = crate.progress,
-							rarity = crate.rarity,
-							cratePos = (crate.model.PrimaryPart :: BasePart).Position,
-						})
+					local isTooWeak = (not hasInstant) and (ratio < 0.45)
+					if not hasInstant then
+						local idleAfterTap = nowClk - math.max(latestTap, crate.pullStartedAt or nowClk)
+						if isTooWeak then
+							if idleAfterTap > 0.14 or crate.progress > 0 then
+								local drainRate = math.clamp(0.28 + (0.45 - ratio) * 0.48, 0.28, 0.56)
+								crate.progress = math.max(0, crate.progress - drainRate * dt)
+							end
+						elseif idleAfterTap > 0.25 and crate.progress > 0 then
+							crate.progress = math.max(0, crate.progress - 0.15 * dt)
+						end
 					end
 
-					if crate.progress >= 1 then
-						LassoRescueSystem.CompletePull(crate)
+					local elapsed = nowClk - (crate.pullStartedAt or nowClk)
+					local timedOutTooWeak = isTooWeak and elapsed >= 4.2 and crate.progress < 0.99
+					local slippedToZero = crate.hadPeakProgress and crate.progress <= 0.005 and elapsed >= 1.2
+					local abandonedEmpty = elapsed >= 5.5 and crate.progress <= 0.01
+
+					if timedOutTooWeak or slippedToZero or abandonedEmpty then
+						-- Fail tug-of-war: progress drops, rope snaps back!
+						crate.progress = 0
+						crate.pullStartedAt = nil
+						crate.hadPeakProgress = false
+						crate.model:PivotTo(CFrame.new(crate.spawnPos))
+						for _, p in ipairs(validPullers) do
+							playerPullingCrateId[p.UserId] = nil
+							crate.pullers[p.UserId] = nil
+							Remotes.Get("PullProgressSync"):FireClient(p, {
+								active = false,
+								failed = true,
+								tooWeak = isTooWeak,
+							})
+							Remotes.Get("NotifyClient"):FireClient(
+								p,
+								if isTooWeak then "Lasso too weak! Progress slipped — Upgrade your Lasso!" else "Crate slipped away! Keep tapping faster!",
+								Color3.fromRGB(255, 92, 92)
+							)
+						end
+						table.clear(crate.pullers)
+					else
+						local liftY = crate.progress * 2.4
+						crate.model:PivotTo(CFrame.new(crate.spawnPos + Vector3.new(0, liftY, 0)))
+
+						for _, p in ipairs(validPullers) do
+							Remotes.Get("PullProgressSync"):FireClient(p, {
+								active = true,
+								crateId = crate.id,
+								progress = crate.progress,
+								rarity = crate.rarity,
+								tooWeak = isTooWeak,
+								cratePos = (crate.model.PrimaryPart :: BasePart).Position,
+							})
+						end
+
+						if crate.progress >= 1 then
+							LassoRescueSystem.CompletePull(crate)
+						end
 					end
 				end
 			end
 		end
 
-		-- Auto-store carried crates directly into Backpack/Inventory as soon as player crosses into Safe Zone!
+		-- Auto-store carried crates when player crosses into Safe Zone!
 		for uid, list in pairs(playerTowedCrates) do
 			if #list > 0 then
 				local p = Players:GetPlayerByUserId(uid)
@@ -719,7 +1149,7 @@ function LassoRescueSystem.Init()
 		local list = playerTowedCrates[player.UserId]
 		if list then
 			for _, rec in ipairs(list) do
-				spawnCrateAt(rec.biomeId, rec.originSpawnPos, rec.isOnboarding, nil)
+				spawnCrateAt(rec.biomeId, rec.originSpawnPos, rec.isOnboarding, nil, true)
 			end
 		end
 		playerTowedCrates[player.UserId] = nil
