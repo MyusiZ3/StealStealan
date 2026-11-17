@@ -15,6 +15,7 @@ local RunService = game:GetService("RunService")
 local SocialService = game:GetService("SocialService")
 local SoundService = game:GetService("SoundService")
 local StarterGui = game:GetService("StarterGui")
+local TextChatService = game:GetService("TextChatService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
@@ -27,10 +28,16 @@ local TrailConfig = require(ReplicatedStorage.Config.TrailConfig)
 local VehicleConfig = require(ReplicatedStorage.Config.VehicleConfig)
 local AnimalConfig = require(ReplicatedStorage.Config.AnimalConfig)
 local MonetizationConfig = require(ReplicatedStorage.Config.MonetizationConfig)
+local RewardConfig = require(ReplicatedStorage.Config.RewardConfig)
 local SoundConfig = require(ReplicatedStorage.Config.SoundConfig)
 local FormatUtil = require(ReplicatedStorage.Modules.FormatUtil)
 local AnimalVisualBuilder = require(ReplicatedStorage.Modules.AnimalVisualBuilder)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
+
+do
+	local RarityEffects = require(ReplicatedStorage.Modules.RarityEffects)
+	RarityEffects.BindWorldCrateEffects()
+end
 
 local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
@@ -43,6 +50,26 @@ local function disableCoreBackpack()
 end
 disableCoreBackpack()
 task.delay(0.5, disableCoreBackpack)
+
+-- Read-only server-replicated Admin Title chat prefix ([OWNER] / [ADMIN])
+pcall(function()
+	TextChatService.OnIncomingMessage = function(message: TextChatMessage)
+		local props = Instance.new("TextChatMessageProperties")
+		local src = message.TextSource
+		if src then
+			local sender = Players:GetPlayerByUserId(src.UserId)
+			if sender then
+				local title = tostring(sender:GetAttribute("AdminTitle") or "")
+				if title == "Owner" then
+					props.PrefixText = "<font color='#FFC638'><b>[OWNER]</b></font> " .. message.PrefixText
+				elseif title == "Admin" then
+					props.PrefixText = "<font color='#FF4E80'><b>[ADMIN]</b></font> " .. message.PrefixText
+				end
+			end
+		end
+		return props
+	end
+end)
 
 local function playClickSFX()
 	local s = Instance.new("Sound")
@@ -60,7 +87,7 @@ local function playClickSFX()
 end
 
 local profile: Types.PlayerProfileSchema? = nil
-local currentModal: string? = nil -- "Shop" | "Trails" | "Lassos" | "Vehicles" | "Fuse" | "Rebirth" | "Index" | "Settings" | "Inventory"
+local currentModal: string? = nil -- "Shop" | "Trails" | "Lassos" | "Vehicles" | "Fuse" | "Rebirth" | "Daily" | "Index" | "Settings" | "Inventory"
 local indexRightTab = "Normal" -- "Normal" | "Limited" | "Mutations"
 local selectedIndexSpeciesId = AnimalConfig.ALL[1].id
 local invLeftTab = "Pets" -- "Pets" | "Crates" | "Mounts" | "Fuse"
@@ -70,7 +97,7 @@ local selectedFuseUids: { string } = {}
 local fuseSlotUids: { [number]: string? } = {}
 local fusePickerSlot: number? = nil
 local drawerMode = "Active" -- "Active" | "Crates"
-local drawerCollapsed = false
+local drawerCollapsed = true
 local lastSpeedStat = 0
 local lastStepGain = 0
 local nextMythicWaveAt = os.time() + 600
@@ -448,12 +475,16 @@ makeCorner(eventBanner, 10)
 local eventBannerStroke = makeStroke(eventBanner, 2.5, Color3.fromRGB(255, 214, 64))
 makeTextStroke(eventBanner, 2.2)
 
-local crateAnnounceLbl = makeOutlinedLabel(gui, "", UDim2.fromOffset(660, 32), UDim2.new(0.5, 0, 0, 72), Color3.fromRGB(255, 224, 92), 2.8)
-crateAnnounceLbl.Name = "CrateSpawnBanner"
-crateAnnounceLbl.AnchorPoint = Vector2.new(0.5, 0)
-crateAnnounceLbl.ZIndex = 19
-crateAnnounceLbl.Visible = false
-local crateAnnounceStroke = crateAnnounceLbl:FindFirstChildOfClass("UIStroke")
+local crateAnnounceFeed = Instance.new("Frame")
+crateAnnounceFeed.Name = "CrateSpawnBanner"
+crateAnnounceFeed.AnchorPoint = Vector2.new(0.5, 0)
+crateAnnounceFeed.Size = UDim2.fromOffset(780, 0)
+crateAnnounceFeed.AutomaticSize = Enum.AutomaticSize.Y
+crateAnnounceFeed.Position = UDim2.new(0.5, 0, 0, 56)
+crateAnnounceFeed.BackgroundTransparency = 1
+crateAnnounceFeed.ZIndex = 19
+crateAnnounceFeed.Visible = false
+crateAnnounceFeed.Parent = gui
 
 local toastLbl = Instance.new("TextLabel")
 toastLbl.Name = "ToastLabel"
@@ -531,118 +562,154 @@ rescueSuccessLbl.ZIndex = 22
 rescueSuccessLbl.Visible = false
 
 -- ============================================================================
--- 2. LEFT STACK: REBIRTH + SHOP + INDEX + SLOW MODE
+-- 2. LEFT STACK: LARGE LAPTOP-FRIENDLY 2x3 GLOSSY ICON GRID + SLOW MODE
 -- ============================================================================
 local leftStack = Instance.new("Frame")
 leftStack.Name = "LeftActionStack"
 leftStack.AnchorPoint = Vector2.new(0, 0.5)
-leftStack.Size = UDim2.fromOffset(166, 192)
-leftStack.Position = UDim2.new(0, 12, 0.45, 0)
+leftStack.Size = UDim2.fromOffset(180, 318)
+leftStack.Position = UDim2.new(0, 14, 0.44, 0)
 leftStack.BackgroundTransparency = 1
 leftStack.Parent = gui
 
-local rebirthBtn = Instance.new("TextButton")
-rebirthBtn.Name = "RebirthButton"
-rebirthBtn.Size = UDim2.fromOffset(124, 38)
-rebirthBtn.Position = UDim2.fromOffset(0, 0)
-rebirthBtn.BackgroundColor3 = Color3.new(1, 1, 1)
-rebirthBtn.Text = ""
-rebirthBtn.Parent = leftStack
-makeCorner(rebirthBtn, 8)
-makeStroke(rebirthBtn, 2.8)
-makeGradient(rebirthBtn, Color3.fromRGB(255, 118, 212), Color3.fromRGB(198, 36, 132))
+local leftUI: {
+	rebirthBtn: TextButton,
+	shopBtn: TextButton,
+	indexBtn: TextButton,
+	dailyBtn: TextButton,
+	afkBtn: TextButton,
+	afkTimerBtn: TextButton,
+	afkTimerLbl: TextLabel,
+	shopBadge: TextLabel?,
+	indexBadge: TextLabel?,
+	dailyBadge: TextLabel?,
+	afkBadge: TextLabel?,
+}
+do
+	local function makeLeftIconButton(name: string, assetId: string, labelText: string, col: number, row: number, initialBadge: string?): (TextButton, TextLabel?)
+		local btn = Instance.new("TextButton")
+		btn.Name = name
+		btn.Size = UDim2.fromOffset(82, 92)
+		btn.Position = UDim2.fromOffset(col * 88, row * 94)
+		btn.BackgroundTransparency = 1
+		btn.Text = ""
+		btn.AutoButtonColor = true
+		btn.Parent = leftStack
 
--- Steal & Ride a Pet inspired circular Rebirth Emblem + Label
-local rebIconRing = Instance.new("Frame")
-rebIconRing.Size = UDim2.fromOffset(28, 28)
-rebIconRing.Position = UDim2.fromOffset(6, 5)
-rebIconRing.BackgroundColor3 = Color3.fromRGB(255, 224, 62)
-rebIconRing.Parent = rebirthBtn
-makeCorner(rebIconRing, 14)
-makeStroke(rebIconRing, 2, Color3.fromRGB(28, 14, 24))
-local rebArrows = makeOutlinedLabel(rebIconRing, "♻️", UDim2.fromScale(0.95, 0.95), UDim2.fromScale(0.025, 0.025), Color3.new(1, 1, 1), 1.4)
-rebArrows.TextScaled = true
+		local iconImg = Instance.new("ImageLabel")
+		iconImg.Name = "Icon"
+		iconImg.Size = UDim2.fromOffset(70, 70)
+		iconImg.Position = UDim2.fromOffset(6, 0)
+		iconImg.BackgroundTransparency = 1
+		iconImg.Image = assetId
+		iconImg.ScaleType = Enum.ScaleType.Fit
+		iconImg.Parent = btn
 
-local rebText = makeOutlinedLabel(rebirthBtn, "Rebirth", UDim2.new(1, -38, 1, -4), UDim2.fromOffset(35, 2), Color3.new(1, 1, 1), 2.4)
-rebText.TextXAlignment = Enum.TextXAlignment.Center
+		local lbl = makeOutlinedLabel(btn, labelText, UDim2.fromOffset(86, 22), UDim2.fromOffset(-2, 70), Color3.new(1, 1, 1), 2.5)
+		lbl.TextScaled = false
+		lbl.TextSize = 17
+		lbl.TextXAlignment = Enum.TextXAlignment.Center
 
-local shopBtn = Instance.new("TextButton")
-shopBtn.Name = "ShopButton"
-shopBtn.Size = UDim2.fromOffset(124, 40)
-shopBtn.Position = UDim2.fromOffset(0, 50)
-shopBtn.BackgroundColor3 = Color3.new(1, 1, 1)
-shopBtn.Text = "🛒 Shop"
-shopBtn.TextColor3 = Color3.new(1, 1, 1)
-shopBtn.Font = Enum.Font.FredokaOne
-shopBtn.TextScaled = true
-shopBtn.Parent = leftStack
-makeCorner(shopBtn, 8)
-makeStroke(shopBtn, 2.8)
-makeTextStroke(shopBtn, 2.5)
-makeGradient(shopBtn, Color3.fromRGB(128, 255, 48), Color3.fromRGB(52, 198, 20))
-
-local shopBadge = Instance.new("TextLabel")
-shopBadge.Size = UDim2.fromOffset(20, 20)
-shopBadge.Position = UDim2.new(1, -10, 0, -7)
-shopBadge.BackgroundColor3 = Color3.fromRGB(224, 38, 38)
-shopBadge.Text = "!"
-shopBadge.TextColor3 = Color3.new(1, 1, 1)
-shopBadge.Font = Enum.Font.FredokaOne
-shopBadge.TextScaled = true
-shopBadge.Parent = shopBtn
-makeCorner(shopBadge, 10)
-makeStroke(shopBadge, 2)
-
-local indexBtn = Instance.new("TextButton")
-indexBtn.Name = "IndexButton"
-indexBtn.Size = UDim2.fromOffset(124, 40)
-indexBtn.Position = UDim2.fromOffset(0, 102)
-indexBtn.BackgroundColor3 = Color3.new(1, 1, 1)
-indexBtn.Text = "📖 Index"
-indexBtn.TextColor3 = Color3.new(1, 1, 1)
-indexBtn.Font = Enum.Font.FredokaOne
-indexBtn.TextScaled = true
-indexBtn.Parent = leftStack
-makeCorner(indexBtn, 8)
-makeStroke(indexBtn, 2.8)
-makeTextStroke(indexBtn, 2.5)
-makeGradient(indexBtn, Color3.fromRGB(64, 224, 255), Color3.fromRGB(18, 142, 232))
-
--- Slow Mode Switch Row
-local slowSwitchTrack = Instance.new("TextButton")
-slowSwitchTrack.Name = "SlowModeSwitch"
-slowSwitchTrack.Size = UDim2.fromOffset(64, 28)
-slowSwitchTrack.Position = UDim2.fromOffset(0, 156)
-slowSwitchTrack.BackgroundColor3 = Color3.fromRGB(56, 72, 22)
-slowSwitchTrack.Text = ""
-slowSwitchTrack.Parent = leftStack
-makeCorner(slowSwitchTrack, 6)
-makeStroke(slowSwitchTrack, 2.5)
-
-local slowKnob = Instance.new("Frame")
-slowKnob.Size = UDim2.fromOffset(22, 20)
-slowKnob.Position = UDim2.fromOffset(4, 4)
-slowKnob.BackgroundColor3 = Color3.fromRGB(218, 46, 46)
-slowKnob.Parent = slowSwitchTrack
-makeCorner(slowKnob, 4)
-makeStroke(slowKnob, 2)
-
-local slowText = makeOutlinedLabel(leftStack, "Slow Mode", UDim2.fromOffset(88, 24), UDim2.fromOffset(72, 158), Color3.new(1, 1, 1), 2.1)
-slowText.TextXAlignment = Enum.TextXAlignment.Left
-
-local function updateSlowModeVisual(on: boolean)
-	slowKnob.Position = if on then UDim2.fromOffset(38, 4) else UDim2.fromOffset(4, 4)
-	slowKnob.BackgroundColor3 = if on then Color3.fromRGB(72, 224, 72) else Color3.fromRGB(218, 46, 46)
-end
-
-slowSwitchTrack.MouseButton1Click:Connect(function()
-	localPlayer:SetAttribute("ToggleSlowModeRequest", not (localPlayer:GetAttribute("ToggleSlowModeRequest") == true))
-end)
-localPlayer.AttributeChanged:Connect(function(attr)
-	if attr == "SlowMode" then
-		updateSlowModeVisual(localPlayer:GetAttribute("SlowMode") == true)
+		local badge: TextLabel? = nil
+		if initialBadge ~= nil then
+			local b = Instance.new("TextLabel")
+			b.Name = "Badge"
+			b.Size = UDim2.fromOffset(24, 24)
+			b.Position = UDim2.fromOffset(56, -2)
+			b.BackgroundColor3 = Color3.fromRGB(228, 38, 38)
+			b.Text = initialBadge
+			b.TextColor3 = Color3.new(1, 1, 1)
+			b.Font = Enum.Font.FredokaOne
+			b.TextScaled = true
+			b.ZIndex = 3
+			b.Parent = btn
+			makeCorner(b, 12)
+			makeStroke(b, 2.2)
+			makeTextStroke(b, 1.5)
+			badge = b
+		end
+		return btn, badge
 	end
-end)
+
+	local rebirthBtn = makeLeftIconButton("RebirthButton", RewardConfig.ICONS.Rebirth, "Rebirth", 0, 0, nil)
+	local shopBtn, shopBadge = makeLeftIconButton("ShopButton", RewardConfig.ICONS.Shop, "Shop", 1, 0, "!")
+	local indexBtn, indexBadge = makeLeftIconButton("IndexButton", RewardConfig.ICONS.Index, "Index", 0, 1, "1")
+	local dailyBtn, dailyBadge = makeLeftIconButton("DailyButton", RewardConfig.ICONS.Daily, "Daily", 1, 1, "!")
+	local afkBtn, afkBadge = makeLeftIconButton("AfkButton", RewardConfig.ICONS.Gift, "AFK Gifts", 0, 2, "!")
+	if indexBadge then indexBadge.Visible = false end
+	if afkBadge then afkBadge.Visible = false end
+
+	-- Live next-gift chip beside AFK Gifts button
+	local afkTimerBtn = Instance.new("TextButton")
+	afkTimerBtn.Name = "AfkTimerChip"
+	afkTimerBtn.Size = UDim2.fromOffset(88, 46)
+	afkTimerBtn.Position = UDim2.fromOffset(88, 206)
+	afkTimerBtn.BackgroundColor3 = Color3.fromRGB(36, 30, 56)
+	afkTimerBtn.BackgroundTransparency = 0.12
+	afkTimerBtn.Text = ""
+	afkTimerBtn.Parent = leftStack
+	makeCorner(afkTimerBtn, 10)
+	makeStroke(afkTimerBtn, 2.2, Color3.fromRGB(186, 122, 255))
+
+	local afkChipHead = makeOutlinedLabel(afkTimerBtn, "NEXT GIFT", UDim2.fromOffset(82, 16), UDim2.fromOffset(3, 4), Color3.fromRGB(224, 188, 255), 1.6)
+	afkChipHead.TextScaled = false
+	afkChipHead.TextSize = 11
+	local afkTimerLbl = makeOutlinedLabel(afkTimerBtn, "01:00", UDim2.fromOffset(82, 22), UDim2.fromOffset(3, 20), Color3.fromRGB(118, 255, 148), 2.0)
+	afkTimerLbl.TextScaled = false
+	afkTimerLbl.TextSize = 16
+
+	-- Slow Mode Switch Row
+	local slowSwitchTrack = Instance.new("TextButton")
+	slowSwitchTrack.Name = "SlowModeSwitch"
+	slowSwitchTrack.Size = UDim2.fromOffset(64, 28)
+	slowSwitchTrack.Position = UDim2.fromOffset(2, 286)
+	slowSwitchTrack.BackgroundColor3 = Color3.fromRGB(56, 72, 22)
+	slowSwitchTrack.Text = ""
+	slowSwitchTrack.Parent = leftStack
+	makeCorner(slowSwitchTrack, 6)
+	makeStroke(slowSwitchTrack, 2.5)
+
+	local slowKnob = Instance.new("Frame")
+	slowKnob.Size = UDim2.fromOffset(22, 20)
+	slowKnob.Position = UDim2.fromOffset(4, 4)
+	slowKnob.BackgroundColor3 = Color3.fromRGB(218, 46, 46)
+	slowKnob.Parent = slowSwitchTrack
+	makeCorner(slowKnob, 4)
+	makeStroke(slowKnob, 2)
+
+	local slowText = makeOutlinedLabel(leftStack, "Slow Mode", UDim2.fromOffset(102, 26), UDim2.fromOffset(72, 287), Color3.new(1, 1, 1), 2.2)
+	slowText.TextScaled = false
+	slowText.TextSize = 16
+	slowText.TextXAlignment = Enum.TextXAlignment.Left
+
+	local function updateSlowModeVisual(on: boolean)
+		slowKnob.Position = if on then UDim2.fromOffset(36, 4) else UDim2.fromOffset(4, 4)
+		slowKnob.BackgroundColor3 = if on then Color3.fromRGB(72, 224, 72) else Color3.fromRGB(218, 46, 46)
+	end
+
+	slowSwitchTrack.MouseButton1Click:Connect(function()
+		localPlayer:SetAttribute("ToggleSlowModeRequest", not (localPlayer:GetAttribute("ToggleSlowModeRequest") == true))
+	end)
+	localPlayer.AttributeChanged:Connect(function(attr)
+		if attr == "SlowMode" then
+			updateSlowModeVisual(localPlayer:GetAttribute("SlowMode") == true)
+		end
+	end)
+
+	leftUI = {
+		rebirthBtn = rebirthBtn,
+		shopBtn = shopBtn,
+		indexBtn = indexBtn,
+		dailyBtn = dailyBtn,
+		afkBtn = afkBtn,
+		afkTimerBtn = afkTimerBtn,
+		afkTimerLbl = afkTimerLbl,
+		shopBadge = shopBadge,
+		indexBadge = indexBadge,
+		dailyBadge = dailyBadge,
+		afkBadge = afkBadge,
+	}
+end
 
 -- ============================================================================
 -- 3. BOTTOM-LEFT FLOATING SPEED & CASH DISPLAY (No Box, Screenshot 3 Layout)
@@ -650,84 +717,191 @@ end)
 local statsCorner = Instance.new("Frame")
 statsCorner.Name = "BottomLeftStats"
 statsCorner.AnchorPoint = Vector2.new(0, 1)
-statsCorner.Size = UDim2.fromOffset(0, 76)
-statsCorner.AutomaticSize = Enum.AutomaticSize.X
+statsCorner.Size = UDim2.fromOffset(0, 150)
+statsCorner.AutomaticSize = Enum.AutomaticSize.XY
 statsCorner.Position = UDim2.new(0, 12, 1, -10)
 statsCorner.BackgroundTransparency = 1
 statsCorner.Parent = gui
 
-local speedRow = Instance.new("Frame")
-speedRow.Name = "SpeedRow"
-speedRow.Size = UDim2.fromOffset(0, 36)
-speedRow.AutomaticSize = Enum.AutomaticSize.X
-speedRow.Position = UDim2.fromOffset(0, 0)
-speedRow.BackgroundTransparency = 1
-speedRow.Parent = statsCorner
-local speedRowLayout = Instance.new("UIListLayout")
-speedRowLayout.FillDirection = Enum.FillDirection.Horizontal
-speedRowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-speedRowLayout.Padding = UDim.new(0, 6)
-speedRowLayout.SortOrder = Enum.SortOrder.LayoutOrder
-speedRowLayout.Parent = speedRow
+local speedIconBtn: TextButton, speedValLbl: TextLabel, speedMultLbl: TextLabel
+local cashRow: Frame, cashValLbl: TextLabel, cashMultLbl: TextLabel
+do
+	local statsCornerLayout = Instance.new("UIListLayout")
+	statsCornerLayout.FillDirection = Enum.FillDirection.Vertical
+	statsCornerLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+	statsCornerLayout.Padding = UDim.new(0, 3)
+	statsCornerLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	statsCornerLayout.Parent = statsCorner
 
-local speedIconBtn = Instance.new("TextButton")
-speedIconBtn.LayoutOrder = 1
-speedIconBtn.Size = UDim2.fromOffset(34, 34)
-speedIconBtn.BackgroundTransparency = 1
-speedIconBtn.Text = "👟"
-speedIconBtn.TextScaled = true
-speedIconBtn.Parent = speedRow
-local speedPlus = Instance.new("TextLabel")
-speedPlus.Size = UDim2.fromOffset(14, 14)
-speedPlus.Position = UDim2.fromOffset(20, 18)
-speedPlus.BackgroundColor3 = Color3.fromRGB(255, 214, 48)
-speedPlus.Text = "+"
-speedPlus.TextColor3 = Color3.fromRGB(16, 18, 22)
-speedPlus.Font = Enum.Font.FredokaOne
-speedPlus.TextScaled = true
-speedPlus.ZIndex = 2
-speedPlus.Parent = speedIconBtn
-makeCorner(speedPlus, 4)
-makeStroke(speedPlus, 1.8)
+	-- 1. Friend Boost Row (Image 3)
+	local friendRow = Instance.new("Frame")
+	friendRow.Name = "FriendBoostRow"
+	friendRow.LayoutOrder = 1
+	friendRow.Size = UDim2.fromOffset(0, 22)
+	friendRow.AutomaticSize = Enum.AutomaticSize.X
+	friendRow.BackgroundTransparency = 1
+	friendRow.Parent = statsCorner
+	local friendLayout = Instance.new("UIListLayout")
+	friendLayout.FillDirection = Enum.FillDirection.Horizontal
+	friendLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	friendLayout.Padding = UDim.new(0, 4)
+	friendLayout.Parent = friendRow
 
-local speedValLbl = makeOutlinedLabel(speedRow, "0", UDim2.fromOffset(0, 34), UDim2.fromOffset(0, 0), Color3.fromRGB(98, 108, 255), 3.0)
-speedValLbl.LayoutOrder = 2
-speedValLbl.AutomaticSize = Enum.AutomaticSize.X
-speedValLbl.TextScaled = false
-speedValLbl.TextSize = 26
-speedValLbl.TextXAlignment = Enum.TextXAlignment.Left
+	local friendLbl = makeOutlinedLabel(friendRow, "Friend Boost: +0%", UDim2.fromOffset(0, 20), UDim2.fromOffset(0, 0), Color3.fromRGB(244, 247, 252), 1.8)
+	friendLbl.AutomaticSize = Enum.AutomaticSize.X
+	friendLbl.TextScaled = false
+	friendLbl.TextSize = 14
 
-local speedMultLbl = makeOutlinedLabel(speedRow, "(x1.25)", UDim2.fromOffset(0, 32), UDim2.fromOffset(0, 0), Color3.fromRGB(76, 248, 86), 2.8)
-speedMultLbl.LayoutOrder = 3
-speedMultLbl.AutomaticSize = Enum.AutomaticSize.X
-speedMultLbl.TextScaled = false
-speedMultLbl.TextSize = 24
-speedMultLbl.TextXAlignment = Enum.TextXAlignment.Left
+	local friendPlusBtn = Instance.new("TextButton")
+	friendPlusBtn.Size = UDim2.fromOffset(16, 16)
+	friendPlusBtn.BackgroundColor3 = Color3.fromRGB(56, 212, 78)
+	friendPlusBtn.Text = "+"
+	friendPlusBtn.TextColor3 = Color3.new(1, 1, 1)
+	friendPlusBtn.Font = Enum.Font.FredokaOne
+	friendPlusBtn.TextScaled = true
+	friendPlusBtn.Parent = friendRow
+	makeCorner(friendPlusBtn, 8)
+	makeStroke(friendPlusBtn, 1.4)
 
-local cashRow = Instance.new("Frame")
-cashRow.Name = "CashRow"
-cashRow.Size = UDim2.fromOffset(0, 36)
-cashRow.AutomaticSize = Enum.AutomaticSize.X
-cashRow.Position = UDim2.fromOffset(0, 38)
-cashRow.BackgroundTransparency = 1
-cashRow.Parent = statsCorner
-local cashRowLayout = Instance.new("UIListLayout")
-cashRowLayout.FillDirection = Enum.FillDirection.Horizontal
-cashRowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-cashRowLayout.Padding = UDim.new(0, 6)
-cashRowLayout.SortOrder = Enum.SortOrder.LayoutOrder
-cashRowLayout.Parent = cashRow
+	-- 2. Diamond / Gems Row (Image 3)
+	local diamondRow = Instance.new("Frame")
+	diamondRow.Name = "DiamondRow"
+	diamondRow.LayoutOrder = 2
+	diamondRow.Size = UDim2.fromOffset(0, 28)
+	diamondRow.AutomaticSize = Enum.AutomaticSize.X
+	diamondRow.BackgroundTransparency = 1
+	diamondRow.Parent = statsCorner
+	local diamondLayout = Instance.new("UIListLayout")
+	diamondLayout.FillDirection = Enum.FillDirection.Horizontal
+	diamondLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	diamondLayout.Padding = UDim.new(0, 6)
+	diamondLayout.Parent = diamondRow
 
-local cashIconLbl = makeOutlinedLabel(cashRow, "💵", UDim2.fromOffset(34, 34), UDim2.fromOffset(0, 0), Color3.new(1, 1, 1), 1.5)
-cashIconLbl.LayoutOrder = 1
-cashIconLbl.BackgroundTransparency = 1
+	local diaIcon = makeOutlinedLabel(diamondRow, "💎", UDim2.fromOffset(26, 26), UDim2.fromOffset(0, 0), Color3.new(1, 1, 1), 1.5)
+	diaIcon.BackgroundTransparency = 1
 
-local cashValLbl = makeOutlinedLabel(cashRow, "$150", UDim2.fromOffset(0, 36), UDim2.fromOffset(0, 0), Color3.fromRGB(76, 248, 86), 3.0)
-cashValLbl.LayoutOrder = 2
-cashValLbl.AutomaticSize = Enum.AutomaticSize.X
-cashValLbl.TextScaled = false
-cashValLbl.TextSize = 27
-cashValLbl.TextXAlignment = Enum.TextXAlignment.Left
+	local gemsValLbl = makeOutlinedLabel(diamondRow, "0", UDim2.fromOffset(0, 26), UDim2.fromOffset(0, 0), Color3.fromRGB(92, 218, 255), 2.8)
+	gemsValLbl.Name = "GemsVal"
+	gemsValLbl.AutomaticSize = Enum.AutomaticSize.X
+	gemsValLbl.TextScaled = false
+	gemsValLbl.TextSize = 22
+	gemsValLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+	local gemsMultLbl = makeOutlinedLabel(diamondRow, "x2.25", UDim2.fromOffset(0, 24), UDim2.fromOffset(0, 0), Color3.fromRGB(255, 224, 76), 2.5)
+	gemsMultLbl.Name = "GemsMult"
+	gemsMultLbl.AutomaticSize = Enum.AutomaticSize.X
+	gemsMultLbl.TextScaled = false
+	gemsMultLbl.TextSize = 20
+	gemsMultLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+	-- 3. Speed Row (Image 3 & 4)
+	local speedRow = Instance.new("Frame")
+	speedRow.Name = "SpeedRow"
+	speedRow.LayoutOrder = 3
+	speedRow.Size = UDim2.fromOffset(0, 32)
+	speedRow.AutomaticSize = Enum.AutomaticSize.X
+	speedRow.Position = UDim2.fromOffset(0, 0)
+	speedRow.BackgroundTransparency = 1
+	speedRow.Parent = statsCorner
+	local speedRowLayout = Instance.new("UIListLayout")
+	speedRowLayout.FillDirection = Enum.FillDirection.Horizontal
+	speedRowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	speedRowLayout.Padding = UDim.new(0, 6)
+	speedRowLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	speedRowLayout.Parent = speedRow
+
+	speedIconBtn = Instance.new("TextButton")
+	speedIconBtn.LayoutOrder = 1
+	speedIconBtn.Size = UDim2.fromOffset(32, 32)
+	speedIconBtn.BackgroundTransparency = 1
+	speedIconBtn.Text = "👟"
+	speedIconBtn.TextScaled = true
+	speedIconBtn.Parent = speedRow
+	local speedPlus = Instance.new("TextLabel")
+	speedPlus.Size = UDim2.fromOffset(13, 13)
+	speedPlus.Position = UDim2.fromOffset(18, 17)
+	speedPlus.BackgroundColor3 = Color3.fromRGB(255, 214, 48)
+	speedPlus.Text = "+"
+	speedPlus.TextColor3 = Color3.fromRGB(16, 18, 22)
+	speedPlus.Font = Enum.Font.FredokaOne
+	speedPlus.TextScaled = true
+	speedPlus.ZIndex = 2
+	speedPlus.Parent = speedIconBtn
+	makeCorner(speedPlus, 4)
+	makeStroke(speedPlus, 1.6)
+
+	speedValLbl = makeOutlinedLabel(speedRow, "0", UDim2.fromOffset(0, 32), UDim2.fromOffset(0, 0), Color3.fromRGB(98, 108, 255), 3.0)
+	speedValLbl.LayoutOrder = 2
+	speedValLbl.AutomaticSize = Enum.AutomaticSize.X
+	speedValLbl.TextScaled = false
+	speedValLbl.TextSize = 25
+	speedValLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+	speedMultLbl = makeOutlinedLabel(speedRow, "(x1.25)", UDim2.fromOffset(0, 30), UDim2.fromOffset(0, 0), Color3.fromRGB(76, 248, 86), 2.8)
+	speedMultLbl.LayoutOrder = 3
+	speedMultLbl.AutomaticSize = Enum.AutomaticSize.X
+	speedMultLbl.TextScaled = false
+	speedMultLbl.TextSize = 22
+	speedMultLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+	-- 4. Cash Row (Image 3 & 4)
+	cashRow = Instance.new("Frame")
+	cashRow.Name = "CashRow"
+	cashRow.LayoutOrder = 4
+	cashRow.Size = UDim2.fromOffset(0, 34)
+	cashRow.AutomaticSize = Enum.AutomaticSize.X
+	cashRow.Position = UDim2.fromOffset(0, 38)
+	cashRow.BackgroundTransparency = 1
+	cashRow.Parent = statsCorner
+	local cashRowLayout = Instance.new("UIListLayout")
+	cashRowLayout.FillDirection = Enum.FillDirection.Horizontal
+	cashRowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	cashRowLayout.Padding = UDim.new(0, 6)
+	cashRowLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	cashRowLayout.Parent = cashRow
+
+	local cashIconLbl = makeOutlinedLabel(cashRow, "💵", UDim2.fromOffset(32, 32), UDim2.fromOffset(0, 0), Color3.new(1, 1, 1), 1.5)
+	cashIconLbl.LayoutOrder = 1
+	cashIconLbl.BackgroundTransparency = 1
+
+	cashValLbl = makeOutlinedLabel(cashRow, "$150", UDim2.fromOffset(0, 34), UDim2.fromOffset(0, 0), Color3.fromRGB(76, 248, 86), 3.0)
+	cashValLbl.LayoutOrder = 2
+	cashValLbl.AutomaticSize = Enum.AutomaticSize.X
+	cashValLbl.TextScaled = false
+	cashValLbl.TextSize = 26
+	cashValLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+	cashMultLbl = makeOutlinedLabel(cashRow, "(x1)", UDim2.fromOffset(0, 30), UDim2.fromOffset(0, 0), Color3.fromRGB(250, 204, 21), 2.8)
+	cashMultLbl.LayoutOrder = 3
+	cashMultLbl.AutomaticSize = Enum.AutomaticSize.X
+	cashMultLbl.TextScaled = false
+	cashMultLbl.TextSize = 22
+	cashMultLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+	-- 5. Ticket / Star Row (Image 3)
+	local ticketRow = Instance.new("Frame")
+	ticketRow.Name = "TicketRow"
+	ticketRow.LayoutOrder = 5
+	ticketRow.Size = UDim2.fromOffset(0, 26)
+	ticketRow.AutomaticSize = Enum.AutomaticSize.X
+	ticketRow.BackgroundTransparency = 1
+	ticketRow.Parent = statsCorner
+	local ticketLayout = Instance.new("UIListLayout")
+	ticketLayout.FillDirection = Enum.FillDirection.Horizontal
+	ticketLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	ticketLayout.Padding = UDim.new(0, 6)
+	ticketLayout.Parent = ticketRow
+
+	local tickIcon = makeOutlinedLabel(ticketRow, "⭐", UDim2.fromOffset(24, 24), UDim2.fromOffset(0, 0), Color3.new(1, 1, 1), 1.5)
+	tickIcon.BackgroundTransparency = 1
+
+	local ticketValLbl = makeOutlinedLabel(ticketRow, "1.1K", UDim2.fromOffset(0, 24), UDim2.fromOffset(0, 0), Color3.fromRGB(255, 218, 62), 2.6)
+	ticketValLbl.Name = "TicketVal"
+	ticketValLbl.AutomaticSize = Enum.AutomaticSize.X
+	ticketValLbl.TextScaled = false
+	ticketValLbl.TextSize = 22
+	ticketValLbl.TextXAlignment = Enum.TextXAlignment.Left
+end
 
 -- ============================================================================
 -- 4. RIGHT EDGE TOGGLES + COLLAPSIBLE DRAWER (Active Pets & Pending Crates)
@@ -740,26 +914,6 @@ rightEdgeBtns.Position = UDim2.new(1, -10, 0.45, 0)
 rightEdgeBtns.BackgroundTransparency = 1
 rightEdgeBtns.Parent = gui
 
-local cratesEdgeBtn = Instance.new("TextButton")
-cratesEdgeBtn.Size = UDim2.fromOffset(44, 44)
-cratesEdgeBtn.Position = UDim2.fromOffset(1, 0)
-cratesEdgeBtn.BackgroundColor3 = Color3.fromRGB(208, 48, 40)
-cratesEdgeBtn.Text = "📦"
-cratesEdgeBtn.TextScaled = true
-cratesEdgeBtn.Parent = rightEdgeBtns
-makeCorner(cratesEdgeBtn, 8)
-makeStroke(cratesEdgeBtn, 2.5)
-
-local petsEdgeBtn = Instance.new("TextButton")
-petsEdgeBtn.Size = UDim2.fromOffset(44, 44)
-petsEdgeBtn.Position = UDim2.fromOffset(1, 52)
-petsEdgeBtn.BackgroundColor3 = Color3.fromRGB(196, 130, 58)
-petsEdgeBtn.Text = "🐾"
-petsEdgeBtn.TextScaled = true
-petsEdgeBtn.Parent = rightEdgeBtns
-makeCorner(petsEdgeBtn, 8)
-makeStroke(petsEdgeBtn, 2.5)
-
 local rightDrawerWrap = Instance.new("Frame")
 rightDrawerWrap.Name = "RightSideDrawer"
 rightDrawerWrap.AnchorPoint = Vector2.new(1, 0.5)
@@ -768,79 +922,124 @@ rightDrawerWrap.Position = UDim2.new(1, -62, 0.45, 0)
 rightDrawerWrap.BackgroundTransparency = 1
 rightDrawerWrap.Parent = gui
 
-local collapseBtn = Instance.new("TextButton")
-collapseBtn.Size = UDim2.fromOffset(32, 38)
-collapseBtn.Position = UDim2.fromOffset(-38, 92)
-collapseBtn.BackgroundColor3 = Color3.fromRGB(218, 28, 22)
-collapseBtn.Text = ">"
-collapseBtn.TextColor3 = Color3.new(1, 1, 1)
-collapseBtn.Font = Enum.Font.FredokaOne
-collapseBtn.TextScaled = true
-collapseBtn.Parent = rightDrawerWrap
-makeCorner(collapseBtn, 6)
-makeStroke(collapseBtn, 2.5)
-makeTextStroke(collapseBtn, 2)
+local renderRightDrawer: () -> ()
+do
+	local cratesEdgeBtn = Instance.new("TextButton")
+	cratesEdgeBtn.Size = UDim2.fromOffset(44, 44)
+	cratesEdgeBtn.Position = UDim2.fromOffset(1, 0)
+	cratesEdgeBtn.BackgroundColor3 = Color3.fromRGB(208, 48, 40)
+	cratesEdgeBtn.Text = ""
+	cratesEdgeBtn.Parent = rightEdgeBtns
+	makeCorner(cratesEdgeBtn, 8)
+	makeStroke(cratesEdgeBtn, 2.5)
 
-local drawerBox = Instance.new("Frame")
-drawerBox.Size = UDim2.fromOffset(256, 215)
-drawerBox.BackgroundColor3 = Color3.fromRGB(40, 44, 52)
-drawerBox.BackgroundTransparency = 0.08
-drawerBox.Parent = rightDrawerWrap
-makeCorner(drawerBox, 8)
-makeStroke(drawerBox, 2.8)
+	local crateEdgeImg = Instance.new("ImageLabel")
+	crateEdgeImg.Name = "CrateIcon"
+	crateEdgeImg.Size = UDim2.fromOffset(36, 36)
+	crateEdgeImg.AnchorPoint = Vector2.new(0.5, 0.5)
+	crateEdgeImg.Position = UDim2.fromScale(0.5, 0.5)
+	crateEdgeImg.BackgroundTransparency = 1
+	crateEdgeImg.ScaleType = Enum.ScaleType.Fit
+	crateEdgeImg.Image = RewardConfig.ICONS.Crate
+	crateEdgeImg.Parent = cratesEdgeBtn
 
-local drawerHead = Instance.new("Frame")
-drawerHead.Size = UDim2.new(1, 0, 0, 34)
-drawerHead.BackgroundColor3 = Color3.fromRGB(24, 26, 32)
-drawerHead.Parent = drawerBox
-makeCorner(drawerHead, 8)
-makeStroke(drawerHead, 2)
+	local petsEdgeBtn = Instance.new("TextButton")
+	petsEdgeBtn.Size = UDim2.fromOffset(44, 44)
+	petsEdgeBtn.Position = UDim2.fromOffset(1, 52)
+	petsEdgeBtn.BackgroundColor3 = Color3.fromRGB(196, 130, 58)
+	petsEdgeBtn.Text = ""
+	petsEdgeBtn.Parent = rightEdgeBtns
+	makeCorner(petsEdgeBtn, 8)
+	makeStroke(petsEdgeBtn, 2.5)
 
-local drawerTitleLbl = makeOutlinedLabel(drawerHead, "0/8 Active", UDim2.new(0.56, -8, 0.9, 0), UDim2.fromOffset(8, 2), Color3.fromRGB(255, 206, 52), 2.2)
-drawerTitleLbl.TextXAlignment = Enum.TextXAlignment.Left
+	local petsEdgeImg = Instance.new("ImageLabel")
+	petsEdgeImg.Name = "PetsIcon"
+	petsEdgeImg.Size = UDim2.fromOffset(32, 32)
+	petsEdgeImg.AnchorPoint = Vector2.new(0.5, 0.5)
+	petsEdgeImg.Position = UDim2.fromScale(0.5, 0.5)
+	petsEdgeImg.BackgroundTransparency = 1
+	petsEdgeImg.ScaleType = Enum.ScaleType.Fit
+	petsEdgeImg.Image = "rbxassetid://6031075931"
+	petsEdgeImg.ImageColor3 = Color3.fromRGB(68, 38, 14)
+	petsEdgeImg.Parent = petsEdgeBtn
 
-local drawerTopActionBtn = Instance.new("TextButton")
-drawerTopActionBtn.Size = UDim2.fromOffset(92, 24)
-drawerTopActionBtn.Position = UDim2.new(1, -98, 0, 5)
-drawerTopActionBtn.BackgroundColor3 = Color3.fromRGB(168, 134, 48)
-drawerTopActionBtn.Text = "UPGRADE"
-drawerTopActionBtn.TextColor3 = Color3.new(1, 1, 1)
-drawerTopActionBtn.Font = Enum.Font.FredokaOne
-drawerTopActionBtn.TextScaled = true
-drawerTopActionBtn.Parent = drawerHead
-makeCorner(drawerTopActionBtn, 6)
-makeStroke(drawerTopActionBtn, 2)
-makeTextStroke(drawerTopActionBtn, 1.8)
+	local collapseBtn = Instance.new("TextButton")
+	collapseBtn.Size = UDim2.fromOffset(32, 38)
+	collapseBtn.Position = UDim2.fromOffset(-36, 3)
+	collapseBtn.BackgroundColor3 = Color3.fromRGB(218, 28, 22)
+	collapseBtn.Text = "<"
+	collapseBtn.Visible = true
+	collapseBtn.TextColor3 = Color3.new(1, 1, 1)
+	collapseBtn.Font = Enum.Font.FredokaOne
+	collapseBtn.TextScaled = true
+	collapseBtn.Parent = rightEdgeBtns
+	makeCorner(collapseBtn, 6)
+	makeStroke(collapseBtn, 2.5)
+	makeTextStroke(collapseBtn, 2)
 
-local drawerScroll = Instance.new("ScrollingFrame")
-drawerScroll.Size = UDim2.new(1, -12, 1, -44)
-drawerScroll.Position = UDim2.fromOffset(6, 38)
-drawerScroll.BackgroundTransparency = 1
-drawerScroll.ScrollBarThickness = 6
-drawerScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-drawerScroll.CanvasSize = UDim2.fromScale(0, 0)
-drawerScroll.Parent = drawerBox
+	local drawerBox = Instance.new("Frame")
+	drawerBox.Size = UDim2.fromOffset(256, 215)
+	drawerBox.BackgroundColor3 = Color3.fromRGB(40, 44, 52)
+	drawerBox.BackgroundTransparency = 0.08
+	drawerBox.Parent = rightDrawerWrap
+	makeCorner(drawerBox, 8)
+	makeStroke(drawerBox, 2.8)
 
-local drawerListLayout = Instance.new("UIListLayout")
-drawerListLayout.Padding = UDim.new(0, 6)
-drawerListLayout.Parent = drawerScroll
+	local drawerHead = Instance.new("Frame")
+	drawerHead.Size = UDim2.new(1, 0, 0, 34)
+	drawerHead.BackgroundColor3 = Color3.fromRGB(24, 26, 32)
+	drawerHead.Parent = drawerBox
+	makeCorner(drawerHead, 8)
+	makeStroke(drawerHead, 2)
 
-local equipBestBtn = Instance.new("TextButton")
-equipBestBtn.Name = "EquipBestButton"
-equipBestBtn.Size = UDim2.fromOffset(256, 42)
-equipBestBtn.Position = UDim2.fromOffset(0, 222)
-equipBestBtn.BackgroundColor3 = Color3.new(1, 1, 1)
-equipBestBtn.Text = "Equip Best"
-equipBestBtn.TextColor3 = Color3.new(1, 1, 1)
-equipBestBtn.Font = Enum.Font.FredokaOne
-equipBestBtn.TextScaled = true
-equipBestBtn.Parent = rightDrawerWrap
-makeCorner(equipBestBtn, 8)
-makeStroke(equipBestBtn, 2.8)
-makeTextStroke(equipBestBtn, 2.5)
-makeGradient(equipBestBtn, Color3.fromRGB(128, 255, 48), Color3.fromRGB(42, 188, 18))
+	local drawerTitleLbl = makeOutlinedLabel(drawerHead, "0/8 Active", UDim2.new(1, -110, 0.9, 0), UDim2.fromOffset(10, 2), Color3.fromRGB(255, 214, 72), 2.0)
+	drawerTitleLbl.TextXAlignment = Enum.TextXAlignment.Left
+	drawerTitleLbl.TextScaled = false
+	drawerTitleLbl.TextSize = 15
+	drawerTitleLbl.TextTruncate = Enum.TextTruncate.AtEnd
 
-local function renderRightDrawer()
+	local drawerTopActionBtn = Instance.new("TextButton")
+	drawerTopActionBtn.Size = UDim2.fromOffset(90, 24)
+	drawerTopActionBtn.Position = UDim2.new(1, -96, 0, 5)
+	drawerTopActionBtn.BackgroundColor3 = Color3.fromRGB(180, 122, 24)
+	drawerTopActionBtn.Text = "UPGRADE"
+	drawerTopActionBtn.TextColor3 = Color3.new(1, 1, 1)
+	drawerTopActionBtn.Font = Enum.Font.FredokaOne
+	drawerTopActionBtn.TextSize = 13
+	drawerTopActionBtn.Parent = drawerHead
+	makeCorner(drawerTopActionBtn, 6)
+	makeStroke(drawerTopActionBtn, 1.8)
+	makeTextStroke(drawerTopActionBtn, 1.6)
+
+	local drawerScroll = Instance.new("ScrollingFrame")
+	drawerScroll.Size = UDim2.new(1, -12, 1, -44)
+	drawerScroll.Position = UDim2.fromOffset(6, 38)
+	drawerScroll.BackgroundTransparency = 1
+	drawerScroll.ScrollBarThickness = 5
+	drawerScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	drawerScroll.CanvasSize = UDim2.fromScale(0, 0)
+	drawerScroll.Parent = drawerBox
+
+	local drawerListLayout = Instance.new("UIListLayout")
+	drawerListLayout.Padding = UDim.new(0, 6)
+	drawerListLayout.Parent = drawerScroll
+
+	local equipBestBtn = Instance.new("TextButton")
+	equipBestBtn.Name = "EquipBestButton"
+	equipBestBtn.Size = UDim2.fromOffset(256, 42)
+	equipBestBtn.Position = UDim2.fromOffset(0, 222)
+	equipBestBtn.BackgroundColor3 = Color3.new(1, 1, 1)
+	equipBestBtn.Text = "Equip Best"
+	equipBestBtn.TextColor3 = Color3.new(1, 1, 1)
+	equipBestBtn.Font = Enum.Font.FredokaOne
+	equipBestBtn.TextSize = 20
+	equipBestBtn.Parent = rightDrawerWrap
+	makeCorner(equipBestBtn, 8)
+	makeStroke(equipBestBtn, 2.8)
+	makeTextStroke(equipBestBtn, 2.5)
+	makeGradient(equipBestBtn, Color3.fromRGB(128, 255, 48), Color3.fromRGB(42, 188, 18))
+
+	renderRightDrawer = function()
 	for _, ch in ipairs(drawerScroll:GetChildren()) do
 		if not ch:IsA("UIListLayout") then ch:Destroy() end
 	end
@@ -849,7 +1048,7 @@ local function renderRightDrawer()
 	if drawerMode == "Active" then
 		drawerTitleLbl.Text = string.format("%d/%d Active", #profile.roamingAnimalUids, profile.penCapacity)
 		drawerTopActionBtn.Text = "UPGRADE"
-		drawerTopActionBtn.BackgroundColor3 = Color3.fromRGB(168, 134, 48)
+		drawerTopActionBtn.BackgroundColor3 = Color3.fromRGB(180, 122, 24)
 		equipBestBtn.Visible = not drawerCollapsed
 
 		for _, uid in ipairs(profile.roamingAnimalUids) do
@@ -857,37 +1056,57 @@ local function renderRightDrawer()
 			if animal then
 				local spec = AnimalConfig.GetById(animal.speciesId)
 				local inc = AnimalConfig.ComputeIncomePerSec(animal)
+				local rarCol = if spec then (GameConfig.RARITY_COLORS[spec.rarity] or Color3.fromRGB(120, 190, 255)) else Color3.fromRGB(120, 190, 255)
 				local card = Instance.new("Frame")
 				card.Size = UDim2.new(1, -4, 0, 50)
-				card.BackgroundColor3 = Color3.fromRGB(142, 88, 42)
+				card.BackgroundColor3 = Color3.fromRGB(26, 32, 46)
+				card.BackgroundTransparency = 0.04
 				card.Parent = drawerScroll
 				makeCorner(card, 8)
-				makeStroke(card, 2)
+				makeStroke(card, 1.8, Color3.fromRGB(48, 60, 86))
+
+				local accent = Instance.new("Frame")
+				accent.Size = UDim2.fromOffset(4, 36)
+				accent.Position = UDim2.fromOffset(3, 7)
+				accent.BackgroundColor3 = rarCol
+				accent.BorderSizePixel = 0
+				accent.Parent = card
+				makeCorner(accent, 2)
 
 				local iconHolder = Instance.new("Frame")
-				iconHolder.Size = UDim2.fromOffset(40, 40)
-				iconHolder.Position = UDim2.fromOffset(5, 5)
+				iconHolder.Size = UDim2.fromOffset(38, 38)
+				iconHolder.Position = UDim2.fromOffset(10, 6)
 				iconHolder.BackgroundTransparency = 1
 				iconHolder.Parent = card
 				makeAnimalIconFrame(iconHolder, animal.speciesId, animal.mutation, false)
 
-				local nLbl = makeOutlinedLabel(card, spec and spec.name or animal.speciesId, UDim2.new(1, -138, 0, 22), UDim2.fromOffset(52, 4), Color3.fromRGB(118, 214, 255), 2)
+				local nLbl = makeOutlinedLabel(card, spec and spec.name or animal.speciesId, UDim2.new(1, -132, 0, 20), UDim2.fromOffset(54, 6), Color3.fromRGB(244, 247, 252), 1.8)
 				nLbl.TextXAlignment = Enum.TextXAlignment.Left
-				local incLbl = makeOutlinedLabel(card, "($" .. FormatUtil.Number(inc) .. "/s)", UDim2.new(1, -138, 0, 18), UDim2.fromOffset(52, 26), Color3.fromRGB(122, 255, 132), 1.8)
+				nLbl.TextScaled = false
+				nLbl.TextSize = 14
+				nLbl.TextTruncate = Enum.TextTruncate.AtEnd
+				if spec and GameConfig.IsCosmicOrAbove(spec.rarity) then
+					require(ReplicatedStorage.Modules.RarityEffects).ApplyTextEffect(nLbl, spec.rarity)
+				end
+
+				local incLbl = makeOutlinedLabel(card, "$" .. FormatUtil.Number(inc) .. "/s", UDim2.new(1, -132, 0, 17), UDim2.fromOffset(54, 27), Color3.fromRGB(134, 239, 172), 1.6)
 				incLbl.TextXAlignment = Enum.TextXAlignment.Left
+				incLbl.TextScaled = false
+				incLbl.TextSize = 13
+				incLbl.TextTruncate = Enum.TextTruncate.AtEnd
 
 				local unBtn = Instance.new("TextButton")
-				unBtn.Size = UDim2.fromOffset(78, 32)
-				unBtn.Position = UDim2.new(1, -84, 0, 9)
-				unBtn.BackgroundColor3 = Color3.fromRGB(198, 48, 38)
+				unBtn.Size = UDim2.fromOffset(70, 30)
+				unBtn.Position = UDim2.new(1, -76, 0, 10)
+				unBtn.BackgroundColor3 = Color3.fromRGB(204, 42, 54)
 				unBtn.Text = "Unequip"
 				unBtn.TextColor3 = Color3.new(1, 1, 1)
 				unBtn.Font = Enum.Font.FredokaOne
-				unBtn.TextScaled = true
+				unBtn.TextSize = 13
 				unBtn.Parent = card
 				makeCorner(unBtn, 6)
-				makeStroke(unBtn, 2)
-				makeTextStroke(unBtn, 1.8)
+				makeStroke(unBtn, 1.8)
+				makeTextStroke(unBtn, 1.6)
 				unBtn.MouseButton1Click:Connect(function()
 					Remotes.Get("UnequipPenAnimal"):FireServer(uid)
 				end)
@@ -900,34 +1119,54 @@ local function renderRightDrawer()
 		end
 		drawerTitleLbl.Text = string.format("Growing Crates (%d)", #pendingList)
 		drawerTopActionBtn.Text = "Open All"
-		drawerTopActionBtn.BackgroundColor3 = Color3.fromRGB(224, 152, 34)
+		drawerTopActionBtn.BackgroundColor3 = Color3.fromRGB(202, 138, 24)
 		equipBestBtn.Visible = false
 
 		for _, crate in ipairs(pendingList) do
 			local rem = math.max(0, crate.unlockAt - os.time())
+			local rarCol = GameConfig.RARITY_COLORS[crate.rarity] or Color3.new(1, 1, 1)
 			local card = Instance.new("Frame")
-			card.Size = UDim2.new(1, -4, 0, 48)
-			card.BackgroundColor3 = Color3.fromRGB(58, 64, 78)
+			card.Size = UDim2.new(1, -4, 0, 50)
+			card.BackgroundColor3 = Color3.fromRGB(26, 32, 46)
+			card.BackgroundTransparency = 0.04
 			card.Parent = drawerScroll
 			makeCorner(card, 8)
-			makeStroke(card, 2)
+			makeStroke(card, 1.8, Color3.fromRGB(48, 60, 86))
 
-			local tLbl = makeOutlinedLabel(card, string.format("[%s] %s", crate.rarity, crate.biomeId), UDim2.new(1, -92, 0, 22), UDim2.fromOffset(8, 4), GameConfig.RARITY_COLORS[crate.rarity], 2)
+			local accent = Instance.new("Frame")
+			accent.Size = UDim2.fromOffset(4, 36)
+			accent.Position = UDim2.fromOffset(3, 7)
+			accent.BackgroundColor3 = rarCol
+			accent.BorderSizePixel = 0
+			accent.Parent = card
+			makeCorner(accent, 2)
+
+			local tLbl = makeOutlinedLabel(card, string.format("[%s] %s", crate.rarity, crate.biomeId), UDim2.new(1, -94, 0, 20), UDim2.fromOffset(12, 6), rarCol, 1.8)
 			tLbl.TextXAlignment = Enum.TextXAlignment.Left
-			local sLbl = makeOutlinedLabel(card, if rem > 0 then ("Ready in " .. FormatUtil.Time(rem)) else "READY TO OPEN!", UDim2.new(1, -92, 0, 18), UDim2.fromOffset(8, 25), Color3.fromRGB(235, 240, 248), 1.8)
+			tLbl.TextScaled = false
+			tLbl.TextSize = 14
+			if GameConfig.IsCosmicOrAbove(crate.rarity) then
+				require(ReplicatedStorage.Modules.RarityEffects).ApplyTextEffect(tLbl, crate.rarity)
+			end
+			tLbl.TextTruncate = Enum.TextTruncate.AtEnd
+
+			local sLbl = makeOutlinedLabel(card, if rem > 0 then ("Ready in " .. FormatUtil.Time(rem)) else "READY TO OPEN!", UDim2.new(1, -94, 0, 17), UDim2.fromOffset(12, 27), Color3.fromRGB(215, 224, 238), 1.6)
 			sLbl.TextXAlignment = Enum.TextXAlignment.Left
+			sLbl.TextScaled = false
+			sLbl.TextSize = 12
+			sLbl.TextTruncate = Enum.TextTruncate.AtEnd
 
 			local opBtn = Instance.new("TextButton")
-			opBtn.Size = UDim2.fromOffset(74, 32)
-			opBtn.Position = UDim2.new(1, -80, 0, 8)
-			opBtn.BackgroundColor3 = if rem > 0 then Color3.fromRGB(96, 104, 122) else Color3.fromRGB(72, 206, 86)
+			opBtn.Size = UDim2.fromOffset(70, 30)
+			opBtn.Position = UDim2.new(1, -76, 0, 10)
+			opBtn.BackgroundColor3 = if rem > 0 then Color3.fromRGB(71, 85, 105) else Color3.fromRGB(34, 197, 94)
 			opBtn.Text = if rem > 0 then FormatUtil.Time(rem) else "OPEN"
 			opBtn.TextColor3 = Color3.new(1, 1, 1)
 			opBtn.Font = Enum.Font.FredokaOne
-			opBtn.TextScaled = true
+			opBtn.TextSize = 13
 			opBtn.Parent = card
 			makeCorner(opBtn, 6)
-			makeStroke(opBtn, 2)
+			makeStroke(opBtn, 1.8)
 			opBtn.MouseButton1Click:Connect(function()
 				Remotes.Get("OpenPendingCrate"):FireServer(crate.uid)
 			end)
@@ -953,13 +1192,26 @@ local function setDrawerCollapsed(collapsed: boolean, mode: string?)
 	drawerCollapsed = collapsed
 	drawerBox.Visible = not collapsed
 	equipBestBtn.Visible = (not collapsed) and (drawerMode == "Active")
-	collapseBtn.Text = if collapsed then "<" else ">"
-	collapseBtn.Position = if collapsed then UDim2.fromOffset(224, 92) else UDim2.fromOffset(-38, 92)
+	if collapsed then
+		collapseBtn.Parent = rightEdgeBtns
+		collapseBtn.Position = UDim2.fromOffset(-36, 3)
+		collapseBtn.Text = "<"
+		collapseBtn.Visible = true
+	else
+		collapseBtn.Parent = rightDrawerWrap
+		collapseBtn.Position = UDim2.fromOffset(-38, 92)
+		collapseBtn.Text = ">"
+		collapseBtn.Visible = true
+	end
 	renderRightDrawer()
 end
 
 collapseBtn.MouseButton1Click:Connect(function()
-	setDrawerCollapsed(not drawerCollapsed, nil)
+	if drawerCollapsed then
+		setDrawerCollapsed(false, "Active")
+	else
+		setDrawerCollapsed(true, nil)
+	end
 end)
 cratesEdgeBtn.MouseButton1Click:Connect(function()
 	if drawerCollapsed or drawerMode ~= "Crates" then
@@ -975,6 +1227,8 @@ petsEdgeBtn.MouseButton1Click:Connect(function()
 		setDrawerCollapsed(true, nil)
 	end
 end)
+setDrawerCollapsed(true, "Active")
+end
 
 -- ============================================================================
 -- 5. BOTTOM-CENTER 10-SLOT FROSTED HOTBAR (1-2 GEAR + 3-0 DRAG & DROP SLOTS, Image 1)
@@ -1003,7 +1257,7 @@ local lastMountThumbKey = ""
 local bottomCenterHud = Instance.new("Frame")
 bottomCenterHud.Name = "BottomCenterHUD"
 bottomCenterHud.AnchorPoint = Vector2.new(0.5, 1)
-bottomCenterHud.Size = UDim2.fromOffset(704, 122)
+bottomCenterHud.Size = UDim2.fromOffset(704, 176)
 bottomCenterHud.Position = UDim2.new(0.5, 0, 1, -8)
 bottomCenterHud.BackgroundTransparency = 1
 bottomCenterHud.Parent = gui
@@ -1060,6 +1314,94 @@ dropCrateBtn.MouseButton1Click:Connect(function()
 	Remotes.Get("DropCarriedCrate"):FireServer()
 end)
 
+do
+	-- Lucky Cages Progress Bars directly above Hotbar (Image 3)
+	local luckyCagesFrame = Instance.new("Frame")
+	luckyCagesFrame.Name = "LuckyCagesWidget"
+	luckyCagesFrame.AnchorPoint = Vector2.new(0.5, 1)
+	luckyCagesFrame.Size = UDim2.fromOffset(330, 52)
+	luckyCagesFrame.Position = UDim2.new(0.5, 0, 1, -70)
+	luckyCagesFrame.BackgroundTransparency = 1
+	luckyCagesFrame.Parent = bottomCenterHud
+
+	local luckySubLbl = makeOutlinedLabel(luckyCagesFrame, "Open Cages for Lucky Cages!", UDim2.new(1, 0, 0, 14), UDim2.fromOffset(0, 0), Color3.fromRGB(244, 247, 252), 1.5)
+	luckySubLbl.TextSize = 11
+
+	-- Lucky Cage Bar (Green)
+	local luckyTrack = Instance.new("Frame")
+	luckyTrack.Name = "LuckyBarTrack"
+	luckyTrack.Size = UDim2.new(1, -26, 0, 15)
+	luckyTrack.Position = UDim2.fromOffset(0, 16)
+	luckyTrack.BackgroundColor3 = Color3.fromRGB(18, 22, 28)
+	luckyTrack.Parent = luckyCagesFrame
+	makeCorner(luckyTrack, 5)
+	makeStroke(luckyTrack, 1.5)
+
+	local luckyFill = Instance.new("Frame")
+	luckyFill.Name = "Fill"
+	luckyFill.Size = UDim2.fromScale(0.8, 1)
+	luckyFill.BackgroundColor3 = Color3.new(1, 1, 1)
+	luckyFill.Parent = luckyTrack
+	makeCorner(luckyFill, 5)
+	makeGradient(luckyFill, Color3.fromRGB(112, 255, 96), Color3.fromRGB(36, 192, 48), 0)
+
+	local luckyClover = makeOutlinedLabel(luckyTrack, "🍀", UDim2.fromOffset(15, 15), UDim2.fromOffset(2, 0), Color3.new(1, 1, 1), 1.2)
+	luckyClover.BackgroundTransparency = 1
+
+	local luckyText = makeOutlinedLabel(luckyTrack, "LUCKY CAGE 8/10", UDim2.fromScale(1, 1), UDim2.fromOffset(0, 0), Color3.new(1, 1, 1), 1.6)
+	luckyText.Name = "Label"
+	luckyText.TextSize = 11
+
+	local luckyPlusBtn = Instance.new("TextButton")
+	luckyPlusBtn.Size = UDim2.fromOffset(18, 18)
+	luckyPlusBtn.Position = UDim2.new(1, 4, 0.5, -9)
+	luckyPlusBtn.BackgroundColor3 = Color3.fromRGB(168, 76, 242)
+	luckyPlusBtn.Text = "+"
+	luckyPlusBtn.TextColor3 = Color3.new(1, 1, 1)
+	luckyPlusBtn.Font = Enum.Font.FredokaOne
+	luckyPlusBtn.TextScaled = true
+	luckyPlusBtn.Parent = luckyTrack
+	makeCorner(luckyPlusBtn, 9)
+	makeStroke(luckyPlusBtn, 1.4)
+
+	-- Ultra Lucky Cage Bar (Purple)
+	local ultraTrack = Instance.new("Frame")
+	ultraTrack.Name = "UltraBarTrack"
+	ultraTrack.Size = UDim2.new(1, -26, 0, 15)
+	ultraTrack.Position = UDim2.fromOffset(0, 33)
+	ultraTrack.BackgroundColor3 = Color3.fromRGB(18, 22, 28)
+	ultraTrack.Parent = luckyCagesFrame
+	makeCorner(ultraTrack, 5)
+	makeStroke(ultraTrack, 1.5)
+
+	local ultraFill = Instance.new("Frame")
+	ultraFill.Name = "Fill"
+	ultraFill.Size = UDim2.fromScale(0.32, 1)
+	ultraFill.BackgroundColor3 = Color3.new(1, 1, 1)
+	ultraFill.Parent = ultraTrack
+	makeCorner(ultraFill, 5)
+	makeGradient(ultraFill, Color3.fromRGB(216, 112, 255), Color3.fromRGB(138, 28, 224), 0)
+
+	local ultraClover = makeOutlinedLabel(ultraTrack, "🍀", UDim2.fromOffset(15, 15), UDim2.fromOffset(2, 0), Color3.new(1, 1, 1), 1.2)
+	ultraClover.BackgroundTransparency = 1
+
+	local ultraText = makeOutlinedLabel(ultraTrack, "ULTRA LUCKY CAGE 8/25", UDim2.fromScale(1, 1), UDim2.fromOffset(0, 0), Color3.new(1, 1, 1), 1.6)
+	ultraText.Name = "Label"
+	ultraText.TextSize = 11
+
+	local ultraPlusBtn = Instance.new("TextButton")
+	ultraPlusBtn.Size = UDim2.fromOffset(18, 18)
+	ultraPlusBtn.Position = UDim2.new(1, 4, 0.5, -9)
+	ultraPlusBtn.BackgroundColor3 = Color3.fromRGB(168, 76, 242)
+	ultraPlusBtn.Text = "+"
+	ultraPlusBtn.TextColor3 = Color3.new(1, 1, 1)
+	ultraPlusBtn.Font = Enum.Font.FredokaOne
+	ultraPlusBtn.TextScaled = true
+	ultraPlusBtn.Parent = ultraTrack
+	makeCorner(ultraPlusBtn, 9)
+	makeStroke(ultraPlusBtn, 1.4)
+end
+
 local hotbar = Instance.new("Frame")
 hotbar.Name = "BottomHotbar"
 hotbar.AnchorPoint = Vector2.new(0.5, 1)
@@ -1104,15 +1446,19 @@ local function syncHeldItemFromHotbar()
 	local hBiome = ""
 	local hRarity = ""
 	local hScale = 1
+	local hMerged = false
 
 	if selectedCustomCrateUid and profile and type(profile.crateInventory) == "table" then
 		local invC = profile.crateInventory[selectedCustomCrateUid]
 		if invC then
 			hType = "Crate"
 			hId = invC.uid
+			hSpecies = invC.speciesId or ""
+			hMutation = invC.customMutation or ""
 			hBiome = invC.biomeId
 			hRarity = invC.rarity
 			hScale = invC.sizeScale or 1
+			hMerged = (invC.originSource == "Merge")
 		else
 			selectedCustomCrateUid = nil
 		end
@@ -1129,9 +1475,12 @@ local function syncHeldItemFromHotbar()
 			if crate then
 				hType = "Crate"
 				hId = crate.uid
+				hSpecies = crate.speciesId or ""
+				hMutation = crate.customMutation or ""
 				hBiome = crate.biomeId
 				hRarity = crate.rarity
 				hScale = crate.sizeScale or 1
+				hMerged = (crate.originSource == "Merge")
 			end
 		elseif entry and entry.kind == "Pet" then
 			local animal = profile.inventoryAnimals[entry.uid]
@@ -1151,6 +1500,7 @@ local function syncHeldItemFromHotbar()
 	localPlayer:SetAttribute("HeldItemBiome", hBiome)
 	localPlayer:SetAttribute("HeldItemRarity", hRarity)
 	localPlayer:SetAttribute("HeldItemScale", hScale)
+	localPlayer:SetAttribute("HeldItemMerged", hMerged)
 	Remotes.Get("SetHeldItem"):FireServer(hType, hId)
 end
 
@@ -1498,12 +1848,14 @@ local function createHotbarSlot(slotIndex: number, modelBuilder: (() -> Model?)?
 	slotStroke.Name = "SlotStroke"
 
 	local keyTxt = if slotIndex == 10 then "0" else tostring(slotIndex)
-	local k = makeOutlinedLabel(slot, keyTxt, UDim2.fromOffset(16, 16), UDim2.fromOffset(5, 2), Color3.new(1, 1, 1), 1.6)
+	local k = makeOutlinedLabel(slot, keyTxt, UDim2.fromOffset(18, 16), UDim2.fromOffset(5, 2), Color3.fromRGB(226, 232, 240), 1.6)
 	k.TextXAlignment = Enum.TextXAlignment.Left
+	k.TextScaled = false
+	k.TextSize = 12
 	k.ZIndex = 3
 
 	local thumbBox = Instance.new("Frame")
-	thumbBox.Size = UDim2.fromOffset(48, 42)
+	thumbBox.Size = UDim2.fromOffset(48, 38)
 	thumbBox.Position = UDim2.fromOffset(8, 6)
 	thumbBox.BackgroundTransparency = 1
 	thumbBox.Interactable = false
@@ -1524,7 +1876,11 @@ local function createHotbarSlot(slotIndex: number, modelBuilder: (() -> Model?)?
 	end
 
 	if label ~= "" then
-		local nmLbl = makeOutlinedLabel(slot, label, UDim2.new(1, -4, 0, 15), UDim2.new(0, 2, 1, -16), Color3.new(1, 1, 1), 1.6)
+		local nmLbl = makeOutlinedLabel(slot, label, UDim2.new(1, -6, 0, 16), UDim2.new(0, 3, 1, -18), Color3.new(1, 1, 1), 1.6)
+		nmLbl.TextScaled = false
+		nmLbl.TextSize = 11
+		nmLbl.Font = Enum.Font.GothamBold
+		nmLbl.TextTruncate = Enum.TextTruncate.AtEnd
 		nmLbl.Interactable = false
 		nmLbl.ZIndex = 3
 	end
@@ -2329,11 +2685,22 @@ local function renderFuseModal()
 	makeCorner(container, 10)
 	makeStroke(container, 2.5, Color3.fromRGB(52, 168, 255))
 
-	makeOutlinedLabel(container, "Merge 3 of the same pets!", UDim2.new(1, -16, 0, 24), UDim2.fromOffset(8, 5), Color3.new(1, 1, 1), 2.2)
-	makeOutlinedLabel(container, "More KG = Bigger CRATE", UDim2.new(1, -16, 0, 18), UDim2.fromOffset(8, 28), Color3.fromRGB(118, 212, 255), 1.6)
+	makeOutlinedLabel(container, "Merge 3 of the same pets!", UDim2.new(1, -16, 0, 22), UDim2.fromOffset(8, 4), Color3.new(1, 1, 1), 2.2)
+	makeOutlinedLabel(container, "More KG = Bigger CRATE  •  Backpack Pets Only", UDim2.new(1, -16, 0, 17), UDim2.fromOffset(8, 26), Color3.fromRGB(118, 212, 255), 1.6)
+
+	local roamingSet: { [string]: boolean } = {}
+	for _, rUid in ipairs(profile.roamingAnimalUids) do
+		roamingSet[rUid] = true
+	end
+	for slotNum = 1, 3 do
+		local suid = fuseSlotUids[slotNum]
+		if suid and (roamingSet[suid] or not profile.inventoryAnimals[suid]) then
+			fuseSlotUids[slotNum] = nil
+		end
+	end
 
 	if fusePickerSlot ~= nil then
-		-- VIEW B: CLEAN "Select Pet to Merge" GRID PICKER (Image 5 Style: vibrant rarity gradient cards + Name + (XKG)!)
+		-- VIEW B: CLEAN "Select Pet to Merge" GRID PICKER (Backpack-only pets, vibrant rarity gradient + Name + KG!)
 		local pickSlot = fusePickerSlot :: number
 		local pickerPanel = Instance.new("Frame")
 		pickerPanel.Name = "SelectPetPanel"
@@ -2376,7 +2743,7 @@ local function renderFuseModal()
 
 		local candidates: { { uid: string, animal: Types.AnimalInstance, earn: number, mutRank: number } } = {}
 		for uid, a in pairs(profile.inventoryAnimals) do
-			if not blockedUids[uid] and (targetSpeciesId == nil or a.speciesId == targetSpeciesId) then
+			if not roamingSet[uid] and not blockedUids[uid] and (targetSpeciesId == nil or a.speciesId == targetSpeciesId) then
 				table.insert(candidates, {
 					uid = uid,
 					animal = a,
@@ -2401,13 +2768,15 @@ local function renderFuseModal()
 		end)
 
 		if #candidates == 0 then
-			local emptyLbl = makeOutlinedLabel(pickerPanel, "NO PETS", UDim2.new(1, -24, 0, 62), UDim2.new(0, 12, 0.5, -36), Color3.fromRGB(132, 138, 152), 2.4)
+			local emptyLbl = makeOutlinedLabel(pickerPanel, "NO ELIGIBLE PETS", UDim2.new(1, -24, 0, 56), UDim2.new(0, 12, 0.5, -36), Color3.fromRGB(132, 138, 152), 2.4)
 			emptyLbl.TextXAlignment = Enum.TextXAlignment.Center
 			local subEmpty = makeOutlinedLabel(
 				pickerPanel,
-				if specObj then string.format("No other %s available in your backpack/pen", specObj.name) else "Rescue & hatch crates to collect pets!",
-				UDim2.new(1, -24, 0, 24),
-				UDim2.new(0, 12, 0.5, 28),
+				if specObj
+					then string.format("No other %s in Backpack (unequip from Pen to merge!)", specObj.name)
+					else "Only unequipped Backpack pets can merge — unequip pets from your Pen!",
+				UDim2.new(1, -24, 0, 26),
+				UDim2.new(0, 12, 0.5, 22),
 				Color3.fromRGB(168, 178, 198),
 				1.5
 			)
@@ -2471,10 +2840,10 @@ local function renderFuseModal()
 		return
 	end
 
-	-- VIEW A: CLEAN 3-SLOT MERGE WORKBENCH (No cluttered pet list below!)
+	-- VIEW A: CLEAN 3-SLOT MERGE WORKBENCH (Matches Image 1 reference cleanly!)
 	local filledCount = 0
 	local orderedUids: { string } = {}
-	local selectedInputs: { { sizeRatio: number, mutation: string } } = {}
+	local selectedInputs: { { sizeRatio: number, mutation: string, weightKg: number? } } = {}
 	local activeSpecId: string? = nil
 
 	for slotNum = 1, 3 do
@@ -2483,7 +2852,7 @@ local function renderFuseModal()
 		if a then
 			filledCount += 1
 			table.insert(orderedUids, uid :: string)
-			table.insert(selectedInputs, { sizeRatio = a.sizeRatio, mutation = a.mutation })
+			table.insert(selectedInputs, { sizeRatio = a.sizeRatio, mutation = a.mutation, weightKg = a.weightKg })
 			activeSpecId = a.speciesId
 		end
 	end
@@ -2591,12 +2960,12 @@ local function renderFuseModal()
 		end
 	end
 
-	-- Center Result Output Box (Vertical Fill Bar 0/3 -> 3/3 + Output Preview!)
+	-- Center Result Output Box (Vertical Fill Bar 0/3 -> 3/3 + Output Preview + Exact Size/KG Growth Indicator!)
 	local resultBox = Instance.new("Frame")
 	resultBox.Name = "OutputChamber"
-	resultBox.Size = UDim2.fromOffset(224, 114)
+	resultBox.Size = UDim2.fromOffset(252, 118)
 	resultBox.AnchorPoint = Vector2.new(0.5, 0)
-	resultBox.Position = UDim2.new(0.5, 0, 0, 170)
+	resultBox.Position = UDim2.new(0.5, 0, 0, 166)
 	resultBox.BackgroundColor3 = Color3.fromRGB(14, 16, 20)
 	resultBox.ClipsDescendants = true
 	resultBox.ZIndex = 3
@@ -2619,14 +2988,20 @@ local function renderFuseModal()
 	end
 
 	if activeSpecId then
+		local selSpecObj = AnimalConfig.GetById(activeSpecId)
+		local boostedSize, crateScale, chances, fMeta = GameConfig.ComputeMergeForecast(
+			selectedInputs,
+			selSpecObj and selSpecObj.baseWeightKg,
+			selSpecObj and selSpecObj.rarity
+		)
+
 		local previewThumb = Instance.new("Frame")
-		previewThumb.Size = UDim2.fromOffset(92, 74)
+		previewThumb.Size = UDim2.fromOffset(82, 66)
 		previewThumb.AnchorPoint = Vector2.new(0.5, 0)
-		previewThumb.Position = UDim2.new(0.5, 0, 0, 4)
+		previewThumb.Position = UDim2.new(0.5, 0, 0, 2)
 		previewThumb.BackgroundTransparency = 1
 		previewThumb.ZIndex = 4
 		previewThumb.Parent = resultBox
-		local boostedSize, _, chances = GameConfig.ComputeMergeForecast(selectedInputs)
 		local topMut = (chances[1] and chances[1].mutation or "None") :: Types.AnimalMutation
 		setViewportThumbnail(previewThumb, function()
 			return AnimalVisualBuilder.BuildAnimalModel(activeSpecId, 1.0, if filledCount == 3 then topMut else "None", true)
@@ -2639,11 +3014,19 @@ local function renderFuseModal()
 		end
 		makeOutlinedLabel(
 			resultBox,
-			string.format("Crate %.2fx • %s", boostedSize, table.concat(chanceParts, " / ")),
-			UDim2.new(1, -12, 0, 24),
-			UDim2.new(0, 6, 1, -28),
-			Color3.fromRGB(255, 236, 128),
+			string.format("+%d%% Size -> %.2fx (%s KG) | Crate %.2fx", fMeta.sizeGainPct, boostedSize, FormatUtil.Number(fMeta.expectedKg), crateScale),
+			UDim2.new(1, -10, 0, 20),
+			UDim2.new(0, 5, 1, -42),
+			Color3.fromRGB(118, 255, 148),
 			1.6
+		).ZIndex = 5
+		makeOutlinedLabel(
+			resultBox,
+			table.concat(chanceParts, " / "),
+			UDim2.new(1, -10, 0, 18),
+			UDim2.new(0, 5, 1, -21),
+			Color3.fromRGB(255, 236, 128),
+			1.5
 		).ZIndex = 5
 	end
 
@@ -2678,446 +3061,1179 @@ local function renderFuseModal()
 	end)
 end
 
--- A6. DEDICATED REBIRTH & DAILY REWARDS MODAL (Dual Progress Bars: Speed & Coins!)
-local rebirthWindow, rebirthScroll = makeDedicatedModal("RebirthModal", "Rebirth & Daily Rewards", Color3.fromRGB(255, 92, 162), Color3.fromRGB(192, 34, 102), false)
+-- A6. CLEAN REBIRTH (Gambar 2) + DAILY REWARDS GRID (Gambar 1) + AFK PLAYTIME GIFTS (1m -> 2h)
+local rewardsUI: {
+	rebirthWindow: Frame,
+	dailyWindow: Frame,
+	afkWindow: Frame,
+	renderRebirth: () -> (),
+	renderDaily: () -> (),
+	renderAfk: () -> (),
+	isDailyReady: (Types.PlayerProfileSchema?) -> (boolean, number),
+	updateAfkLiveUI: () -> (),
+}
+do
+	local RAINBOW_SEQ = ColorSequence.new({
+		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(255, 86, 178)),
+		ColorSequenceKeypoint.new(0.33, Color3.fromRGB(255, 224, 72)),
+		ColorSequenceKeypoint.new(0.67, Color3.fromRGB(78, 242, 168)),
+		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(72, 178, 255)),
+	})
 
-local function makeRebirthProgressBar(parent: Frame, labelText: string, curVal: number, reqVal: number, posY: number, fillCol1: Color3, fillCol2: Color3)
-	local ratio = math.clamp(curVal / math.max(1, reqVal), 0, 1)
-	local pct = math.floor(ratio * 100)
-	local check = if curVal >= reqVal then " ✅" else ""
-	makeOutlinedLabel(
-		parent,
-		string.format("%s: %s / %s (%d%%)%s", labelText, FormatUtil.Number(curVal), FormatUtil.Number(reqVal), pct, check),
-		UDim2.new(1, -24, 0, 22),
-		UDim2.fromOffset(12, posY),
-		if curVal >= reqVal then Color3.fromRGB(118, 255, 148) else Color3.new(1, 1, 1),
-		1.7
-	).TextXAlignment = Enum.TextXAlignment.Left
+	local THEME_COLORS = {
+		Blue = { c1 = Color3.fromRGB(118, 224, 255), c2 = Color3.fromRGB(36, 142, 232) },
+		Purple = { c1 = Color3.fromRGB(238, 118, 255), c2 = Color3.fromRGB(168, 36, 228) },
+		Gold = { c1 = Color3.fromRGB(255, 224, 72), c2 = Color3.fromRGB(238, 146, 24) },
+	}
 
-	local track = Instance.new("Frame")
-	track.Size = UDim2.new(1, -24, 0, 18)
-	track.Position = UDim2.fromOffset(12, posY + 23)
-	track.BackgroundColor3 = Color3.fromRGB(20, 22, 28)
-	track.Parent = parent
-	makeCorner(track, 6)
-	makeStroke(track, 1.8)
+	local function formatDurationClock(secs: number): string
+		local s = math.max(0, math.floor(secs))
+		local hrs = math.floor(s / 3600)
+		local mins = math.floor((s % 3600) / 60)
+		local rem = s % 60
+		if hrs > 0 then
+			return string.format("%dh %02dm %02ds", hrs, mins, rem)
+		end
+		return string.format("%02d:%02d", mins, rem)
+	end
 
-	local fill = Instance.new("Frame")
-	fill.Size = UDim2.fromScale(ratio, 1)
-	fill.BackgroundColor3 = fillCol1
-	fill.Parent = track
-	makeCorner(fill, 6)
-	makeGradient(fill, fillCol1, fillCol2)
-end
+	local function formatShortRewardText(templateOrText: string, baseCoins: number, rebirths: number): string
+		if baseCoins > 0 and string.find(templateOrText, "%s", 1, true) then
+			local mult = 1 + rebirths * GameConfig.ECONOMY.REBIRTH_INCOME_BONUS
+			return string.format(templateOrText, FormatUtil.Number(math.floor(baseCoins * mult)))
+		end
+		return templateOrText
+	end
 
-local function renderRebirthModal()
-	clearScrollItems(rebirthScroll)
-	if not profile then return end
-	local reqSpd = math.floor(GameConfig.ECONOMY.REBIRTH_BASE_SPEED * math.pow(2.1, profile.rebirths))
-	local reqCoins = math.floor(GameConfig.ECONOMY.REBIRTH_BASE_COINS * math.pow(GameConfig.ECONOMY.REBIRTH_GROWTH, profile.rebirths))
-	local meetsSpd = profile.speedStat >= reqSpd
-	local meetsCoins = profile.coins >= reqCoins
-	local ready = meetsSpd and meetsCoins
+	local function decorateModalHeader(win: Frame, header: Frame, iconAsset: string, rightPillBtnText: string?, onRightPillClick: (() -> ())?): TextButton?
+		for _, ch in ipairs(header:GetChildren()) do
+			if ch:IsA("TextLabel") then
+				ch.Position = UDim2.new(0, 56, 0.09, 0)
+				ch.Size = UDim2.new(1, -225, 0.82, 0)
+			end
+		end
+		local cornerIcon = Instance.new("ImageLabel")
+		cornerIcon.Name = "HeaderCornerIcon"
+		cornerIcon.Size = UDim2.fromOffset(58, 58)
+		cornerIcon.Position = UDim2.fromOffset(-12, -10)
+		cornerIcon.BackgroundTransparency = 1
+		cornerIcon.Image = iconAsset
+		cornerIcon.ScaleType = Enum.ScaleType.Fit
+		cornerIcon.ZIndex = 6
+		cornerIcon.Parent = win
 
-	local rCard = Instance.new("Frame")
-	rCard.Size = UDim2.new(0.96, 0, 0, 206)
-	rCard.BackgroundColor3 = Color3.fromRGB(38, 36, 48)
-	rCard.Parent = rebirthScroll
-	makeCorner(rCard, 10)
-	makeStroke(rCard, 2.5, Color3.fromRGB(255, 92, 162))
+		if rightPillBtnText and onRightPillClick then
+			local actBtn = Instance.new("TextButton")
+			actBtn.Name = "HeaderActionButton"
+			actBtn.Size = UDim2.fromOffset(124, 34)
+			actBtn.Position = UDim2.new(1, -174, 0, 7)
+			actBtn.BackgroundColor3 = Color3.new(1, 1, 1)
+			actBtn.Text = rightPillBtnText
+			actBtn.TextColor3 = Color3.new(1, 1, 1)
+			actBtn.Font = Enum.Font.FredokaOne
+			actBtn.TextScaled = false
+			actBtn.TextSize = 17
+			actBtn.ZIndex = 4
+			actBtn.Parent = header
+			makeCorner(actBtn, 8)
+			makeStroke(actBtn, 2.2)
+			makeTextStroke(actBtn, 2)
+			makeGradient(actBtn, Color3.fromRGB(255, 224, 66), Color3.fromRGB(218, 138, 18), 90)
+			actBtn.MouseButton1Click:Connect(function()
+				playClickSFX()
+				onRightPillClick()
+			end)
+			return actBtn
+		end
+		return nil
+	end
 
-	makeOutlinedLabel(rCard, string.format("REBIRTH #%d (+%d%% Permanent Cash!)", profile.rebirths + 1, (profile.rebirths + 1) * 75), UDim2.new(1, -20, 0, 28), UDim2.fromOffset(10, 6), Color3.fromRGB(255, 156, 212), 2.2)
-	makeOutlinedLabel(rCard, "Resets Coins ONLY — keeps Speed, Pets, Crates, Lassos & Upgrades!", UDim2.new(1, -20, 0, 18), UDim2.fromOffset(10, 34), Color3.fromRGB(210, 226, 245), 1.6)
+	local function createRewardCard(
+		parent: GuiObject,
+		titleText: string,
+		iconKey: string,
+		subText: string,
+		themeKey: string,
+		isOP: boolean?,
+		btnState: "CLAIMED" | "CLAIM" | "LOCKED",
+		btnLabel: string,
+		iconSizePx: number,
+		titleSizePx: number,
+		onClick: () -> ()
+	): (Frame, TextButton)
+		local card = Instance.new("Frame")
+		card.BackgroundColor3 = Color3.new(1, 1, 1)
+		card.Parent = parent
+		makeCorner(card, 10)
+		makeStroke(card, 2.6, if isOP then Color3.fromRGB(255, 228, 120) else Color3.fromRGB(16, 20, 28))
 
-	makeRebirthProgressBar(rCard, "👟 Required Speed", profile.speedStat, reqSpd, 58, Color3.fromRGB(68, 198, 255), Color3.fromRGB(28, 118, 228))
-	makeRebirthProgressBar(rCard, "💵 Required Cash ($)", profile.coins, reqCoins, 106, Color3.fromRGB(88, 245, 128), Color3.fromRGB(36, 178, 72))
+		if themeKey == "Rainbow" then
+			local grad = Instance.new("UIGradient")
+			grad.Rotation = 35
+			grad.Color = RAINBOW_SEQ
+			grad.Parent = card
+		else
+			local th = THEME_COLORS[themeKey] or THEME_COLORS.Blue
+			makeGradient(card, th.c1, th.c2, 90)
+		end
 
-	local rbBtn = Instance.new("TextButton")
-	rbBtn.Size = UDim2.new(0.62, 0, 0, 40)
-	rbBtn.Position = UDim2.new(0.19, 0, 1, -48)
-	rbBtn.BackgroundColor3 = if ready then Color3.fromRGB(238, 68, 138) else Color3.fromRGB(72, 74, 88)
-	rbBtn.Text = if ready then "REBIRTH NOW!" else "COMPLETE BOTH BARS TO REBIRTH"
-	rbBtn.TextColor3 = Color3.new(1, 1, 1)
-	rbBtn.Font = Enum.Font.FredokaOne
-	rbBtn.TextScaled = true
-	rbBtn.Parent = rCard
-	makeCorner(rbBtn, 8)
-	makeStroke(rbBtn, 2.4, if ready then Color3.fromRGB(255, 186, 224) else Color3.fromRGB(18, 20, 24))
-	makeTextStroke(rbBtn, 2)
-	rbBtn.MouseButton1Click:Connect(function()
-		playClickSFX()
-		Remotes.Get("RequestRebirth"):FireServer()
+		if isOP then
+			local opLbl = makeOutlinedLabel(card, "OP", UDim2.fromOffset(42, 24), UDim2.new(1, -32, 0, -6), Color3.fromRGB(255, 78, 52), 2.8)
+			opLbl.Rotation = 16
+			opLbl.ZIndex = 5
+		end
+
+		local titleLbl = makeOutlinedLabel(
+			card,
+			titleText,
+			UDim2.new(1, -8, 0, titleSizePx + 6),
+			UDim2.fromOffset(4, 4),
+			if isOP then Color3.fromRGB(255, 228, 72) else Color3.new(1, 1, 1),
+			2.6
+		)
+		titleLbl.TextScaled = false
+		titleLbl.TextSize = titleSizePx
+
+		local iconHolder = Instance.new("ImageLabel")
+		iconHolder.AnchorPoint = Vector2.new(0.5, 0.5)
+		iconHolder.Size = UDim2.fromOffset(iconSizePx, iconSizePx)
+		iconHolder.Position = UDim2.fromScale(0.5, 0.42)
+		iconHolder.BackgroundTransparency = 1
+		iconHolder.Image = (RewardConfig.ICONS :: any)[iconKey] or RewardConfig.ICONS.Crate
+		iconHolder.ScaleType = Enum.ScaleType.Fit
+		iconHolder.ZIndex = 2
+		iconHolder.Parent = card
+
+		local subLbl = makeOutlinedLabel(card, subText, UDim2.new(1, -14, 0, 22), UDim2.new(0, 7, 1, -63), Color3.new(1, 1, 1), 2.1)
+		subLbl.TextScaled = true
+		subLbl.ZIndex = 3
+
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(0.88, 0, 0, 32)
+		btn.Position = UDim2.new(0.06, 0, 1, -38)
+		btn.BackgroundColor3 = Color3.new(1, 1, 1)
+		btn.Text = btnLabel
+		btn.TextColor3 = Color3.new(1, 1, 1)
+		btn.Font = Enum.Font.FredokaOne
+		btn.TextScaled = true
+		btn.ZIndex = 3
+		btn.Parent = card
+		makeCorner(btn, 7)
+		makeStroke(btn, 2.2)
+		makeTextStroke(btn, 2.0)
+		local btnPad = Instance.new("UIPadding")
+		btnPad.PaddingLeft = UDim.new(0, 6)
+		btnPad.PaddingRight = UDim.new(0, 6)
+		btnPad.PaddingTop = UDim.new(0, 2)
+		btnPad.PaddingBottom = UDim.new(0, 2)
+		btnPad.Parent = btn
+
+		if btnState == "CLAIM" then
+			makeGradient(btn, Color3.fromRGB(118, 255, 72), Color3.fromRGB(36, 198, 24), 90)
+		elseif btnState == "CLAIMED" then
+			makeGradient(btn, Color3.fromRGB(192, 198, 206), Color3.fromRGB(122, 128, 138), 90)
+		else
+			makeGradient(btn, Color3.fromRGB(255, 68, 92), Color3.fromRGB(212, 22, 54), 90)
+		end
+
+		btn.MouseButton1Click:Connect(function()
+			playClickSFX()
+			onClick()
+		end)
+		return card, btn
+	end
+
+	-- ----------------------------
+	-- 1) CLEAN REBIRTH MODAL (Gambar 2 Style)
+	-- ----------------------------
+	local rebirthWindow = Instance.new("Frame")
+	rebirthWindow.Name = "RebirthModal"
+	rebirthWindow.AnchorPoint = Vector2.new(0.5, 0.5)
+	rebirthWindow.Size = UDim2.fromOffset(560, 318)
+	rebirthWindow.Position = UDim2.fromScale(0.5, 0.5)
+	rebirthWindow.BackgroundColor3 = Color3.fromRGB(28, 30, 38)
+	rebirthWindow.Visible = false
+	rebirthWindow.Parent = gui
+	makeCorner(rebirthWindow, 12)
+	makeStroke(rebirthWindow, 3.2)
+
+	local rebHeader = makeWindowHeader(rebirthWindow, "Rebirth", Color3.fromRGB(224, 76, 238), Color3.fromRGB(138, 28, 186), function()
+		openModal(nil)
+	end)
+	decorateModalHeader(rebirthWindow, rebHeader, RewardConfig.ICONS.Rebirth, nil, nil)
+
+	local rebirthBody = Instance.new("Frame")
+	rebirthBody.Size = UDim2.new(1, -24, 1, -64)
+	rebirthBody.Position = UDim2.fromOffset(12, 54)
+	rebirthBody.BackgroundTransparency = 1
+	rebirthBody.Parent = rebirthWindow
+
+	local function makeRebMultTile(posScaleX: number, label: string, multText: string, topCol: Color3, botCol: Color3)
+		local tile = Instance.new("Frame")
+		tile.Size = UDim2.new(0.425, 0, 0, 74)
+		tile.Position = UDim2.new(posScaleX, 0, 0, 12)
+		tile.BackgroundColor3 = Color3.new(1, 1, 1)
+		tile.Parent = rebirthBody
+		makeCorner(tile, 8)
+		makeStroke(tile, 2.5)
+		makeGradient(tile, topCol, botCol, 90)
+
+		local tag = makeOutlinedLabel(tile, label, UDim2.new(1, 0, 0, 22), UDim2.fromOffset(0, -12), Color3.new(1, 1, 1), 2.3)
+		tag.TextScaled = false
+		tag.TextSize = 16
+		tag.ZIndex = 3
+
+		local val = makeOutlinedLabel(tile, multText, UDim2.new(1, -12, 1, -12), UDim2.fromOffset(6, 8), Color3.new(1, 1, 1), 2.8)
+		val.TextScaled = true
+		val.ZIndex = 2
+	end
+
+	local function renderRebirthModal()
+		for _, ch in ipairs(rebirthBody:GetChildren()) do ch:Destroy() end
+		if not profile then return end
+
+		local curReb = profile.rebirths or 0
+		local reqSpd = math.floor(GameConfig.ECONOMY.REBIRTH_BASE_SPEED * math.pow(2.1, curReb))
+		local reqCoins = math.floor(GameConfig.ECONOMY.REBIRTH_BASE_COINS * math.pow(GameConfig.ECONOMY.REBIRTH_GROWTH, curReb))
+		local ready = (profile.speedStat >= reqSpd) and (profile.coins >= reqCoins)
+
+		local curMult = 1 + curReb * GameConfig.ECONOMY.REBIRTH_INCOME_BONUS
+		local nextMult = 1 + (curReb + 1) * GameConfig.ECONOMY.REBIRTH_INCOME_BONUS
+
+		makeRebMultTile(0, "Rebirth " .. tostring(curReb), "X" .. FormatUtil.Multiplier(curMult) .. " Money", Color3.fromRGB(128, 255, 62), Color3.fromRGB(52, 198, 24))
+		local arrowLbl = makeOutlinedLabel(rebirthBody, ">>", UDim2.new(0.15, 0, 0, 74), UDim2.new(0.425, 0, 0, 12), Color3.fromRGB(118, 212, 255), 3.0)
+		arrowLbl.TextScaled = false
+		arrowLbl.TextSize = 34
+		makeRebMultTile(0.575, "Rebirth " .. tostring(curReb + 1), "X" .. FormatUtil.Multiplier(nextMult) .. " Money", Color3.fromRGB(142, 255, 72), Color3.fromRGB(58, 212, 28))
+
+		local reqBox = Instance.new("Frame")
+		reqBox.Size = UDim2.new(1, 0, 0, 82)
+		reqBox.Position = UDim2.fromOffset(0, 96)
+		reqBox.BackgroundColor3 = Color3.fromRGB(36, 40, 52)
+		reqBox.Parent = rebirthBody
+		makeCorner(reqBox, 8)
+		makeStroke(reqBox, 2.2)
+
+		local reqTitle = makeOutlinedLabel(reqBox, "Requirements:", UDim2.new(1, -16, 0, 22), UDim2.fromOffset(8, 4), Color3.new(1, 1, 1), 2.1)
+		reqTitle.TextScaled = false
+		reqTitle.TextSize = 17
+
+		local reqDetail = makeOutlinedLabel(
+			reqBox,
+			string.format("👟 Speed: %s / %s   •   💵 Cash: $%s / $%s", FormatUtil.Number(profile.speedStat), FormatUtil.Number(reqSpd), FormatUtil.Number(profile.coins), FormatUtil.Number(reqCoins)),
+			UDim2.new(1, -16, 0, 20),
+			UDim2.fromOffset(8, 26),
+			if ready then Color3.fromRGB(128, 255, 148) else Color3.fromRGB(235, 240, 248),
+			1.7
+		)
+		reqDetail.TextScaled = true
+
+		local pct = 0.5 * math.clamp(profile.speedStat / math.max(1, reqSpd), 0, 1) + 0.5 * math.clamp(profile.coins / math.max(1, reqCoins), 0, 1)
+		local track = Instance.new("Frame")
+		track.Size = UDim2.new(1, -20, 0, 24)
+		track.Position = UDim2.fromOffset(10, 50)
+		track.BackgroundColor3 = Color3.fromRGB(18, 20, 26)
+		track.Parent = reqBox
+		makeCorner(track, 6)
+		makeStroke(track, 2.0)
+
+		local fill = Instance.new("Frame")
+		fill.Size = UDim2.fromScale(math.clamp(pct, 0.02, 1), 1)
+		fill.BackgroundColor3 = Color3.new(1, 1, 1)
+		fill.Parent = track
+		makeCorner(fill, 6)
+		if ready then
+			makeGradient(fill, Color3.fromRGB(118, 255, 82), Color3.fromRGB(36, 198, 28), 0)
+		else
+			makeGradient(fill, Color3.fromRGB(255, 178, 34), Color3.fromRGB(238, 128, 16), 0)
+		end
+
+		-- Action Row: Rebirth OR Skip
+		local doRebirthBtn = Instance.new("TextButton")
+		doRebirthBtn.Size = UDim2.new(0.425, 0, 0, 54)
+		doRebirthBtn.Position = UDim2.fromOffset(0, 188)
+		doRebirthBtn.BackgroundColor3 = Color3.new(1, 1, 1)
+		doRebirthBtn.Text = "Rebirth"
+		doRebirthBtn.TextColor3 = Color3.new(1, 1, 1)
+		doRebirthBtn.Font = Enum.Font.FredokaOne
+		doRebirthBtn.TextScaled = false
+		doRebirthBtn.TextSize = 27
+		doRebirthBtn.Parent = rebirthBody
+		makeCorner(doRebirthBtn, 8)
+		makeStroke(doRebirthBtn, 2.6)
+		makeTextStroke(doRebirthBtn, 2.4)
+		if ready then
+			makeGradient(doRebirthBtn, Color3.fromRGB(132, 255, 66), Color3.fromRGB(48, 202, 24), 90)
+		else
+			makeGradient(doRebirthBtn, Color3.fromRGB(112, 128, 108), Color3.fromRGB(68, 76, 68), 90)
+		end
+		doRebirthBtn.MouseButton1Click:Connect(function()
+			playClickSFX()
+			Remotes.Get("RequestRebirth"):FireServer()
+		end)
+
+		local orLbl = makeOutlinedLabel(rebirthBody, "OR", UDim2.new(0.15, 0, 0, 54), UDim2.new(0.425, 0, 0, 188), Color3.new(1, 1, 1), 2.4)
+		orLbl.TextScaled = false
+		orLbl.TextSize = 24
+
+		local skipBtn = Instance.new("TextButton")
+		skipBtn.Size = UDim2.new(0.425, 0, 0, 54)
+		skipBtn.Position = UDim2.new(0.575, 0, 0, 188)
+		skipBtn.BackgroundColor3 = Color3.new(1, 1, 1)
+		skipBtn.Text = ""
+		skipBtn.Parent = rebirthBody
+		makeCorner(skipBtn, 8)
+		makeStroke(skipBtn, 2.6)
+		makeGradient(skipBtn, Color3.fromRGB(224, 56, 255), Color3.fromRGB(138, 22, 232), 90)
+
+		local skipTitle = makeOutlinedLabel(skipBtn, "Skip", UDim2.new(1, -12, 0, 30), UDim2.fromOffset(6, 4), Color3.new(1, 1, 1), 2.4)
+		skipTitle.TextScaled = false
+		skipTitle.TextSize = 26
+		local skipSub = makeOutlinedLabel(skipBtn, "[keep your stats]", UDim2.new(1, -12, 0, 16), UDim2.fromOffset(6, 34), Color3.fromRGB(255, 198, 56), 1.8)
+		skipSub.TextScaled = false
+		skipSub.TextSize = 13
+
+		local skipPrice = makeOutlinedLabel(skipBtn, "R$ 19", UDim2.fromOffset(58, 20), UDim2.new(1, -50, 0, -8), Color3.fromRGB(118, 255, 118), 2.2)
+		skipPrice.TextScaled = false
+		skipPrice.TextSize = 15
+		skipPrice.ZIndex = 4
+
+		skipBtn.MouseButton1Click:Connect(function()
+			playClickSFX()
+			Remotes.Get("PromptProduct"):FireServer("SkipRebirth")
+		end)
+	end
+
+	-- ----------------------------
+	-- 2) DAILY REWARDS MODAL (Gambar 1 Grid Style + Icons + Day 7 OP)
+	-- ----------------------------
+	local dailyWindow = Instance.new("Frame")
+	dailyWindow.Name = "DailyModal"
+	dailyWindow.AnchorPoint = Vector2.new(0.5, 0.5)
+	dailyWindow.Size = UDim2.fromOffset(720, 446)
+	dailyWindow.Position = UDim2.fromScale(0.5, 0.5)
+	dailyWindow.BackgroundColor3 = Color3.fromRGB(24, 28, 38)
+	dailyWindow.Visible = false
+	dailyWindow.Parent = gui
+	makeCorner(dailyWindow, 12)
+	makeStroke(dailyWindow, 3.2)
+
+	local dailyHeader = makeWindowHeader(dailyWindow, "Daily Rewards", Color3.fromRGB(64, 186, 255), Color3.fromRGB(24, 114, 218), function()
+		openModal(nil)
+	end)
+	decorateModalHeader(dailyWindow, dailyHeader, RewardConfig.ICONS.Daily, "CLAIM ALL", function()
+		Remotes.Get("ClaimDailyReward"):FireServer()
 	end)
 
-	addActionRow(
-		rebirthScroll,
-		string.format("Claim Daily Reward (Streak Day %d)", profile.dailyReward.streak),
-		"Free Coins & Speed every 24h!",
-		"CLAIM DAILY",
-		Color3.fromRGB(244, 178, 44),
-		function() Remotes.Get("ClaimDailyReward"):FireServer() end
-	)
+	local dailyBody = Instance.new("Frame")
+	dailyBody.Size = UDim2.new(1, -24, 1, -64)
+	dailyBody.Position = UDim2.fromOffset(12, 54)
+	dailyBody.BackgroundTransparency = 1
+	dailyBody.Parent = dailyWindow
+
+	local function isDailyReady(p: Types.PlayerProfileSchema?): (boolean, number)
+		if not p or not p.dailyReward then return false, 0 end
+		local lastClaim = p.dailyReward.lastClaimTime or 0
+		if lastClaim <= 0 then
+			return true, 0
+		end
+		local srvNow = math.floor(Workspace:GetServerTimeNow())
+		local elapsed = math.max(0, srvNow - lastClaim)
+		if elapsed >= 86400 then
+			return true, 0
+		end
+		return false, math.max(0, 86400 - elapsed)
+	end
+
+	local function renderDailyModal()
+		for _, ch in ipairs(dailyBody:GetChildren()) do ch:Destroy() end
+		if not profile or not profile.dailyReward then return end
+
+		local canClaim, remSecs = isDailyReady(profile)
+		local lastClaim = profile.dailyReward.lastClaimTime or 0
+		local srvNow = math.floor(Workspace:GetServerTimeNow())
+		local elapsed = if lastClaim > 0 then math.max(0, srvNow - lastClaim) else 0
+		local curStreak = profile.dailyReward.streak or 0
+		if lastClaim > 0 and elapsed > 86400 * 2 then
+			curStreak = 0
+		end
+		local nextDay = (curStreak % #RewardConfig.DAILY) + 1
+		local rebirths = profile.rebirths or 0
+
+		for idx, def in ipairs(RewardConfig.DAILY) do
+			local isDone = (not canClaim and idx <= curStreak) or (canClaim and idx < nextDay)
+			local isNext = (idx == nextDay)
+			local st: "CLAIMED" | "CLAIM" | "LOCKED" = if isDone then "CLAIMED" elseif isNext and canClaim then "CLAIM" else "LOCKED"
+			local btnTxt = if st == "CLAIMED"
+				then "CLAIMED"
+				elseif st == "CLAIM" then "CLAIM"
+				elseif isNext then formatDurationClock(remSecs)
+				else "LOCKED"
+			local subTxt = formatShortRewardText(def.shortLabel, def.baseCoins, rebirths)
+
+			if idx < 7 then
+				local col = (idx - 1) % 3
+				local row = math.floor((idx - 1) / 3)
+				local card = createRewardCard(
+					dailyBody,
+					"DAY " .. tostring(def.day),
+					def.iconKey,
+					subTxt,
+					def.theme,
+					def.isOP,
+					st,
+					btnTxt,
+					74,
+					20,
+					function()
+						Remotes.Get("ClaimDailyReward"):FireServer()
+					end
+				)
+				card.Size = UDim2.new(0.232, 0, 0.482, 0)
+				card.Position = UDim2.fromScale(col * 0.242, row * 0.515)
+			else
+				local card = createRewardCard(
+					dailyBody,
+					"DAY 7",
+					def.iconKey,
+					subTxt,
+					def.theme,
+					true,
+					st,
+					btnTxt,
+					108,
+					28,
+					function()
+						Remotes.Get("ClaimDailyReward"):FireServer()
+					end
+				)
+				card.Size = UDim2.fromScale(0.264, 0.997)
+				card.Position = UDim2.fromScale(0.736, 0)
+			end
+		end
+	end
+
+	-- ----------------------------
+	-- 3) AFK / PLAYTIME GIFTS MODAL (1m -> 2h, Increasing Rewards)
+	-- ----------------------------
+	local afkWindow = Instance.new("Frame")
+	afkWindow.Name = "AfkModal"
+	afkWindow.AnchorPoint = Vector2.new(0.5, 0.5)
+	afkWindow.Size = UDim2.fromOffset(740, 492)
+	afkWindow.Position = UDim2.fromScale(0.5, 0.5)
+	afkWindow.BackgroundColor3 = Color3.fromRGB(24, 24, 38)
+	afkWindow.Visible = false
+	afkWindow.Parent = gui
+	makeCorner(afkWindow, 12)
+	makeStroke(afkWindow, 3.2)
+
+	local function isAllAfkClaimed(p: Types.PlayerProfileSchema?): boolean
+		if not p or not p.afkRewards or type(p.afkRewards.claimedTiers) ~= "table" then
+			return false
+		end
+		for idx = 1, #RewardConfig.AFK_GIFTS do
+			if not p.afkRewards.claimedTiers[tostring(idx)] then
+				return false
+			end
+		end
+		return true
+	end
+
+	local afkHeader = makeWindowHeader(afkWindow, "AFK Gifts", Color3.fromRGB(168, 92, 255), Color3.fromRGB(102, 34, 212), function()
+		openModal(nil)
+	end)
+	local afkHeaderActBtn = decorateModalHeader(afkWindow, afkHeader, RewardConfig.ICONS.Gift, "CLAIM ALL", function()
+		if isAllAfkClaimed(profile) then
+			Remotes.Get("ResetAfkCycle"):FireServer()
+		else
+			Remotes.Get("ClaimAllAfkGifts"):FireServer()
+		end
+	end)
+
+	local afkSessionBadge = makeOutlinedLabel(afkHeader, "00:00", UDim2.fromOffset(90, 28), UDim2.new(1, -276, 0, 10), Color3.fromRGB(134, 248, 172), 2.1)
+	afkSessionBadge.TextScaled = false
+	afkSessionBadge.TextSize = 18
+	afkSessionBadge.TextXAlignment = Enum.TextXAlignment.Right
+	afkSessionBadge.ZIndex = 4
+
+	local afkBody = Instance.new("Frame")
+	afkBody.Size = UDim2.new(1, -24, 1, -64)
+	afkBody.Position = UDim2.fromOffset(12, 54)
+	afkBody.BackgroundTransparency = 1
+	afkBody.Parent = afkWindow
+
+	local afkCardRefs: { { tier: number, btn: TextButton, wasReady: boolean, claimed: boolean } } = {}
+
+	local function getLiveAfkElapsed(): number
+		local attrSec = tonumber(localPlayer:GetAttribute("AfkSeconds")) or 0
+		local profSec = if profile and profile.afkRewards then (tonumber(profile.afkRewards.elapsedSeconds) or 0) else 0
+		return math.max(attrSec, profSec)
+	end
+
+	local function renderAfkModal()
+		for _, ch in ipairs(afkBody:GetChildren()) do ch:Destroy() end
+		table.clear(afkCardRefs)
+		if not profile then return end
+
+		local afkData = profile.afkRewards or { elapsedSeconds = 0, claimedTiers = {} }
+		local claimedMap = afkData.claimedTiers or {}
+		local elapsed = getLiveAfkElapsed()
+		local rebirths = profile.rebirths or 0
+		local allDone = isAllAfkClaimed(profile)
+
+		if afkHeaderActBtn then
+			afkHeaderActBtn.Text = if allDone then "NEW 2H CYCLE" else "CLAIM ALL"
+		end
+		afkSessionBadge.Text = formatDurationClock(elapsed)
+
+		for idx, def in ipairs(RewardConfig.AFK_GIFTS) do
+			local claimed = claimedMap[tostring(idx)] == true
+			local ready = (not claimed) and (elapsed >= def.requiredSeconds)
+			local st: "CLAIMED" | "CLAIM" | "LOCKED" = if claimed then "CLAIMED" elseif ready then "CLAIM" else "LOCKED"
+			local btnTxt = if claimed
+				then "CLAIMED"
+				elseif ready then "CLAIM"
+				else formatDurationClock(def.requiredSeconds - elapsed)
+			local subTxt = formatShortRewardText(def.shortLabel, def.baseCoins, rebirths)
+
+			local col = (idx - 1) % 3
+			local row = math.floor((idx - 1) / 3)
+			local card, btn = createRewardCard(
+				afkBody,
+				def.timeLabel,
+				def.iconKey,
+				subTxt,
+				def.theme,
+				def.isOP,
+				st,
+				btnTxt,
+				56,
+				18,
+				function()
+					Remotes.Get("ClaimAfkGift"):FireServer(idx)
+				end
+			)
+			card.Size = UDim2.new(0.324, 0, 0.314, 0)
+			card.Position = UDim2.fromScale(col * 0.338, row * 0.342)
+			table.insert(afkCardRefs, { tier = idx, btn = btn, wasReady = ready, claimed = claimed })
+		end
+	end
+
+	local function updateAfkLiveUI()
+		local elapsed = getLiveAfkElapsed()
+		local claimedMap = if profile and profile.afkRewards and profile.afkRewards.claimedTiers then profile.afkRewards.claimedTiers else {}
+		local readyCount = 0
+		local nextRem: number? = nil
+		for idx, def in ipairs(RewardConfig.AFK_GIFTS) do
+			local claimed = claimedMap[tostring(idx)] == true
+			if not claimed then
+				if elapsed >= def.requiredSeconds then
+					readyCount += 1
+				else
+					local rem = def.requiredSeconds - elapsed
+					if not nextRem or rem < nextRem then
+						nextRem = rem
+					end
+				end
+			end
+		end
+
+		if leftUI.afkBadge then
+			leftUI.afkBadge.Visible = readyCount > 0
+			if readyCount > 0 then
+				leftUI.afkBadge.Text = tostring(readyCount)
+			end
+		end
+		if readyCount > 0 then
+			leftUI.afkTimerLbl.Text = "READY!"
+			leftUI.afkTimerLbl.TextColor3 = Color3.fromRGB(118, 255, 148)
+		elseif nextRem then
+			leftUI.afkTimerLbl.Text = formatDurationClock(nextRem)
+			leftUI.afkTimerLbl.TextColor3 = Color3.fromRGB(255, 224, 98)
+		else
+			leftUI.afkTimerLbl.Text = "2H DONE"
+			leftUI.afkTimerLbl.TextColor3 = Color3.fromRGB(142, 224, 255)
+		end
+
+		if currentModal == "Afk" then
+			afkSessionBadge.Text = formatDurationClock(elapsed)
+			local needsRebuild = false
+			for _, ref in ipairs(afkCardRefs) do
+				if not ref.claimed then
+					local def = RewardConfig.AFK_GIFTS[ref.tier]
+					local nowReady = elapsed >= def.requiredSeconds
+					if nowReady ~= ref.wasReady then
+						needsRebuild = true
+						break
+					elseif not nowReady then
+						ref.btn.Text = formatDurationClock(def.requiredSeconds - elapsed)
+					end
+				end
+			end
+			if needsRebuild then
+				renderAfkModal()
+			end
+		end
+	end
+
+	rewardsUI = {
+		rebirthWindow = rebirthWindow,
+		dailyWindow = dailyWindow,
+		afkWindow = afkWindow,
+		renderRebirth = renderRebirthModal,
+		renderDaily = renderDailyModal,
+		renderAfk = renderAfkModal,
+		isDailyReady = isDailyReady,
+		updateAfkLiveUI = updateAfkLiveUI,
+	}
 end
 
--- B. INDEX MODAL (Screenshots 4 & 5)
+-- B. PET INDEX MODAL (Steal-an-Egg Inspired Zone Banners + Cosmic+ Sunbursts + Dark Inspect Panel)
 local indexWindow = Instance.new("Frame")
 indexWindow.Name = "IndexModal"
 indexWindow.AnchorPoint = Vector2.new(0.5, 0.5)
-indexWindow.Size = UDim2.fromOffset(690, 440)
+indexWindow.Size = UDim2.fromOffset(708, 458)
 indexWindow.Position = UDim2.fromScale(0.5, 0.5)
-indexWindow.BackgroundColor3 = Color3.fromRGB(26, 36, 18)
+indexWindow.BackgroundColor3 = Color3.fromRGB(26, 30, 40)
 indexWindow.Visible = false
 indexWindow.Parent = gui
 makeCorner(indexWindow, 12)
-makeStroke(indexWindow, 3)
-
-makeWindowHeader(indexWindow, "Index", Color3.fromRGB(255, 118, 245), Color3.fromRGB(184, 52, 232), function()
-	openModal(nil)
-end)
+makeStroke(indexWindow, 3, Color3.fromRGB(12, 14, 18))
 
 -- Right External Filter Tabs sticking out of Index Window (Normal / Limited / Mutations)
 local indexRightTabs = Instance.new("Frame")
-indexRightTabs.Size = UDim2.fromOffset(110, 150)
-indexRightTabs.Position = UDim2.new(1, 4, 0, 56)
+indexRightTabs.Size = UDim2.fromOffset(106, 144)
+indexRightTabs.Position = UDim2.new(1, 6, 0, 60)
 indexRightTabs.BackgroundTransparency = 1
 indexRightTabs.Parent = indexWindow
 
 local indexScroll = Instance.new("ScrollingFrame")
-indexScroll.Size = UDim2.new(0.68, -16, 1, -124)
-indexScroll.Position = UDim2.fromOffset(12, 56)
-indexScroll.BackgroundColor3 = Color3.fromRGB(20, 26, 16)
-indexScroll.ScrollBarThickness = 8
+indexScroll.Size = UDim2.new(0, 468, 1, -114)
+indexScroll.Position = UDim2.fromOffset(10, 60)
+indexScroll.BackgroundColor3 = Color3.fromRGB(20, 24, 32)
+indexScroll.ScrollBarThickness = 7
 indexScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 indexScroll.CanvasSize = UDim2.fromScale(0, 0)
 indexScroll.Parent = indexWindow
 makeCorner(indexScroll, 8)
-local idxLayout = Instance.new("UIListLayout")
-idxLayout.Padding = UDim.new(0, 10)
-idxLayout.Parent = indexScroll
-local idxPad = Instance.new("UIPadding")
-idxPad.PaddingTop = UDim.new(0, 8)
-idxPad.PaddingLeft = UDim.new(0, 8)
-idxPad.PaddingRight = UDim.new(0, 8)
-idxPad.PaddingBottom = UDim.new(0, 8)
-idxPad.Parent = indexScroll
+makeStroke(indexScroll, 2, Color3.fromRGB(14, 16, 22))
 
--- Right Inspect Panel (Brushed Silver Card)
 local inspectPanel = Instance.new("Frame")
-inspectPanel.Size = UDim2.new(0.32, -14, 1, -68)
-inspectPanel.Position = UDim2.new(0.68, 4, 0, 56)
-inspectPanel.BackgroundColor3 = Color3.fromRGB(224, 228, 236)
+inspectPanel.Size = UDim2.new(1, -496, 1, -114)
+inspectPanel.Position = UDim2.fromOffset(486, 60)
+inspectPanel.BackgroundColor3 = Color3.fromRGB(24, 28, 38)
 inspectPanel.Parent = indexWindow
 makeCorner(inspectPanel, 8)
-makeStroke(inspectPanel, 2.5)
-makeGradient(inspectPanel, Color3.fromRGB(240, 244, 250), Color3.fromRGB(168, 176, 192))
+makeStroke(inspectPanel, 2.5, Color3.fromRGB(14, 16, 22))
 
--- Bottom-Left Total Progress Bar
 local totalIndexBar = Instance.new("Frame")
-totalIndexBar.Size = UDim2.new(0.68, -16, 0, 44)
-totalIndexBar.Position = UDim2.new(0, 12, 1, -56)
-totalIndexBar.BackgroundColor3 = Color3.fromRGB(36, 46, 30)
+totalIndexBar.Size = UDim2.new(1, -20, 0, 38)
+totalIndexBar.Position = UDim2.new(0, 10, 1, -46)
+totalIndexBar.BackgroundColor3 = Color3.fromRGB(20, 24, 32)
 totalIndexBar.Parent = indexWindow
 makeCorner(totalIndexBar, 8)
-makeStroke(totalIndexBar, 2.5)
+makeStroke(totalIndexBar, 2, Color3.fromRGB(14, 16, 22))
 
-local function renderIndexModal()
-	for _, ch in ipairs(indexRightTabs:GetChildren()) do ch:Destroy() end
-	for _, ch in ipairs(indexScroll:GetChildren()) do
-		if not ch:IsA("UIListLayout") and not ch:IsA("UIPadding") then ch:Destroy() end
-	end
-	for _, ch in ipairs(inspectPanel:GetChildren()) do
-		if not ch:IsA("UICorner") and not ch:IsA("UIStroke") and not ch:IsA("UIGradient") then ch:Destroy() end
-	end
-	for _, ch in ipairs(totalIndexBar:GetChildren()) do
-		if not ch:IsA("UICorner") and not ch:IsA("UIStroke") then ch:Destroy() end
-	end
+local renderIndexModal: () -> ()
+do
+	local RarityEffects = require(ReplicatedStorage.Modules.RarityEffects)
 
-	local rtDefs = {
-		{ id = "Normal", col1 = Color3.fromRGB(82, 224, 255), col2 = Color3.fromRGB(28, 152, 238) },
-		{ id = "Limited", col1 = Color3.fromRGB(255, 224, 72), col2 = Color3.fromRGB(224, 142, 28) },
-		{ id = "Mutations", col1 = Color3.fromRGB(255, 96, 212), col2 = Color3.fromRGB(132, 68, 255) },
+	local idxLayout = Instance.new("UIListLayout")
+	idxLayout.Padding = UDim.new(0, 10)
+	idxLayout.Parent = indexScroll
+	local idxPad = Instance.new("UIPadding")
+	idxPad.PaddingTop = UDim.new(0, 6)
+	idxPad.PaddingLeft = UDim.new(0, 6)
+	idxPad.PaddingRight = UDim.new(0, 6)
+	idxPad.PaddingBottom = UDim.new(0, 6)
+	idxPad.Parent = indexScroll
+
+	-- Glossy Blue Top Header ("Pet Index" + Corner Book Icon + Green "CLAIM ALL (X)" + "X")
+	local header = Instance.new("Frame")
+	header.Name = "PetIndexHeader"
+	header.Size = UDim2.new(1, 0, 0, 52)
+	header.BackgroundColor3 = Color3.fromRGB(48, 162, 244)
+	header.BorderSizePixel = 0
+	header.Parent = indexWindow
+	makeCorner(header, 11)
+	makeStroke(header, 2.5, Color3.fromRGB(12, 14, 18))
+	makeGradient(header, Color3.fromRGB(82, 204, 255), Color3.fromRGB(28, 128, 224), 90)
+
+	local cornerBadge = Instance.new("Frame")
+	cornerBadge.Size = UDim2.fromOffset(44, 44)
+	cornerBadge.Position = UDim2.fromOffset(8, 4)
+	cornerBadge.Rotation = -7
+	cornerBadge.BackgroundColor3 = Color3.fromRGB(224, 242, 255)
+	cornerBadge.ZIndex = 4
+	cornerBadge.Parent = header
+	makeCorner(cornerBadge, 8)
+	makeStroke(cornerBadge, 2, Color3.fromRGB(12, 14, 18))
+
+	local bookImg = Instance.new("ImageLabel")
+	bookImg.Size = UDim2.fromScale(0.84, 0.84)
+	bookImg.AnchorPoint = Vector2.new(0.5, 0.5)
+	bookImg.Position = UDim2.fromScale(0.5, 0.45)
+	bookImg.BackgroundTransparency = 1
+	bookImg.ScaleType = Enum.ScaleType.Fit
+	bookImg.Image = RewardConfig.ICONS.Index
+	bookImg.ZIndex = 5
+	bookImg.Parent = cornerBadge
+
+	local titleLbl = makeOutlinedLabel(header, "Pet Index", UDim2.new(0.45, 0, 0.82, 0), UDim2.fromOffset(62, 4), Color3.new(1, 1, 1), 2.8)
+	titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+	titleLbl.ZIndex = 4
+
+	local headerClaimAllBtn = Instance.new("TextButton")
+	headerClaimAllBtn.Size = UDim2.fromOffset(146, 36)
+	headerClaimAllBtn.Position = UDim2.new(1, -196, 0.5, -18)
+	headerClaimAllBtn.BackgroundColor3 = Color3.fromRGB(84, 226, 56)
+	headerClaimAllBtn.Text = "CLAIM ALL (0)"
+	headerClaimAllBtn.TextColor3 = Color3.new(1, 1, 1)
+	headerClaimAllBtn.Font = Enum.Font.FredokaOne
+	headerClaimAllBtn.TextScaled = true
+	headerClaimAllBtn.ZIndex = 4
+	headerClaimAllBtn.Parent = header
+	makeCorner(headerClaimAllBtn, 8)
+	makeStroke(headerClaimAllBtn, 2.2, Color3.fromRGB(12, 14, 18))
+	makeTextStroke(headerClaimAllBtn, 2.0)
+	local claimAllPad = Instance.new("UIPadding")
+	claimAllPad.PaddingLeft = UDim.new(0, 6)
+	claimAllPad.PaddingRight = UDim.new(0, 6)
+	claimAllPad.Parent = headerClaimAllBtn
+	headerClaimAllBtn.MouseButton1Click:Connect(function()
+		playClickSFX()
+		Remotes.Get("ClaimAllIndexRewards"):FireServer()
+	end)
+
+	local closeBtn = Instance.new("TextButton")
+	closeBtn.Size = UDim2.fromOffset(36, 36)
+	closeBtn.Position = UDim2.new(1, -42, 0.5, -18)
+	closeBtn.BackgroundColor3 = Color3.fromRGB(238, 62, 72)
+	closeBtn.Text = "X"
+	closeBtn.TextColor3 = Color3.new(1, 1, 1)
+	closeBtn.Font = Enum.Font.FredokaOne
+	closeBtn.TextScaled = true
+	closeBtn.ZIndex = 4
+	closeBtn.Parent = header
+	makeCorner(closeBtn, 8)
+	makeStroke(closeBtn, 2.2, Color3.fromRGB(12, 14, 18))
+	makeTextStroke(closeBtn, 2.2)
+	closeBtn.MouseButton1Click:Connect(function()
+		openModal(nil)
+	end)
+
+	local ZONE_SHORT_NAMES: { [string]: string } = {
+		PineWoods = "Pine\nWoods",
+		MangroveSwamp = "Mangrove\nSwamp",
+		SavannaCamp = "Savanna\nCamp",
+		AlpinePeaks = "Alpine\nPeaks",
+		VolcanicJungle = "Volcanic\nJungle",
 	}
-	for i, rt in ipairs(rtDefs) do
-		local b = Instance.new("TextButton")
-		b.Size = UDim2.fromOffset(102, 38)
-		b.Position = UDim2.fromOffset(0, (i - 1) * 44)
-		b.BackgroundColor3 = Color3.new(1, 1, 1)
-		b.Text = rt.id
-		b.TextColor3 = Color3.new(1, 1, 1)
-		b.Font = Enum.Font.FredokaOne
-		b.TextScaled = true
-		b.Parent = indexRightTabs
-		makeCorner(b, 8)
-		makeStroke(b, if indexRightTab == rt.id then 3 else 2, if indexRightTab == rt.id then Color3.fromRGB(255, 240, 120) else Color3.fromRGB(14, 15, 18))
-		makeTextStroke(b, 2)
-		makeGradient(b, rt.col1, rt.col2)
-		b.MouseButton1Click:Connect(function()
-			indexRightTab = rt.id
-			renderIndexModal()
-		end)
-	end
-
-	if not profile then return end
 
 	local ZONE_REWARD_TAGS: { [string]: string } = {
 		PineWoods = "👟+15%",
 		MangroveSwamp = "💵+25%",
-		SavannaCamp = "🐾+1 Cap",
+		SavannaCamp = "+1 Cap",
 		AlpinePeaks = "👟+50%",
 		VolcanicJungle = "👟+100%",
 	}
 
-	local totalUnlocked = 0
-	local unclaimedRewards = 0
-	for _, entry in pairs(profile.discoveredIndex) do
-		totalUnlocked += 1
-		if not entry.rewardClaimed then
-			unclaimedRewards += 1
+	local function buildInspectRewardTile(parent: Instance, pos: UDim2, iconAsset: string, valText: string, valColor: Color3)
+		local tile = Instance.new("Frame")
+		tile.Size = UDim2.fromOffset(82, 50)
+		tile.Position = pos
+		tile.BackgroundColor3 = Color3.fromRGB(40, 48, 56)
+		tile.Parent = parent
+		makeCorner(tile, 7)
+		makeStroke(tile, 1.8, Color3.fromRGB(16, 20, 26))
+
+		local img = Instance.new("ImageLabel")
+		img.Size = UDim2.fromOffset(26, 26)
+		img.AnchorPoint = Vector2.new(0.5, 0)
+		img.Position = UDim2.new(0.5, 0, 0, 3)
+		img.BackgroundTransparency = 1
+		img.ScaleType = Enum.ScaleType.Fit
+		img.Image = iconAsset
+		img.Parent = tile
+
+		local lbl = makeOutlinedLabel(tile, valText, UDim2.new(1, -6, 0, 17), UDim2.fromOffset(3, 30), valColor, 1.6)
+		lbl.TextScaled = true
+	end
+
+	renderIndexModal = function()
+		for _, ch in ipairs(indexRightTabs:GetChildren()) do ch:Destroy() end
+		for _, ch in ipairs(indexScroll:GetChildren()) do
+			if not ch:IsA("UIListLayout") and not ch:IsA("UIPadding") then ch:Destroy() end
 		end
-	end
+		for _, ch in ipairs(inspectPanel:GetChildren()) do
+			if not ch:IsA("UICorner") and not ch:IsA("UIStroke") and not ch:IsA("UIGradient") then ch:Destroy() end
+		end
+		for _, ch in ipairs(totalIndexBar:GetChildren()) do
+			if not ch:IsA("UICorner") and not ch:IsA("UIStroke") then ch:Destroy() end
+		end
 
-	-- Badge "!" on Normal right tab when claimable index rewards exist (Image 3 style)
-	local normalTab = indexRightTabs:FindFirstChildOfClass("TextButton")
-	if normalTab and unclaimedRewards > 0 then
-		local dot = makeOutlinedLabel(normalTab, "!", UDim2.fromOffset(20, 20), UDim2.new(1, -14, 0, -6), Color3.new(1, 1, 1), 2)
-		dot.BackgroundColor3 = Color3.fromRGB(235, 36, 44)
-		dot.BackgroundTransparency = 0
-		dot.ZIndex = 5
-		makeCorner(dot, 10)
-		makeStroke(dot, 2)
-	end
-
-	-- Render Each of the 5 Biomes as a Zone Container Block (Image 3 Style)
-	for _, biome in ipairs(BiomeConfig) do
-		local pool = AnimalConfig.GetByBiome(biome.id)
-		local rows = math.ceil(#pool / 4)
-		local containerH = math.max(162, rows * 76 + 52)
-
-		local zCard = Instance.new("Frame")
-		zCard.Size = UDim2.new(1, 0, 0, containerH)
-		zCard.BackgroundColor3 = Color3.fromRGB(16, 20, 16)
-		zCard.Parent = indexScroll
-		makeCorner(zCard, 8)
-		makeStroke(zCard, 2)
-
-		-- Left Vertical Stylized Biome Banner
-		local banner = Instance.new("Frame")
-		banner.Size = UDim2.new(0, 74, 1, -12)
-		banner.Position = UDim2.fromOffset(6, 6)
-		banner.BackgroundColor3 = biome.groundColor
-		banner.Parent = zCard
-		makeCorner(banner, 6)
-		makeStroke(banner, 2)
-		makeGradient(banner, biome.groundColor:Lerp(Color3.new(1, 1, 1), 0.18), biome.cliffColor, 90)
-		makeOutlinedLabel(banner, string.format("Z%d\n%s", biome.order, biome.id), UDim2.fromScale(0.9, 0.9), UDim2.fromScale(0.05, 0.05), Color3.new(1, 1, 1), 2)
-
-		-- Center 4-Column Animal Grid with 3D Models + Rarity Glow Backgrounds
-		local gridBox = Instance.new("Frame")
-		gridBox.Size = UDim2.new(1, -92, 1, -48)
-		gridBox.Position = UDim2.fromOffset(86, 6)
-		gridBox.BackgroundTransparency = 1
-		gridBox.Parent = zCard
-		local gl = Instance.new("UIGridLayout")
-		gl.CellSize = UDim2.fromOffset(74, 70)
-		gl.CellPadding = UDim2.fromOffset(6, 6)
-		gl.Parent = gridBox
-
-		local zUnlocked = 0
-		for _, spec in ipairs(pool) do
-			local entry = profile.discoveredIndex[spec.id]
-			local isDisc = entry ~= nil
-			if isDisc then zUnlocked += 1 end
-
-			local btn = Instance.new("TextButton")
-			btn.BackgroundTransparency = 1
-			btn.Text = ""
-			btn.Parent = gridBox
-
-			local mutShow: Types.AnimalMutation = "None"
-			if isDisc and indexRightTab == "Mutations" then
-				for mKey, found in pairs(entry.mutationsFound) do
-					if found and mKey ~= "None" then mutShow = mKey :: Types.AnimalMutation break end
-				end
-			end
-
-			local rarityCol = GameConfig.RARITY_COLORS[spec.rarity] or Color3.fromRGB(150, 160, 175)
-			local mutInfo = GameConfig.MUTATIONS[mutShow] or GameConfig.MUTATIONS.None
-			local cardBg = if not isDisc
-				then rarityCol:Lerp(Color3.fromRGB(12, 14, 18), 0.58)
-				elseif mutShow ~= "None" then mutInfo.color
-				else rarityCol
-
-			local cardFrame = Instance.new("Frame")
-			cardFrame.Size = UDim2.fromScale(1, 1)
-			cardFrame.BackgroundColor3 = cardBg
-			cardFrame.Parent = btn
-			makeCorner(cardFrame, 8)
-			local isSel = (spec.id == selectedIndexSpeciesId)
-			makeStroke(cardFrame, if isSel then 2.8 else 2.0, if isSel then Color3.new(1, 1, 1) else Color3.fromRGB(14, 16, 20))
-			makeGradient(cardFrame, cardBg:Lerp(Color3.new(1, 1, 1), if isDisc then 0.28 else 0.08), cardBg:Lerp(Color3.new(0, 0, 0), 0.25), 90)
-
-			local vpHolder = Instance.new("Frame")
-			vpHolder.Size = UDim2.new(1, -6, 1, -20)
-			vpHolder.Position = UDim2.fromOffset(3, 18)
-			vpHolder.BackgroundTransparency = 1
-			vpHolder.Parent = cardFrame
-			setViewportThumbnail(vpHolder, function()
-				local m = AnimalVisualBuilder.BuildAnimalModel(spec.id, 1.0, mutShow, true)
-				if not isDisc then
-					for _, d in ipairs(m:GetDescendants()) do
-						if d:IsA("BasePart") then
-							d.Color = Color3.fromRGB(16, 18, 22)
-							d.Material = Enum.Material.SmoothPlastic
-						end
-					end
-				end
-				return m
-			end)
-
-			local nameLbl = makeOutlinedLabel(cardFrame, if isDisc then spec.name else "???", UDim2.new(1, -4, 0, 18), UDim2.fromOffset(2, 2), Color3.new(1, 1, 1), 1.8)
-			nameLbl.ZIndex = 4
-
-			btn.MouseButton1Click:Connect(function()
-				playClickSFX()
-				selectedIndexSpeciesId = spec.id
+		local rtDefs = {
+			{ id = "Normal", col1 = Color3.fromRGB(82, 224, 255), col2 = Color3.fromRGB(28, 152, 238) },
+			{ id = "Limited", col1 = Color3.fromRGB(255, 224, 72), col2 = Color3.fromRGB(224, 142, 28) },
+			{ id = "Mutations", col1 = Color3.fromRGB(255, 96, 212), col2 = Color3.fromRGB(132, 68, 255) },
+		}
+		for i, rt in ipairs(rtDefs) do
+			local b = Instance.new("TextButton")
+			b.Size = UDim2.fromOffset(98, 36)
+			b.Position = UDim2.fromOffset(0, (i - 1) * 42)
+			b.BackgroundColor3 = Color3.new(1, 1, 1)
+			b.Text = rt.id
+			b.TextColor3 = Color3.new(1, 1, 1)
+			b.Font = Enum.Font.FredokaOne
+			b.TextScaled = true
+			b.Parent = indexRightTabs
+			makeCorner(b, 8)
+			makeStroke(b, if indexRightTab == rt.id then 3 else 2, if indexRightTab == rt.id then Color3.fromRGB(255, 240, 120) else Color3.fromRGB(14, 15, 18))
+			makeTextStroke(b, 2)
+			makeGradient(b, rt.col1, rt.col2)
+			b.MouseButton1Click:Connect(function()
+				indexRightTab = rt.id
 				renderIndexModal()
 			end)
 		end
 
-		-- Bottom Green Progress Bar + Biome Milestone Reward Icon inside Zone Block
-		local pTrack = Instance.new("Frame")
-		pTrack.Size = UDim2.new(1, -148, 0, 28)
-		pTrack.Position = UDim2.new(0, 86, 1, -34)
-		pTrack.BackgroundColor3 = Color3.fromRGB(48, 56, 44)
-		pTrack.Parent = zCard
-		makeCorner(pTrack, 6)
-		makeStroke(pTrack, 2)
+		if not profile then return end
 
-		local pFill = Instance.new("Frame")
-		pFill.Size = UDim2.fromScale(math.clamp(zUnlocked / math.max(1, #pool), 0, 1), 1)
-		pFill.BackgroundColor3 = Color3.fromRGB(118, 255, 42)
-		pFill.BorderSizePixel = 0
-		pFill.Parent = pTrack
-		makeCorner(pFill, 6)
-
-		makeOutlinedLabel(pTrack, string.format("%d/%d", zUnlocked, #pool), UDim2.fromScale(1, 1), UDim2.new(), Color3.new(1, 1, 1), 2.2)
-
-		local zClaimed = profile.zoneIndexBonusesClaimed[biome.id] == true
-		local zRewBox = Instance.new("Frame")
-		zRewBox.Size = UDim2.fromOffset(48, 28)
-		zRewBox.Position = UDim2.new(1, -56, 1, -34)
-		zRewBox.BackgroundColor3 = if zClaimed then Color3.fromRGB(88, 224, 52) else Color3.fromRGB(42, 46, 56)
-		zRewBox.Parent = zCard
-		makeCorner(zRewBox, 6)
-		makeStroke(zRewBox, 2)
-		makeOutlinedLabel(zRewBox, ZONE_REWARD_TAGS[biome.id] or "🎁", UDim2.fromScale(0.92, 0.9), UDim2.fromScale(0.04, 0.05), Color3.new(1, 1, 1), 1.6)
-	end
-
-	-- Populate Right Inspect Panel (Image 3 Clean Silver Card)
-	local selSpec = AnimalConfig.GetById(selectedIndexSpeciesId) or AnimalConfig.ALL[1]
-	local selEntry = profile.discoveredIndex[selSpec.id]
-	local showcaseCard = Instance.new("Frame")
-	showcaseCard.Size = UDim2.new(1, -16, 0, 118)
-	showcaseCard.Position = UDim2.fromOffset(8, 10)
-	showcaseCard.BackgroundColor3 = Color3.fromRGB(224, 228, 236)
-	showcaseCard.Parent = inspectPanel
-	makeCorner(showcaseCard, 8)
-	makeStroke(showcaseCard, 2.2, Color3.fromRGB(28, 32, 38))
-	makeGradient(showcaseCard, Color3.fromRGB(246, 248, 252), Color3.fromRGB(186, 194, 206), 45)
-
-	local vpInspect = Instance.new("Frame")
-	vpInspect.Size = UDim2.new(1, -12, 1, -10)
-	vpInspect.Position = UDim2.fromOffset(6, 5)
-	vpInspect.BackgroundTransparency = 1
-	vpInspect.Parent = showcaseCard
-	setViewportThumbnail(vpInspect, function()
-		local m = AnimalVisualBuilder.BuildAnimalModel(selSpec.id, 1.0, "None", true)
-		if selEntry == nil then
-			for _, d in ipairs(m:GetDescendants()) do
-				if d:IsA("BasePart") then
-					d.Color = Color3.fromRGB(16, 18, 22)
-					d.Material = Enum.Material.SmoothPlastic
-				end
+		local totalUnlocked = 0
+		local unclaimedRewards = 0
+		for _, entry in pairs(profile.discoveredIndex) do
+			totalUnlocked += 1
+			if not entry.rewardClaimed then
+				unclaimedRewards += 1
 			end
 		end
-		return m
-	end)
 
-	makeOutlinedLabel(inspectPanel, if selEntry then selSpec.name else "???", UDim2.new(1, -12, 0, 28), UDim2.fromOffset(6, 132), Color3.new(1, 1, 1), 2.3)
-	makeOutlinedLabel(inspectPanel, selSpec.rarity, UDim2.new(1, -12, 0, 22), UDim2.fromOffset(6, 160), GameConfig.RARITY_COLORS[selSpec.rarity] or Color3.new(1, 1, 1), 2.1)
-	makeOutlinedLabel(inspectPanel, "$" .. FormatUtil.Number(selSpec.baseIncomePerSec) .. "/s", UDim2.new(1, -12, 0, 26), UDim2.fromOffset(6, 184), Color3.fromRGB(92, 248, 92), 2.3)
+		headerClaimAllBtn.Text = string.format("CLAIM ALL (%d)", unclaimedRewards)
+		headerClaimAllBtn.BackgroundColor3 = if unclaimedRewards > 0 then Color3.fromRGB(84, 226, 56) else Color3.fromRGB(88, 96, 114)
 
-	local rewBox = Instance.new("Frame")
-	rewBox.Size = UDim2.new(1, -16, 0, 144)
-	rewBox.Position = UDim2.fromOffset(8, 214)
-	rewBox.BackgroundColor3 = Color3.fromRGB(28, 32, 38)
-	rewBox.Parent = inspectPanel
-	makeCorner(rewBox, 8)
-	makeStroke(rewBox, 2)
-
-	makeOutlinedLabel(rewBox, "Rewards:", UDim2.new(1, -10, 0, 20), UDim2.fromOffset(6, 4), Color3.new(1, 1, 1), 1.8).TextXAlignment = Enum.TextXAlignment.Left
-
-	local rewCoins = FormatUtil.Number(selSpec.baseIncomePerSec * 120)
-	local cashTile = Instance.new("Frame")
-	cashTile.Size = UDim2.fromOffset(78, 56)
-	cashTile.Position = UDim2.fromOffset(10, 28)
-	cashTile.BackgroundColor3 = Color3.fromRGB(46, 52, 64)
-	cashTile.Parent = rewBox
-	makeCorner(cashTile, 6)
-	makeStroke(cashTile, 1.8)
-	makeOutlinedLabel(cashTile, "💵", UDim2.fromScale(1, 0.52), UDim2.fromScale(0, 0.04), Color3.new(1, 1, 1), 1.5)
-	makeOutlinedLabel(cashTile, "$" .. rewCoins, UDim2.fromScale(0.94, 0.42), UDim2.fromScale(0.03, 0.56), Color3.fromRGB(118, 255, 118), 1.6)
-
-	local zoneTile = Instance.new("Frame")
-	zoneTile.Size = UDim2.fromOffset(78, 56)
-	zoneTile.Position = UDim2.fromOffset(96, 28)
-	zoneTile.BackgroundColor3 = Color3.fromRGB(46, 52, 64)
-	zoneTile.Parent = rewBox
-	makeCorner(zoneTile, 6)
-	makeStroke(zoneTile, 1.8)
-	makeOutlinedLabel(zoneTile, "📖", UDim2.fromScale(1, 0.52), UDim2.fromScale(0, 0.04), Color3.new(1, 1, 1), 1.5)
-	makeOutlinedLabel(zoneTile, "#" .. string.format("%02d", selSpec.indexNumber), UDim2.fromScale(0.94, 0.42), UDim2.fromScale(0.03, 0.56), Color3.fromRGB(118, 224, 255), 1.6)
-
-	local claimBtn = Instance.new("TextButton")
-	claimBtn.Size = UDim2.new(1, -16, 0, 42)
-	claimBtn.Position = UDim2.new(0, 8, 1, -48)
-	claimBtn.BackgroundColor3 = if selEntry and not selEntry.rewardClaimed then Color3.fromRGB(72, 224, 52) elseif selEntry then Color3.fromRGB(205, 212, 222) else Color3.fromRGB(92, 98, 110)
-	claimBtn.Text = if not selEntry then "Locked" elseif selEntry.rewardClaimed then "Claimed" else "Claim!"
-	claimBtn.TextColor3 = Color3.new(1, 1, 1)
-	claimBtn.Font = Enum.Font.FredokaOne
-	claimBtn.TextScaled = true
-	claimBtn.Parent = rewBox
-	makeCorner(claimBtn, 8)
-	makeStroke(claimBtn, 2.2)
-	makeTextStroke(claimBtn, 2)
-	claimBtn.MouseButton1Click:Connect(function()
-		playClickSFX()
-		if selEntry and not selEntry.rewardClaimed then
-			Remotes.Get("ClaimIndexReward"):FireServer(selSpec.id)
+		-- Badge "!" on Normal right tab when claimable index rewards exist
+		local normalTab = indexRightTabs:FindFirstChildOfClass("TextButton")
+		if normalTab and unclaimedRewards > 0 then
+			local dot = makeOutlinedLabel(normalTab, "!", UDim2.fromOffset(20, 20), UDim2.new(1, -14, 0, -6), Color3.new(1, 1, 1), 2)
+			dot.BackgroundColor3 = Color3.fromRGB(235, 36, 44)
+			dot.BackgroundTransparency = 0
+			dot.ZIndex = 5
+			makeCorner(dot, 10)
+			makeStroke(dot, 2)
 		end
-	end)
 
-	-- Bottom-Left Full Blue Striped Claim Button (Image 3 "Claim!(1)")
-	local claimAllBtn = Instance.new("TextButton")
-	claimAllBtn.Size = UDim2.fromScale(1, 1)
-	claimAllBtn.BackgroundColor3 = Color3.new(1, 1, 1)
-	claimAllBtn.Text = if unclaimedRewards > 0 then string.format("📖 Claim!(%d)", unclaimedRewards) else string.format("📖 Unlocked: %d/%d", totalUnlocked, #AnimalConfig.ALL)
-	claimAllBtn.TextColor3 = Color3.new(1, 1, 1)
-	claimAllBtn.Font = Enum.Font.FredokaOne
-	claimAllBtn.TextScaled = true
-	claimAllBtn.Parent = totalIndexBar
-	makeCorner(claimAllBtn, 8)
-	makeTextStroke(claimAllBtn, 2.4)
-	makeGradient(
-		claimAllBtn,
-		if unclaimedRewards > 0 then Color3.fromRGB(82, 218, 255) else Color3.fromRGB(82, 168, 224),
-		if unclaimedRewards > 0 then Color3.fromRGB(28, 138, 238) else Color3.fromRGB(36, 98, 162),
-		90
-	)
-	claimAllBtn.MouseButton1Click:Connect(function()
-		playClickSFX()
-		Remotes.Get("ClaimAllIndexRewards"):FireServer()
-	end)
+		-- Render Each Biome Row Card (Left Zone Illustration Banner + 4-Col Sunburst Grid + Zone Progress Bar)
+		for _, biome in ipairs(BiomeConfig) do
+			local pool = AnimalConfig.GetByBiome(biome.id)
+			local rows = math.max(1, math.ceil(#pool / 4))
+			local gridH = rows * 74 + math.max(0, rows - 1) * 5
+			local containerH = math.max(158, 10 + gridH + 38)
+
+			local zCard = Instance.new("Frame")
+			zCard.Size = UDim2.new(1, 0, 0, containerH)
+			zCard.BackgroundColor3 = Color3.fromRGB(36, 41, 54)
+			zCard.Parent = indexScroll
+			makeCorner(zCard, 9)
+			makeStroke(zCard, 2, Color3.fromRGB(14, 16, 22))
+
+			-- Left Vertical Biome Illustration Banner
+			local banner = Instance.new("ImageLabel")
+			banner.Name = "ZoneBanner"
+			banner.Size = UDim2.new(0, 96, 1, -12)
+			banner.Position = UDim2.fromOffset(6, 6)
+			banner.BackgroundColor3 = biome.groundColor
+			banner.Image = biome.bannerAssetId or ""
+			banner.ScaleType = Enum.ScaleType.Crop
+			banner.ClipsDescendants = true
+			banner.Parent = zCard
+			makeCorner(banner, 7)
+			makeStroke(banner, 2, Color3.fromRGB(12, 14, 18))
+
+			local shadeTop = Instance.new("Frame")
+			shadeTop.Size = UDim2.new(1, 0, 0, 48)
+			shadeTop.BackgroundColor3 = Color3.fromRGB(10, 12, 18)
+			shadeTop.BackgroundTransparency = 0.45
+			shadeTop.BorderSizePixel = 0
+			shadeTop.ZIndex = 2
+			shadeTop.Parent = banner
+
+			local zTitle = makeOutlinedLabel(banner, ZONE_SHORT_NAMES[biome.id] or biome.id, UDim2.new(1, -6, 0, 44), UDim2.fromOffset(3, 3), Color3.new(1, 1, 1), 2.2)
+			zTitle.ZIndex = 3
+
+			local maxPill = Instance.new("Frame")
+			maxPill.Size = UDim2.new(1, -8, 0, 22)
+			maxPill.Position = UDim2.new(0, 4, 1, -26)
+			maxPill.BackgroundColor3 = Color3.fromRGB(14, 18, 26)
+			maxPill.BackgroundTransparency = 0.22
+			maxPill.ZIndex = 3
+			maxPill.Parent = banner
+			makeCorner(maxPill, 5)
+			makeStroke(maxPill, 1.5, GameConfig.RARITY_COLORS[biome.maxRarity] or Color3.new(1, 1, 1))
+			local maxLbl = makeOutlinedLabel(maxPill, "Max: " .. biome.maxRarity, UDim2.new(1, -4, 1, -2), UDim2.fromOffset(2, 1), GameConfig.RARITY_COLORS[biome.maxRarity] or Color3.new(1, 1, 1), 1.6)
+			maxLbl.ZIndex = 4
+			RarityEffects.ApplyTextEffect(maxLbl, biome.maxRarity)
+
+			-- Right Area Top: 4-Column Pet Thumbnail Grid
+			local gridBox = Instance.new("Frame")
+			gridBox.Size = UDim2.new(1, -114, 0, gridH)
+			gridBox.Position = UDim2.fromOffset(108, 6)
+			gridBox.BackgroundTransparency = 1
+			gridBox.Parent = zCard
+			local gl = Instance.new("UIGridLayout")
+			gl.CellSize = UDim2.fromOffset(77, 74)
+			gl.CellPadding = UDim2.fromOffset(5, 5)
+			gl.Parent = gridBox
+
+			local zUnlocked = 0
+			for _, spec in ipairs(pool) do
+				local entry = profile.discoveredIndex[spec.id]
+				local isDisc = entry ~= nil
+				if isDisc then zUnlocked += 1 end
+
+				local btn = Instance.new("TextButton")
+				btn.BackgroundTransparency = 1
+				btn.Text = ""
+				btn.Parent = gridBox
+
+				local mutShow: Types.AnimalMutation = "None"
+				if isDisc and indexRightTab == "Mutations" then
+					for mKey, found in pairs(entry.mutationsFound) do
+						if found and mKey ~= "None" then mutShow = mKey :: Types.AnimalMutation break end
+					end
+				end
+
+				local cardFrame = Instance.new("Frame")
+				cardFrame.Size = UDim2.fromScale(1, 1)
+				cardFrame.ZIndex = 1
+				cardFrame.Parent = btn
+				makeCorner(cardFrame, 8)
+				local isSel = (spec.id == selectedIndexSpeciesId)
+				makeStroke(cardFrame, if isSel then 3 else 2, if isSel then Color3.new(1, 1, 1) else Color3.fromRGB(14, 16, 20))
+				RarityEffects.ApplyThumbnailBackdrop(cardFrame, spec.rarity, isDisc, mutShow)
+
+				local vpHolder = Instance.new("Frame")
+				vpHolder.Size = UDim2.new(1, -4, 1, -18)
+				vpHolder.Position = UDim2.fromOffset(2, 16)
+				vpHolder.BackgroundTransparency = 1
+				vpHolder.ZIndex = 3
+				vpHolder.Parent = cardFrame
+				setViewportThumbnail(vpHolder, function()
+					local m = AnimalVisualBuilder.BuildAnimalModel(spec.id, 1.0, mutShow, true)
+					if not isDisc then
+						for _, d in ipairs(m:GetDescendants()) do
+							if d:IsA("BasePart") then
+								d.Color = Color3.fromRGB(14, 16, 22)
+								d.Material = Enum.Material.SmoothPlastic
+							end
+						end
+					end
+					return m
+				end)
+
+				local nameLbl = makeOutlinedLabel(cardFrame, if isDisc then spec.name else "???", UDim2.new(1, -4, 0, 18), UDim2.fromOffset(2, 2), Color3.new(1, 1, 1), 1.8)
+				nameLbl.ZIndex = 4
+				if isDisc and GameConfig.IsCosmicOrAbove(spec.rarity) then
+					RarityEffects.ApplyTextEffect(nameLbl, spec.rarity)
+				end
+
+				if isDisc and not entry.rewardClaimed then
+					local exDot = makeOutlinedLabel(cardFrame, "!", UDim2.fromOffset(18, 18), UDim2.new(1, -20, 1, -20), Color3.new(1, 1, 1), 1.8)
+					exDot.BackgroundColor3 = Color3.fromRGB(235, 36, 44)
+					exDot.BackgroundTransparency = 0
+					exDot.ZIndex = 5
+					makeCorner(exDot, 9)
+					makeStroke(exDot, 1.8, Color3.fromRGB(14, 16, 22))
+				end
+
+				btn.MouseButton1Click:Connect(function()
+					playClickSFX()
+					selectedIndexSpeciesId = spec.id
+					renderIndexModal()
+				end)
+			end
+
+			-- Right Area Bottom: Green Zone Progress Bar + Blue Completion Pill
+			local pTrack = Instance.new("Frame")
+			pTrack.Size = UDim2.new(1, -206, 0, 26)
+			pTrack.Position = UDim2.new(0, 108, 1, -32)
+			pTrack.BackgroundColor3 = Color3.fromRGB(48, 56, 68)
+			pTrack.Parent = zCard
+			makeCorner(pTrack, 6)
+			makeStroke(pTrack, 2, Color3.fromRGB(14, 16, 22))
+
+			local pFill = Instance.new("Frame")
+			pFill.Size = UDim2.fromScale(math.clamp(zUnlocked / math.max(1, #pool), 0, 1), 1)
+			pFill.BackgroundColor3 = Color3.fromRGB(92, 242, 62)
+			pFill.BorderSizePixel = 0
+			pFill.Parent = pTrack
+			makeCorner(pFill, 6)
+			makeGradient(pFill, Color3.fromRGB(132, 255, 84), Color3.fromRGB(58, 198, 34), 90)
+
+			makeOutlinedLabel(pTrack, string.format("%d/%d", zUnlocked, #pool), UDim2.fromScale(1, 1), UDim2.new(), Color3.new(1, 1, 1), 2.1)
+
+			local zClaimed = profile.zoneIndexBonusesClaimed[biome.id] == true
+			local zRewBox = Instance.new("Frame")
+			zRewBox.Size = UDim2.fromOffset(88, 26)
+			zRewBox.Position = UDim2.new(1, -94, 1, -32)
+			zRewBox.BackgroundColor3 = if zClaimed then Color3.fromRGB(78, 222, 52) else Color3.fromRGB(52, 162, 242)
+			zRewBox.Parent = zCard
+			makeCorner(zRewBox, 6)
+			makeStroke(zRewBox, 2, Color3.fromRGB(14, 16, 22))
+			makeOutlinedLabel(zRewBox, string.format("ALL %d: %s", #pool, ZONE_REWARD_TAGS[biome.id] or "🎁"), UDim2.fromScale(0.94, 0.9), UDim2.fromScale(0.03, 0.05), Color3.new(1, 1, 1), 1.5)
+		end
+
+		-- Right Dark Inspect Panel
+		local selSpec = AnimalConfig.GetById(selectedIndexSpeciesId) or AnimalConfig.ALL[1]
+		local selEntry = profile.discoveredIndex[selSpec.id]
+		local selIsDisc = selEntry ~= nil
+		local selMut: Types.AnimalMutation = "None"
+		if selEntry and indexRightTab == "Mutations" then
+			for mKey, found in pairs(selEntry.mutationsFound) do
+				if found and mKey ~= "None" then selMut = mKey :: Types.AnimalMutation break end
+			end
+		end
+
+		local showcaseCard = Instance.new("Frame")
+		showcaseCard.Size = UDim2.new(1, -14, 0, 102)
+		showcaseCard.Position = UDim2.fromOffset(7, 8)
+		showcaseCard.ZIndex = 1
+		showcaseCard.Parent = inspectPanel
+		makeCorner(showcaseCard, 8)
+		makeStroke(showcaseCard, 2.2, Color3.fromRGB(14, 16, 22))
+		RarityEffects.ApplyThumbnailBackdrop(showcaseCard, selSpec.rarity, selIsDisc, selMut)
+
+		local vpInspect = Instance.new("Frame")
+		vpInspect.Size = UDim2.new(1, -10, 1, -8)
+		vpInspect.Position = UDim2.fromOffset(5, 4)
+		vpInspect.BackgroundTransparency = 1
+		vpInspect.ZIndex = 3
+		vpInspect.Parent = showcaseCard
+		setViewportThumbnail(vpInspect, function()
+			local m = AnimalVisualBuilder.BuildAnimalModel(selSpec.id, 1.0, selMut, true)
+			if not selIsDisc then
+				for _, d in ipairs(m:GetDescendants()) do
+					if d:IsA("BasePart") then
+						d.Color = Color3.fromRGB(14, 16, 22)
+						d.Material = Enum.Material.SmoothPlastic
+					end
+				end
+			end
+			return m
+		end)
+
+		local insName = makeOutlinedLabel(inspectPanel, if selIsDisc then selSpec.name else "???", UDim2.new(1, -12, 0, 22), UDim2.fromOffset(6, 114), Color3.new(1, 1, 1), 2.2)
+		if selIsDisc and GameConfig.IsCosmicOrAbove(selSpec.rarity) then
+			RarityEffects.ApplyTextEffect(insName, selSpec.rarity)
+		end
+
+		local insRar = makeOutlinedLabel(inspectPanel, selSpec.rarity, UDim2.new(1, -12, 0, 20), UDim2.fromOffset(6, 136), GameConfig.RARITY_COLORS[selSpec.rarity] or Color3.new(1, 1, 1), 2.0)
+		RarityEffects.ApplyTextEffect(insRar, selSpec.rarity)
+
+		makeOutlinedLabel(
+			inspectPanel,
+			if selIsDisc then ("$" .. FormatUtil.Number(selSpec.baseIncomePerSec) .. "/s") else "$???/s",
+			UDim2.new(1, -12, 0, 20),
+			UDim2.fromOffset(6, 156),
+			Color3.fromRGB(92, 248, 92),
+			2.1
+		)
+
+		local idxPill = Instance.new("Frame")
+		idxPill.Size = UDim2.fromOffset(72, 18)
+		idxPill.Position = UDim2.new(0.5, -76, 0, 178)
+		idxPill.BackgroundColor3 = Color3.fromRGB(52, 158, 245)
+		idxPill.Parent = inspectPanel
+		makeCorner(idxPill, 5)
+		makeStroke(idxPill, 1.5, Color3.fromRGB(12, 14, 18))
+		makeOutlinedLabel(idxPill, "#" .. string.format("%02d", selSpec.indexNumber), UDim2.fromScale(1, 1), UDim2.new(), Color3.new(1, 1, 1), 1.4)
+
+		local wtPill = Instance.new("Frame")
+		wtPill.Size = UDim2.fromOffset(82, 18)
+		wtPill.Position = UDim2.new(0.5, 4, 0, 178)
+		wtPill.BackgroundColor3 = Color3.fromRGB(142, 76, 245)
+		wtPill.Parent = inspectPanel
+		makeCorner(wtPill, 5)
+		makeStroke(wtPill, 1.5, Color3.fromRGB(12, 14, 18))
+		makeOutlinedLabel(wtPill, if selIsDisc then string.format("%.1fkg", selSpec.baseWeightKg) else "??? kg", UDim2.fromScale(1, 1), UDim2.new(), Color3.new(1, 1, 1), 1.4)
+
+		local biomeName = selSpec.biomeId
+		for _, b in ipairs(BiomeConfig) do
+			if b.id == selSpec.biomeId then
+				biomeName = b.name
+				break
+			end
+		end
+		makeOutlinedLabel(inspectPanel, "From " .. biomeName .. " crates", UDim2.new(1, -12, 0, 16), UDim2.fromOffset(6, 200), Color3.fromRGB(255, 162, 118), 1.6)
+
+		-- Reward for finding it box (Cash + Speed Icons!)
+		local rewBox = Instance.new("Frame")
+		rewBox.Size = UDim2.new(1, -14, 0, 76)
+		rewBox.Position = UDim2.fromOffset(7, 220)
+		rewBox.BackgroundColor3 = Color3.fromRGB(30, 46, 38)
+		rewBox.Parent = inspectPanel
+		makeCorner(rewBox, 8)
+		makeStroke(rewBox, 2, Color3.fromRGB(14, 18, 22))
+		makeOutlinedLabel(rewBox, "Reward for finding it:", UDim2.new(1, -10, 0, 18), UDim2.fromOffset(6, 2), Color3.fromRGB(235, 245, 238), 1.6).TextXAlignment = Enum.TextXAlignment.Left
+
+		local rewCoins, rewSpeed = AnimalConfig.ComputeIndexRewards(selSpec)
+		buildInspectRewardTile(rewBox, UDim2.fromOffset(8, 22), RewardConfig.ICONS.Cash, FormatUtil.Number(rewCoins), Color3.fromRGB(118, 255, 118))
+		buildInspectRewardTile(rewBox, UDim2.fromOffset(96, 22), RewardConfig.ICONS.Speed, "+" .. FormatUtil.Number(rewSpeed), Color3.fromRGB(255, 224, 92))
+
+		local claimBtn = Instance.new("TextButton")
+		claimBtn.Size = UDim2.new(1, -14, 0, 38)
+		claimBtn.Position = UDim2.new(0, 7, 1, -44)
+		claimBtn.BackgroundColor3 = if selIsDisc and not selEntry.rewardClaimed then Color3.fromRGB(78, 226, 56) elseif selIsDisc then Color3.fromRGB(132, 146, 164) else Color3.fromRGB(92, 100, 116)
+		claimBtn.Text = if not selIsDisc then "NOT FOUND YET" elseif selEntry.rewardClaimed then "CLAIMED" else "CLAIM!"
+		claimBtn.TextColor3 = Color3.new(1, 1, 1)
+		claimBtn.Font = Enum.Font.FredokaOne
+		claimBtn.TextScaled = true
+		claimBtn.Parent = inspectPanel
+		makeCorner(claimBtn, 8)
+		makeStroke(claimBtn, 2.2, Color3.fromRGB(12, 14, 18))
+		makeTextStroke(claimBtn, 2.0)
+		claimBtn.MouseButton1Click:Connect(function()
+			playClickSFX()
+			if selEntry and not selEntry.rewardClaimed then
+				Remotes.Get("ClaimIndexReward"):FireServer(selSpec.id)
+			end
+		end)
+
+		-- Bottom Overall Index Discovery Progress Bar (X / Total)
+		local totIcon = Instance.new("ImageLabel")
+		totIcon.Size = UDim2.fromOffset(28, 28)
+		totIcon.Position = UDim2.fromOffset(6, 5)
+		totIcon.BackgroundTransparency = 1
+		totIcon.ScaleType = Enum.ScaleType.Fit
+		totIcon.Image = RewardConfig.ICONS.Index
+		totIcon.Parent = totalIndexBar
+
+		local totTrack = Instance.new("Frame")
+		totTrack.Size = UDim2.new(1, -46, 0, 24)
+		totTrack.Position = UDim2.fromOffset(40, 7)
+		totTrack.BackgroundColor3 = Color3.fromRGB(36, 42, 54)
+		totTrack.Parent = totalIndexBar
+		makeCorner(totTrack, 6)
+		makeStroke(totTrack, 1.8, Color3.fromRGB(12, 14, 18))
+
+		local totFill = Instance.new("Frame")
+		totFill.Size = UDim2.fromScale(math.clamp(totalUnlocked / math.max(1, #AnimalConfig.ALL), 0, 1), 1)
+		totFill.BackgroundColor3 = Color3.fromRGB(88, 238, 58)
+		totFill.BorderSizePixel = 0
+		totFill.Parent = totTrack
+		makeCorner(totFill, 6)
+		makeGradient(totFill, Color3.fromRGB(124, 255, 82), Color3.fromRGB(48, 188, 34), 90)
+
+		local tick75 = Instance.new("Frame")
+		tick75.Size = UDim2.new(0, 2, 1, 0)
+		tick75.Position = UDim2.fromScale(0.75, 0)
+		tick75.BackgroundColor3 = Color3.new(1, 1, 1)
+		tick75.BorderSizePixel = 0
+		tick75.ZIndex = 3
+		tick75.Parent = totTrack
+
+		local totLbl = makeOutlinedLabel(totTrack, string.format("Total Index Discovered: %d / %d", totalUnlocked, #AnimalConfig.ALL), UDim2.fromScale(1, 1), UDim2.new(), Color3.new(1, 1, 1), 2.0)
+		totLbl.ZIndex = 4
+	end
 end
 
 -- C. CLEAN TRANSLUCENT FROSTED BACKPACK & DRAG-AND-DROP INVENTORY (Image 1 Style)
@@ -3138,13 +4254,13 @@ end
 invWindowRef = invWindow
 
 local sellToggleBtn = Instance.new("TextButton")
-sellToggleBtn.Size = UDim2.fromOffset(96, 38)
-sellToggleBtn.Position = UDim2.fromOffset(0, -46)
-sellToggleBtn.BackgroundColor3 = Color3.fromRGB(218, 34, 34)
+sellToggleBtn.Size = UDim2.fromOffset(96, 36)
+sellToggleBtn.Position = UDim2.fromOffset(0, -44)
+sellToggleBtn.BackgroundColor3 = Color3.fromRGB(204, 42, 54)
 sellToggleBtn.Text = "Sell"
 sellToggleBtn.TextColor3 = Color3.new(1, 1, 1)
 sellToggleBtn.Font = Enum.Font.FredokaOne
-sellToggleBtn.TextScaled = true
+sellToggleBtn.TextSize = 17
 sellToggleBtn.Parent = invWindow
 makeCorner(sellToggleBtn, 8)
 makeStroke(sellToggleBtn, 2.2)
@@ -3156,37 +4272,44 @@ invLeftTabs.Position = UDim2.fromOffset(-66, 8)
 invLeftTabs.BackgroundTransparency = 1
 invLeftTabs.Parent = invWindow
 
-local invTitleLbl = makeOutlinedLabel(invWindow, "All Pets", UDim2.fromOffset(220, 28), UDim2.fromOffset(14, 8), Color3.new(1, 1, 1), 2.2)
+local invTitleLbl = makeOutlinedLabel(invWindow, "All Pets", UDim2.fromOffset(220, 28), UDim2.fromOffset(16, 8), Color3.new(1, 1, 1), 2.2)
 invTitleLbl.TextXAlignment = Enum.TextXAlignment.Left
+invTitleLbl.TextScaled = false
+invTitleLbl.TextSize = 20
 
 local searchBox = Instance.new("TextBox")
 searchBox.Size = UDim2.fromOffset(204, 30)
 searchBox.Position = UDim2.new(1, -252, 0, 7)
-searchBox.BackgroundColor3 = Color3.fromRGB(78, 82, 92)
-searchBox.BackgroundTransparency = 0.35
-searchBox.PlaceholderText = "Search"
-searchBox.PlaceholderColor3 = Color3.fromRGB(198, 204, 214)
+searchBox.BackgroundColor3 = Color3.fromRGB(30, 36, 48)
+searchBox.BackgroundTransparency = 0.15
+searchBox.PlaceholderText = "Search..."
+searchBox.PlaceholderColor3 = Color3.fromRGB(165, 178, 198)
 searchBox.Text = ""
+searchBox.TextXAlignment = Enum.TextXAlignment.Left
 searchBox.TextColor3 = Color3.new(1, 1, 1)
-searchBox.Font = Enum.Font.FredokaOne
-searchBox.TextScaled = true
+searchBox.Font = Enum.Font.GothamBold
+searchBox.TextSize = 14
 searchBox.Parent = invWindow
-makeCorner(searchBox, 6)
+makeCorner(searchBox, 7)
 do
-	local sbSt = makeStroke(searchBox, 1.4, Color3.new(1, 1, 1))
-	sbSt.Transparency = 0.78
+	local sbPad = Instance.new("UIPadding")
+	sbPad.PaddingLeft = UDim.new(0, 10)
+	sbPad.PaddingRight = UDim.new(0, 10)
+	sbPad.Parent = searchBox
+	local sbSt = makeStroke(searchBox, 1.4, Color3.fromRGB(82, 96, 124))
+	sbSt.Transparency = 0.25
 end
 
 local invCloseBtn = Instance.new("TextButton")
 invCloseBtn.Name = "BackpackCloseButton"
 invCloseBtn.Size = UDim2.fromOffset(30, 30)
 invCloseBtn.Position = UDim2.new(1, -38, 0, 7)
-invCloseBtn.BackgroundColor3 = Color3.fromRGB(220, 44, 52)
-invCloseBtn.BackgroundTransparency = 0.08
+invCloseBtn.BackgroundColor3 = Color3.fromRGB(204, 42, 54)
+invCloseBtn.BackgroundTransparency = 0.05
 invCloseBtn.Text = "X"
 invCloseBtn.TextColor3 = Color3.new(1, 1, 1)
 invCloseBtn.Font = Enum.Font.FredokaOne
-invCloseBtn.TextScaled = true
+invCloseBtn.TextSize = 17
 invCloseBtn.ZIndex = 12
 invCloseBtn.Parent = invWindow
 makeCorner(invCloseBtn, 8)
@@ -3303,17 +4426,17 @@ local function renderInventoryModal()
 			local isMounted = tostring(localPlayer:GetAttribute("MountedAnimalUid") or "") == uid
 
 			local card = Instance.new("TextButton")
-			card.BackgroundColor3 = Color3.fromRGB(24, 28, 34)
-			card.BackgroundTransparency = 0.25
+			card.BackgroundColor3 = Color3.fromRGB(24, 30, 42)
+			card.BackgroundTransparency = 0.10
 			card.Text = ""
 			card.AutoButtonColor = false
 			card.Parent = invScroll
 			makeCorner(card, 8)
-			local cSt = makeStroke(card, if isMounted or isPinned then 2.2 else 1.4, if isMounted then Color3.fromRGB(84, 255, 132) elseif isPinned then Color3.new(1, 1, 1) else Color3.fromRGB(0, 0, 0))
-			cSt.Transparency = if isMounted or isPinned then 0 else 0.35
+			local cSt = makeStroke(card, if isMounted or isPinned then 2.2 else 1.4, if isMounted then Color3.fromRGB(84, 255, 132) elseif isPinned then Color3.new(1, 1, 1) else Color3.fromRGB(48, 58, 80))
+			cSt.Transparency = if isMounted or isPinned then 0 else 0.15
 
 			local vpBox = Instance.new("Frame")
-			vpBox.Size = UDim2.new(1, -12, 0, 56)
+			vpBox.Size = UDim2.new(1, -12, 0, 50)
 			vpBox.Position = UDim2.fromOffset(6, 4)
 			vpBox.BackgroundTransparency = 1
 			vpBox.Parent = card
@@ -3322,8 +4445,16 @@ local function renderInventoryModal()
 			end
 			setViewportThumbnail(vpBox, builderFn)
 
-			makeOutlinedLabel(card, nameStr, UDim2.new(1, -6, 0, 16), UDim2.new(0, 3, 1, -34), Color3.new(1, 1, 1), 1.7)
-			makeOutlinedLabel(card, string.format("(%sKG)", FormatUtil.Number(math.floor(animal.weightKg + 0.5))), UDim2.new(1, -6, 0, 15), UDim2.new(0, 3, 1, -17), Color3.fromRGB(210, 224, 240), 1.6)
+			local petNameLbl = makeOutlinedLabel(card, nameStr, UDim2.new(1, -8, 0, 17), UDim2.new(0, 4, 1, -36), Color3.new(1, 1, 1), 1.6)
+			petNameLbl.TextScaled = false
+			petNameLbl.TextSize = 12
+			petNameLbl.Font = Enum.Font.GothamBold
+			petNameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+
+			local petKgLbl = makeOutlinedLabel(card, string.format("%s KG", FormatUtil.Number(math.floor(animal.weightKg + 0.5))), UDim2.new(1, -8, 0, 15), UDim2.new(0, 4, 1, -18), Color3.fromRGB(165, 185, 212), 1.4)
+			petKgLbl.TextScaled = false
+			petKgLbl.TextSize = 11
+			petKgLbl.Font = Enum.Font.GothamBold
 
 			if animal.locked then
 				makeOutlinedLabel(card, "🔒", UDim2.fromOffset(18, 18), UDim2.fromOffset(3, 2), Color3.new(1, 1, 1), 1.4)
@@ -3360,17 +4491,17 @@ local function renderInventoryModal()
 					local rarCol = GameConfig.RARITY_COLORS[crate.rarity] or Color3.new(1, 1, 1)
 
 					local card = Instance.new("TextButton")
-					card.BackgroundColor3 = Color3.fromRGB(24, 28, 34)
-					card.BackgroundTransparency = 0.25
+					card.BackgroundColor3 = Color3.fromRGB(24, 30, 42)
+					card.BackgroundTransparency = 0.10
 					card.Text = ""
 					card.AutoButtonColor = false
 					card.Parent = invScroll
 					makeCorner(card, 8)
-					local cSt = makeStroke(card, if isPinned then 2.2 else 1.4, if isPinned then Color3.new(1, 1, 1) else rarCol)
-					cSt.Transparency = if isPinned then 0 else 0.35
+					local cSt = makeStroke(card, if isPinned then 2.2 else 1.5, if isPinned then Color3.new(1, 1, 1) else rarCol)
+					cSt.Transparency = if isPinned then 0 else 0.2
 
 					local vpBox = Instance.new("Frame")
-					vpBox.Size = UDim2.new(1, -12, 0, 56)
+					vpBox.Size = UDim2.new(1, -12, 0, 50)
 					vpBox.Position = UDim2.fromOffset(6, 4)
 					vpBox.BackgroundTransparency = 1
 					vpBox.Parent = card
@@ -3381,8 +4512,17 @@ local function renderInventoryModal()
 						})
 					end
 					setViewportThumbnail(vpBox, builderFn)
-					makeOutlinedLabel(card, cTitle, UDim2.new(1, -6, 0, 16), UDim2.new(0, 3, 1, -34), Color3.new(1, 1, 1), 1.7)
-					makeOutlinedLabel(card, crate.rarity, UDim2.new(1, -6, 0, 15), UDim2.new(0, 3, 1, -17), rarCol, 1.6)
+					local mergePrefix = if crate.originSource == "Merge" then "⚡ " else ""
+					local crTitleLbl = makeOutlinedLabel(card, mergePrefix .. cTitle, UDim2.new(1, -8, 0, 17), UDim2.new(0, 4, 1, -36), if crate.originSource == "Merge" then Color3.fromRGB(118, 240, 255) else Color3.new(1, 1, 1), 1.6)
+					crTitleLbl.TextScaled = false
+					crTitleLbl.TextSize = 12
+					crTitleLbl.Font = Enum.Font.GothamBold
+					crTitleLbl.TextTruncate = Enum.TextTruncate.AtEnd
+
+					local crRarLbl = makeOutlinedLabel(card, crate.rarity, UDim2.new(1, -8, 0, 15), UDim2.new(0, 4, 1, -18), rarCol, 1.5)
+					crRarLbl.TextScaled = false
+					crRarLbl.TextSize = 11
+					crRarLbl.Font = Enum.Font.GothamBold
 
 					attachDragAndDrop(card, {
 						kind = "Crate",
@@ -3469,17 +4609,25 @@ local function renderInventoryModal()
 				return AnimalVisualBuilder.BuildVehicleModel(vRef, 1.0)
 			end)
 
-			makeOutlinedLabel(card, v.name, UDim2.new(1, -8, 0, 17), UDim2.new(0, 4, 0, 62), Color3.new(1, 1, 1), 1.6)
-			makeOutlinedLabel(card, string.format("x%s Spd | %d Tow", FormatUtil.Number(v.speedMultiplier), v.towCapacity), UDim2.new(1, -8, 0, 15), UDim2.new(0, 4, 0, 79), v.primaryColor:Lerp(Color3.new(1, 1, 1), 0.35), 1.5)
+			local mNameLbl = makeOutlinedLabel(card, v.name, UDim2.new(1, -8, 0, 17), UDim2.new(0, 4, 0, 62), Color3.new(1, 1, 1), 1.5)
+			mNameLbl.TextScaled = false
+			mNameLbl.TextSize = 12
+			mNameLbl.Font = Enum.Font.GothamBold
+			mNameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+
+			local mStatLbl = makeOutlinedLabel(card, string.format("x%s Spd | %d Tow", FormatUtil.Number(v.speedMultiplier), v.towCapacity), UDim2.new(1, -8, 0, 15), UDim2.new(0, 4, 0, 80), v.primaryColor:Lerp(Color3.new(1, 1, 1), 0.35), 1.4)
+			mStatLbl.TextScaled = false
+			mStatLbl.TextSize = 11
+			mStatLbl.Font = Enum.Font.GothamBold
 
 			local eqBtn = Instance.new("TextButton")
 			eqBtn.Size = UDim2.new(1, -14, 0, 26)
 			eqBtn.Position = UDim2.new(0, 7, 1, -32)
-			eqBtn.BackgroundColor3 = if eq then Color3.fromRGB(76, 178, 86) else Color3.fromRGB(48, 138, 224)
+			eqBtn.BackgroundColor3 = if eq then Color3.fromRGB(22, 163, 74) else Color3.fromRGB(37, 99, 235)
 			eqBtn.Text = if eq then "EQUIPPED" else "EQUIP"
 			eqBtn.TextColor3 = Color3.new(1, 1, 1)
 			eqBtn.Font = Enum.Font.FredokaOne
-			eqBtn.TextScaled = true
+			eqBtn.TextSize = 13
 			eqBtn.Parent = card
 			makeCorner(eqBtn, 6)
 			makeStroke(eqBtn, 1.6)
@@ -3541,17 +4689,25 @@ local function renderInventoryModal()
 				return AnimalVisualBuilder.BuildLassoModel(lRef.beamColor, 1.2)
 			end)
 
-			makeOutlinedLabel(card, l.name, UDim2.new(1, -8, 0, 17), UDim2.new(0, 4, 0, 62), Color3.new(1, 1, 1), 1.6)
-			makeOutlinedLabel(card, string.format("⚡ %s | %dm", FormatUtil.Number(l.pullPower), l.maxRange), UDim2.new(1, -8, 0, 15), UDim2.new(0, 4, 0, 79), l.beamColor:Lerp(Color3.new(1, 1, 1), 0.3), 1.5)
+			local lNameLbl = makeOutlinedLabel(card, l.name, UDim2.new(1, -8, 0, 17), UDim2.new(0, 4, 0, 62), Color3.new(1, 1, 1), 1.5)
+			lNameLbl.TextScaled = false
+			lNameLbl.TextSize = 12
+			lNameLbl.Font = Enum.Font.GothamBold
+			lNameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+
+			local lStatLbl = makeOutlinedLabel(card, string.format("⚡ %s | %dm", FormatUtil.Number(l.pullPower), l.maxRange), UDim2.new(1, -8, 0, 15), UDim2.new(0, 4, 0, 80), l.beamColor:Lerp(Color3.new(1, 1, 1), 0.3), 1.4)
+			lStatLbl.TextScaled = false
+			lStatLbl.TextSize = 11
+			lStatLbl.Font = Enum.Font.GothamBold
 
 			local eqBtn = Instance.new("TextButton")
 			eqBtn.Size = UDim2.new(1, -14, 0, 26)
 			eqBtn.Position = UDim2.new(0, 7, 1, -32)
-			eqBtn.BackgroundColor3 = if eq then Color3.fromRGB(76, 178, 86) else Color3.fromRGB(48, 138, 224)
+			eqBtn.BackgroundColor3 = if eq then Color3.fromRGB(22, 163, 74) else Color3.fromRGB(37, 99, 235)
 			eqBtn.Text = if eq then "EQUIPPED" else "EQUIP"
 			eqBtn.TextColor3 = Color3.new(1, 1, 1)
 			eqBtn.Font = Enum.Font.FredokaOne
-			eqBtn.TextScaled = true
+			eqBtn.TextSize = 13
 			eqBtn.Parent = card
 			makeCorner(eqBtn, 6)
 			makeStroke(eqBtn, 1.6)
@@ -3755,20 +4911,25 @@ renderActiveModal = function()
 	lassosWindow.Visible = (currentModal == "Lassos")
 	vehiclesWindow.Visible = (currentModal == "Vehicles")
 	fuseWindow.Visible = (currentModal == "Fuse")
-	rebirthWindow.Visible = (currentModal == "Rebirth")
+	rewardsUI.rebirthWindow.Visible = (currentModal == "Rebirth")
+	rewardsUI.dailyWindow.Visible = (currentModal == "Daily")
+	rewardsUI.afkWindow.Visible = (currentModal == "Afk")
 	indexWindow.Visible = (currentModal == "Index")
 	invWindow.Visible = (currentModal == "Inventory")
 	settingsWindow.Visible = (currentModal == "Settings")
-	local showRightHud = (currentModal ~= "Inventory")
-	rightDrawerWrap.Visible = showRightHud
-	rightEdgeBtns.Visible = showRightHud
+	local showSideHud = (currentModal == nil)
+	leftStack.Visible = showSideHud
+	rightDrawerWrap.Visible = showSideHud
+	rightEdgeBtns.Visible = showSideHud
 
 	if currentModal == "Shop" then renderShopModal()
 	elseif currentModal == "Trails" then renderTrailsModal()
 	elseif currentModal == "Lassos" then renderLassosModal()
 	elseif currentModal == "Vehicles" then renderVehiclesModal()
 	elseif currentModal == "Fuse" then renderFuseModal()
-	elseif currentModal == "Rebirth" then renderRebirthModal()
+	elseif currentModal == "Rebirth" then rewardsUI.renderRebirth()
+	elseif currentModal == "Daily" then rewardsUI.renderDaily()
+	elseif currentModal == "Afk" then rewardsUI.renderAfk()
 	elseif currentModal == "Index" then renderIndexModal()
 	elseif currentModal == "Inventory" then renderInventoryModal()
 	elseif currentModal == "Settings" then renderSettingsModal() end
@@ -3776,17 +4937,29 @@ renderActiveModal = function()
 end
 
 -- Bind Buttons & Hotbar Slots
-rebirthBtn.MouseButton1Click:Connect(function()
+leftUI.rebirthBtn.MouseButton1Click:Connect(function()
 	playClickSFX()
 	openModal("Rebirth")
 end)
-shopBtn.MouseButton1Click:Connect(function()
+leftUI.shopBtn.MouseButton1Click:Connect(function()
 	playClickSFX()
 	openModal("Shop")
 end)
-indexBtn.MouseButton1Click:Connect(function()
+leftUI.indexBtn.MouseButton1Click:Connect(function()
 	playClickSFX()
 	openModal("Index")
+end)
+leftUI.dailyBtn.MouseButton1Click:Connect(function()
+	playClickSFX()
+	openModal("Daily")
+end)
+leftUI.afkBtn.MouseButton1Click:Connect(function()
+	playClickSFX()
+	openModal("Afk")
+end)
+leftUI.afkTimerBtn.MouseButton1Click:Connect(function()
+	playClickSFX()
+	openModal("Afk")
 end)
 backpackTopBtn.MouseButton1Click:Connect(function()
 	playClickSFX()
@@ -3857,7 +5030,13 @@ localPlayer.AttributeChanged:Connect(function(attrName)
 				end
 			end)
 		end
-	elseif attrName == "EffectiveSpeedStat" or attrName == "TotalSpeedMult" or attrName == "BaseSpeedMult" or attrName == "VehicleSpeedMult" then
+	elseif attrName == "EffectiveSpeedStat" or attrName == "TotalSpeedMult" or attrName == "BaseSpeedMult" or attrName == "VehicleSpeedMult" or attrName == "CashMult" or attrName == "IncomePerSec" then
+		if attrName == "IncomePerSec" then
+			local srvInc = tonumber(localPlayer:GetAttribute("IncomePerSec"))
+			if srvInc ~= nil then
+				currentPenIncome = srvInc
+			end
+		end
 		if refreshSpeedAndCashDisplay then
 			refreshSpeedAndCashDisplay()
 		end
@@ -3947,22 +5126,27 @@ local function spawnFloatingCashPop(amount: number)
 	if amount <= 0 then return end
 	local pop = Instance.new("TextLabel")
 	pop.Name = "FloatingCashPop"
-	pop.Size = UDim2.fromOffset(145, 24)
-	local rx = math.random(-4, 14)
-	local baseX = 38 + rx
-	pop.Position = UDim2.fromOffset(baseX, -2)
+	pop.Size = UDim2.fromOffset(180, 28)
+	local scaleInst = statsCorner:FindFirstChildOfClass("UIScale")
+	local hudSc = if scaleInst and scaleInst.Scale > 0.1 then scaleInst.Scale else 1
+	local cashRowW = math.max(96, math.round(cashRow.AbsoluteSize.X / hudSc))
+	local startX = cashRowW + 12
+	local ry = math.random(-3, 3)
+	local cashY = math.round((cashRow.AbsolutePosition.Y - statsCorner.AbsolutePosition.Y) / hudSc)
+	if cashY <= 0 then cashY = 74 end
+	pop.Position = UDim2.fromOffset(startX, cashY + ry)
 	pop.BackgroundTransparency = 1
 	pop.Text = "+$" .. FormatUtil.Number(amount)
-	pop.TextColor3 = Color3.fromRGB(118, 255, 112)
+	pop.TextColor3 = Color3.fromRGB(134, 239, 172)
 	pop.Font = Enum.Font.FredokaOne
-	pop.TextScaled = true
+	pop.TextSize = 22
 	pop.TextXAlignment = Enum.TextXAlignment.Left
 	pop.ZIndex = 12
 	pop.Parent = statsCorner
-	local st = makeTextStroke(pop, 2.2)
+	local st = makeTextStroke(pop, 2.4)
 
 	TweenService:Create(pop, TweenInfo.new(0.85, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		Position = UDim2.fromOffset(baseX, -34),
+		Position = UDim2.fromOffset(startX + 22, cashY - 14 + ry),
 		TextTransparency = 1,
 	}):Play()
 	TweenService:Create(st, TweenInfo.new(0.85, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
@@ -4046,9 +5230,18 @@ local function computeProfileUISignatures(p: Types.PlayerProfileSchema): (string
 	local crateSigStr = table.concat(invCrateUids, ",")
 	local drawerSig = string.format("%s|%d|%d|%d|%d", roamStr, p.penCapacity, crateCount, invCount, invCrateCount)
 	local hotbarSig = string.format("%s|%s|%d|%s|%s", p.equippedLasso, p.equippedVehicle, invCount, roamStr, crateSigStr)
-	local modalSig = string.format("%s|%s|%s|%d|%d|%d|%d|%d|%d|%d|%s|%s",
+	local afkClaimedCount = 0
+	if p.afkRewards and type(p.afkRewards.claimedTiers) == "table" then
+		for _, v in pairs(p.afkRewards.claimedTiers) do
+			if v then afkClaimedCount += 1 end
+		end
+	end
+	local modalSig = string.format("%s|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s",
 		p.equippedLasso, p.equippedTrail, p.equippedVehicle, invCount, crateCount, invCrateCount, p.rebirths,
 		discCount, claimedIdxCount, ownedTrailCount,
+		if p.dailyReward then (p.dailyReward.streak or 0) else 0,
+		if p.dailyReward then (p.dailyReward.lastClaimTime or 0) else 0,
+		afkClaimedCount,
 		tostring(p.settings and (p.settings :: any).graphicsQuality), tostring(p.settings and p.settings.lowVFX)
 	)
 	return drawerSig, hotbarSig, modalSig
@@ -4074,10 +5267,22 @@ refreshSpeedAndCashDisplay = function()
 		displayedSpeed = srvEffective
 	end
 
+	local cashMultAttr = tonumber(localPlayer:GetAttribute("CashMult"))
+	local cashMult = if cashMultAttr and cashMultAttr > 0 then cashMultAttr else 1
+
 	currentSpeedMult = effectiveMult
 	speedValLbl.Text = FormatUtil.Number(displayedSpeed)
 	speedMultLbl.Text = "(x" .. FormatUtil.Multiplier(effectiveMult) .. ")"
 	cashValLbl.Text = "$" .. FormatUtil.Number(profile.coins)
+	cashMultLbl.Text = "(x" .. FormatUtil.Multiplier(cashMult) .. ")"
+
+	local diaRow = statsCorner:FindFirstChild("DiamondRow")
+	if diaRow then
+		local gLbl = diaRow:FindFirstChild("GemsVal") :: TextLabel?
+		if gLbl then
+			gLbl.Text = FormatUtil.Number(profile.gems or 0)
+		end
+	end
 end
 
 Remotes.Get("ProfileSync").OnClientEvent:Connect(function(newProfile)
@@ -4088,12 +5293,36 @@ Remotes.Get("ProfileSync").OnClientEvent:Connect(function(newProfile)
 	lastSpeedStat = newProfile.speedStat
 	profile = newProfile
 
-	local penIncome = 0
-	for _, uid in ipairs(newProfile.roamingAnimalUids) do
-		local a = newProfile.inventoryAnimals[uid]
-		if a then penIncome += AnimalConfig.ComputeIncomePerSec(a) end
+	local cashMultAttr = tonumber(localPlayer:GetAttribute("CashMult"))
+	local cashMult = if cashMultAttr and cashMultAttr > 0 then cashMultAttr else 1
+	local srvIncome = tonumber(localPlayer:GetAttribute("IncomePerSec"))
+	if srvIncome ~= nil then
+		currentPenIncome = srvIncome
+	else
+		local penIncome = 0
+		for _, uid in ipairs(newProfile.roamingAnimalUids) do
+			local a = newProfile.inventoryAnimals[uid]
+			if a then penIncome += AnimalConfig.ComputeIncomePerSec(a) end
+		end
+		currentPenIncome = math.floor(penIncome * cashMult)
 	end
-	currentPenIncome = penIncome
+
+	if leftUI.indexBadge then
+		local unclaimedIdx = 0
+		for _, entry in pairs(newProfile.discoveredIndex or {}) do
+			if entry and not entry.rewardClaimed then
+				unclaimedIdx += 1
+			end
+		end
+		leftUI.indexBadge.Visible = unclaimedIdx > 0
+		if unclaimedIdx > 0 then
+			leftUI.indexBadge.Text = if unclaimedIdx > 9 then "9+" else tostring(unclaimedIdx)
+		end
+	end
+	if leftUI.dailyBadge then
+		leftUI.dailyBadge.Visible = rewardsUI.isDailyReady(newProfile)
+	end
+	rewardsUI.updateAfkLiveUI()
 
 	refreshSpeedAndCashDisplay()
 
@@ -4122,9 +5351,12 @@ Remotes.Get("TrainingPulse").OnClientEvent:Connect(function(gain, totalMult, isT
 	end
 end)
 
-Remotes.Get("CrateDelivered").OnClientEvent:Connect(function(deliveredCount, firstCrateUid)
+Remotes.Get("CrateDelivered").OnClientEvent:Connect(function(deliveredCount, firstCrateUid, isMergeCrate)
 	local cnt = tonumber(deliveredCount) or 1
-	local msg = if cnt > 1 then string.format("You saved %d Animals!", cnt) else "You saved the Animal!"
+	local msg = if isMergeCrate == true
+		then "⚡ MERGED CRATE IN HAND! Click Pen to place!"
+		elseif cnt > 1 then string.format("You saved %d Animals!", cnt)
+		else "You saved the Animal!"
 	rescueSuccessLbl.Text = msg
 	rescueSuccessLbl.Visible = true
 	task.delay(3.0, function()
@@ -4133,7 +5365,7 @@ Remotes.Get("CrateDelivered").OnClientEvent:Connect(function(deliveredCount, fir
 		end
 	end)
 
-	-- Keep the rescued crate visibly held in hand & ensure it's in the bottom hotbar
+	-- Keep the rescued / merged / gifted crate visibly held in hand & ensure it has a hotbar slot
 	if type(firstCrateUid) == "string" and firstCrateUid ~= "" then
 		task.defer(function()
 			local pinned = isItemPinnedInHotbar(firstCrateUid)
@@ -4146,7 +5378,14 @@ Remotes.Get("CrateDelivered").OnClientEvent:Connect(function(deliveredCount, fir
 					end
 				end
 				if not targetS then
-					targetS = CUSTOM_SLOT_MAX
+					-- Prefer swapping out a Pet slot cleanly (Pets remain safely in Backpack) so the new Crate stays visible
+					for s = CUSTOM_SLOT_MAX, CUSTOM_SLOT_MIN, -1 do
+						if customHotbarPins[s] and customHotbarPins[s].kind == "Pet" then
+							targetS = s
+							break
+						end
+					end
+					targetS = targetS or CUSTOM_SLOT_MAX
 				end
 				customHotbarPins[targetS :: number] = { kind = "Crate", uid = firstCrateUid }
 				knownPinUids[firstCrateUid] = true
@@ -4159,6 +5398,9 @@ Remotes.Get("CrateDelivered").OnClientEvent:Connect(function(deliveredCount, fir
 				refreshHotbarSelectionVisuals()
 				syncHeldItemFromHotbar()
 				refreshMountButton()
+			end
+			if isMergeCrate == true and currentModal == "Fuse" then
+				openModal(nil)
 			end
 		end)
 	end
@@ -4199,87 +5441,321 @@ Remotes.Get("GlobalEventBanner").OnClientEvent:Connect(function(msg, color, dura
 	end)
 end)
 
-local crateAnnounceQueue: { { msg: string, color: Color3 } } = {}
-local crateAnnounceRunning = false
-
 local function updateCrateAnnouncePosition()
-	if not crateAnnounceLbl.Visible then return end
-	local targetY = 72
+	if not crateAnnounceFeed.Visible then return end
+	local targetY = 56
 	if rescueSuccessLbl.Visible or (eventBanner.Visible and toastLbl.Visible) then
-		targetY = 146
+		targetY = 142
 	elseif runAlertBanner.Visible then
-		targetY = 130
+		targetY = 128
 	elseif eventBanner.Visible or toastLbl.Visible then
-		targetY = 112
+		targetY = 108
 	end
-	crateAnnounceLbl.Position = UDim2.new(0.5, 0, 0, targetY)
+	crateAnnounceFeed.Position = UDim2.new(0.5, 0, 0, targetY)
 end
 
-local function processCrateAnnounceQueue()
-	if crateAnnounceRunning then return end
-	crateAnnounceRunning = true
-	task.spawn(function()
-		while #crateAnnounceQueue > 0 do
-			local item = table.remove(crateAnnounceQueue, 1)
-			if item then
-				crateAnnounceLbl.Text = item.msg
-				crateAnnounceLbl.TextColor3 = item.color
-				crateAnnounceLbl.TextTransparency = 1
-				if crateAnnounceStroke then
-					crateAnnounceStroke.Transparency = 1
-				end
-				crateAnnounceLbl.Visible = true
-				updateCrateAnnouncePosition()
+do
+	local feedLayout = Instance.new("UIListLayout")
+	feedLayout.Padding = UDim.new(0, 2)
+	feedLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	feedLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	feedLayout.Parent = crateAnnounceFeed
 
-				TweenService:Create(crateAnnounceLbl, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-					TextTransparency = 0,
-				}):Play()
-				if crateAnnounceStroke then
-					TweenService:Create(crateAnnounceStroke, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-						Transparency = 0,
-					}):Play()
-				end
+	local resetHeaderLbl = Instance.new("TextLabel")
+	resetHeaderLbl.Name = "ResetHeader"
+	resetHeaderLbl.LayoutOrder = 0
+	resetHeaderLbl.Size = UDim2.new(1, 0, 0, 36)
+	resetHeaderLbl.BackgroundTransparency = 1
+	resetHeaderLbl.Text = "ALL CRATES RESET!"
+	resetHeaderLbl.TextColor3 = Color3.new(1, 1, 1)
+	resetHeaderLbl.Font = Enum.Font.FredokaOne
+	resetHeaderLbl.TextScaled = true
+	resetHeaderLbl.Visible = false
+	resetHeaderLbl.ZIndex = 19
+	resetHeaderLbl.Parent = crateAnnounceFeed
+	local resetHeaderStroke = makeTextStroke(resetHeaderLbl, 3.2)
+	local resetConstraint = Instance.new("UITextSizeConstraint")
+	resetConstraint.MaxTextSize = 32
+	resetConstraint.MinTextSize = 16
+	resetConstraint.Parent = resetHeaderLbl
 
-				local holdSec = if #crateAnnounceQueue > 0 then 2.3 else 3.8
-				task.wait(holdSec)
+	local linesHolder = Instance.new("Frame")
+	linesHolder.Name = "SpawnLines"
+	linesHolder.LayoutOrder = 1
+	linesHolder.Size = UDim2.new(1, 0, 0, 0)
+	linesHolder.AutomaticSize = Enum.AutomaticSize.Y
+	linesHolder.BackgroundTransparency = 1
+	linesHolder.ZIndex = 19
+	linesHolder.Parent = crateAnnounceFeed
 
-				TweenService:Create(crateAnnounceLbl, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-					TextTransparency = 1,
-				}):Play()
-				if crateAnnounceStroke then
-					TweenService:Create(crateAnnounceStroke, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-						Transparency = 1,
-					}):Play()
-				end
-				task.wait(0.27)
+	local linesLayout = Instance.new("UIListLayout")
+	linesLayout.Padding = UDim.new(0, 2)
+	linesLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	linesLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	linesLayout.Parent = linesHolder
+
+	local RARITY_SOLID_HEX: { [string]: string } = {
+		Common = "#C6D4CA",
+		Uncommon = "#5AE87A",
+		Rare = "#4CB2FF",
+		Epic = "#C864FF",
+		Legendary = "#FFD038",
+	}
+
+	local RARITY_GRADIENT_PAIR: { [string]: { Color3 } } = {
+		Mythic = { Color3.fromRGB(255, 70, 88), Color3.fromRGB(255, 158, 66) },
+		Cosmic = { Color3.fromRGB(140, 107, 255), Color3.fromRGB(64, 218, 255) },
+		Secret = { Color3.fromRGB(32, 232, 198), Color3.fromRGB(88, 166, 255) },
+		Eternal = { Color3.fromRGB(56, 232, 255), Color3.fromRGB(184, 107, 255) },
+		Divine = { Color3.fromRGB(255, 248, 210), Color3.fromRGB(255, 204, 86) },
+		Infinity = { Color3.fromRGB(255, 242, 166), Color3.fromRGB(88, 220, 255) },
+		Astral = { Color3.fromRGB(196, 136, 255), Color3.fromRGB(82, 168, 255) },
+		Omega = { Color3.fromRGB(255, 58, 92), Color3.fromRGB(255, 164, 56) },
+		Singularity = { Color3.fromRGB(158, 72, 255), Color3.fromRGB(24, 218, 255) },
+	}
+
+	local BIOME_HEX: { [string]: string } = {
+		PineWoods = "#62F28C",
+		MangroveSwamp = "#4CE8B4",
+		SavannaCamp = "#FFA844",
+		AlpinePeaks = "#68DCFF",
+		VolcanicJungle = "#FF6E48",
+	}
+
+	local MUTATION_ICONS: { [string]: string } = {
+		Albino = "🤍",
+		Silver = "🥈",
+		Bloom = "🌸",
+		Golden = "✨",
+		Fractured = "🔮",
+		Diamond = "💎",
+		SpiritBloom = "🌸",
+		Parasite = "🦠",
+		Neon = "⚡",
+		Scrambled = "🌀",
+		Monstrous = "👹",
+		Rainbow = "🌈",
+		Celestial = "🌟",
+	}
+
+	local VOWEL_START_RARITY: { [string]: boolean } = {
+		Uncommon = true,
+		Epic = true,
+		Eternal = true,
+		Infinity = true,
+		Astral = true,
+		Omega = true,
+	}
+
+	local function escapeXml(s: string): string
+		local r = string.gsub(s, "&", "&amp;")
+		r = string.gsub(r, "<", "&lt;")
+		r = string.gsub(r, ">", "&gt;")
+		return r
+	end
+
+	local function color3ToHex(c: Color3): string
+		local r = math.clamp(math.round(c.R * 255), 0, 255)
+		local g = math.clamp(math.round(c.G * 255), 0, 255)
+		local b = math.clamp(math.round(c.B * 255), 0, 255)
+		return string.format("#%02X%02X%02X", r, g, b)
+	end
+
+	local function buildGradientSpan(text: string, c1: Color3, c2: Color3, isRainbow: boolean?): string
+		local chars: { string } = {}
+		for _, cp in utf8.codes(text) do
+			table.insert(chars, utf8.char(cp))
+		end
+		local n = #chars
+		if n <= 1 then
+			return string.format('<font color="%s">%s</font>', color3ToHex(c1), escapeXml(text))
+		end
+		local parts: { string } = {}
+		for idx, ch in ipairs(chars) do
+			if ch == " " then
+				table.insert(parts, " ")
+			else
+				local alpha = (idx - 1) / math.max(1, n - 1)
+				local col = if isRainbow then Color3.fromHSV(alpha * 0.85, 0.80, 1) else c1:Lerp(c2, alpha)
+				table.insert(parts, string.format('<font color="%s">%s</font>', color3ToHex(col), escapeXml(ch)))
 			end
 		end
-		crateAnnounceLbl.Visible = false
-		crateAnnounceRunning = false
+		return table.concat(parts)
+	end
+
+	local function buildSpawnLineRichText(item: { rarity: string?, biomeId: string?, zoneName: string?, mutation: string? }): string
+		local rarity = tostring(item.rarity or "Common")
+		local biomeId = tostring(item.biomeId or "PineWoods")
+		local zoneName = tostring(item.zoneName or biomeId)
+		local mutation = tostring(item.mutation or "None")
+
+		local article = if VOWEL_START_RARITY[rarity] then "An" else "A"
+		local rarityLabel = rarity .. " Crate"
+		local raritySpan: string
+		if rarity == "Primordial" then
+			raritySpan = buildGradientSpan(rarityLabel, Color3.fromRGB(255, 86, 86), Color3.fromRGB(168, 92, 255), true)
+		elseif RARITY_GRADIENT_PAIR[rarity] then
+			local pair = RARITY_GRADIENT_PAIR[rarity]
+			raritySpan = buildGradientSpan(rarityLabel, pair[1], pair[2], false)
+		else
+			local hex = RARITY_SOLID_HEX[rarity] or color3ToHex((GameConfig.RARITY_COLORS :: any)[rarity] or Color3.new(1, 1, 1))
+			raritySpan = string.format('<font color="%s">%s</font>', hex, escapeXml(rarityLabel))
+		end
+
+		local bHex = BIOME_HEX[biomeId] or "#FFE066"
+		local biomeSpan = string.format('<font color="%s">%s</font>', bHex, escapeXml(zoneName))
+
+		if mutation ~= "" and mutation ~= "None" then
+			local icon = MUTATION_ICONS[mutation] or "✨"
+			local mutInfo = (GameConfig.MUTATIONS :: any)[mutation]
+			local rawDisplay = if mutation == "SpiritBloom" then "SPIRIT" elseif mutInfo then string.upper(mutInfo.label) else string.upper(mutation)
+			local mutSpan = if mutation == "Rainbow"
+				then buildGradientSpan(rawDisplay, Color3.fromRGB(255, 92, 168), Color3.fromRGB(92, 224, 255), true)
+				else string.format('<font color="%s">%s</font>', color3ToHex(if mutInfo then mutInfo.color else Color3.fromRGB(255, 146, 224)), escapeXml(rawDisplay))
+			return string.format("%s %s %s Appeared In %s In %s!", icon, article, raritySpan, mutSpan, biomeSpan)
+		end
+
+		return string.format("%s %s Spawned In %s!", article, raritySpan, biomeSpan)
+	end
+
+	local nextOrder = 0
+	local headerSerial = 0
+	local activeLines: { { label: TextLabel, stroke: UIStroke } } = {}
+
+	local function syncFeedVisibility()
+		local hasLines = false
+		for i = #activeLines, 1, -1 do
+			if activeLines[i].label.Parent == linesHolder then
+				hasLines = true
+			else
+				table.remove(activeLines, i)
+			end
+		end
+		crateAnnounceFeed.Visible = resetHeaderLbl.Visible or hasLines
+		if crateAnnounceFeed.Visible then
+			updateCrateAnnouncePosition()
+		end
+	end
+
+	local function pushSpawnLine(richText: string, holdSec: number)
+		while #activeLines >= 5 do
+			local oldest = table.remove(activeLines, 1)
+			if oldest and oldest.label.Parent then
+				oldest.label:Destroy()
+			end
+		end
+
+		nextOrder += 1
+		local lbl = Instance.new("TextLabel")
+		lbl.Name = "SpawnLine_" .. nextOrder
+		lbl.LayoutOrder = nextOrder
+		lbl.Size = UDim2.new(1, 0, 0, 25)
+		lbl.BackgroundTransparency = 1
+		lbl.RichText = true
+		lbl.Text = richText
+		lbl.TextColor3 = Color3.new(1, 1, 1)
+		lbl.Font = Enum.Font.FredokaOne
+		lbl.TextScaled = true
+		lbl.TextTransparency = 1
+		lbl.ZIndex = 19
+		lbl.Parent = linesHolder
+
+		local st = makeTextStroke(lbl, 2.6)
+		st.Transparency = 1
+		local tc = Instance.new("UITextSizeConstraint")
+		tc.MaxTextSize = 22
+		tc.MinTextSize = 12
+		tc.Parent = lbl
+
+		local entry = { label = lbl, stroke = st }
+		table.insert(activeLines, entry)
+		crateAnnounceFeed.Visible = true
+		updateCrateAnnouncePosition()
+
+		TweenService:Create(lbl, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			TextTransparency = 0,
+		}):Play()
+		TweenService:Create(st, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Transparency = 0,
+		}):Play()
+
+		task.delay(holdSec, function()
+			if not lbl.Parent then
+				syncFeedVisibility()
+				return
+			end
+			TweenService:Create(lbl, TweenInfo.new(0.32, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+				TextTransparency = 1,
+			}):Play()
+			TweenService:Create(st, TweenInfo.new(0.32, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+				Transparency = 1,
+			}):Play()
+			task.wait(0.34)
+			if lbl.Parent then
+				lbl:Destroy()
+			end
+			syncFeedVisibility()
+		end)
+	end
+
+	Remotes.Get("CrateSpawnAnnounce").OnClientEvent:Connect(function(payload)
+		if type(payload) == "table" and type(payload.items) == "table" and #payload.items > 0 then
+			local isReset = (payload.isWaveReset == true)
+			local holdSec = if isReset then 6.8 else 5.5
+
+			if isReset then
+				for _, entry in ipairs(activeLines) do
+					if entry.label.Parent then
+						entry.label:Destroy()
+					end
+				end
+				table.clear(activeLines)
+
+				headerSerial += 1
+				local mySerial = headerSerial
+				resetHeaderLbl.Text = tostring(payload.headerText or "ALL CRATES RESET!")
+				resetHeaderLbl.TextTransparency = 1
+				resetHeaderStroke.Transparency = 1
+				resetHeaderLbl.Visible = true
+				crateAnnounceFeed.Visible = true
+				updateCrateAnnouncePosition()
+
+				TweenService:Create(resetHeaderLbl, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					TextTransparency = 0,
+				}):Play()
+				TweenService:Create(resetHeaderStroke, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					Transparency = 0,
+				}):Play()
+
+				task.delay(holdSec, function()
+					if mySerial ~= headerSerial then return end
+					TweenService:Create(resetHeaderLbl, TweenInfo.new(0.32, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+						TextTransparency = 1,
+					}):Play()
+					TweenService:Create(resetHeaderStroke, TweenInfo.new(0.32, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+						Transparency = 1,
+					}):Play()
+					task.wait(0.34)
+					if mySerial == headerSerial then
+						resetHeaderLbl.Visible = false
+						syncFeedVisibility()
+					end
+				end)
+			end
+
+			for _, item in ipairs(payload.items) do
+				if type(item) == "table" then
+					pushSpawnLine(buildSpawnLineRichText(item), holdSec)
+				end
+			end
+		else
+			local rawMsg = if type(payload) == "table" then tostring(payload.message or "") else tostring(payload)
+			if rawMsg ~= "" then
+				pushSpawnLine(escapeXml(rawMsg), 5.5)
+			end
+		end
 	end)
 end
-
-Remotes.Get("CrateSpawnAnnounce").OnClientEvent:Connect(function(payload, fallbackColor)
-	local msg = ""
-	local col = Color3.fromRGB(255, 224, 92)
-	if type(payload) == "table" then
-		msg = tostring(payload.message or "")
-		if typeof(payload.color) == "Color3" then
-			col = payload.color
-		end
-	else
-		msg = tostring(payload)
-		if typeof(fallbackColor) == "Color3" then
-			col = fallbackColor
-		end
-	end
-	if msg == "" then return end
-	if #crateAnnounceQueue >= 6 then
-		table.remove(crateAnnounceQueue, 1)
-	end
-	table.insert(crateAnnounceQueue, { msg = msg, color = col })
-	processCrateAnnounceQueue()
-end)
 
 -- Biome Entry Detection + Shop Green-Zone Auto Open/Close + RUN! Danger Vignette Pulse
 local checkAccum = 0
@@ -4347,8 +5823,30 @@ RunService.Heartbeat:Connect(function(dt: number)
 
 	if secAccum >= 1.0 then
 		secAccum = 0
+		rewardsUI.updateAfkLiveUI()
 		if currentPenIncome > 0 then
 			spawnFloatingCashPop(currentPenIncome)
+		end
+
+		local luckyWidget = bottomCenterHud:FindFirstChild("LuckyCagesWidget")
+		if luckyWidget then
+			local opened = tonumber(localPlayer:GetAttribute("CratesOpened")) or 8
+			local lCount = (opened % 10)
+			local uCount = (opened % 25)
+			local lTrack = luckyWidget:FindFirstChild("LuckyBarTrack")
+			if lTrack then
+				local fill = lTrack:FindFirstChild("Fill") :: Frame?
+				local lbl = lTrack:FindFirstChild("Label") :: TextLabel?
+				if fill then fill.Size = UDim2.fromScale(math.clamp(lCount / 10, 0.05, 1), 1) end
+				if lbl then lbl.Text = string.format("LUCKY CAGE %d/10", lCount) end
+			end
+			local uTrack = luckyWidget:FindFirstChild("UltraBarTrack")
+			if uTrack then
+				local fill = uTrack:FindFirstChild("Fill") :: Frame?
+				local lbl = uTrack:FindFirstChild("Label") :: TextLabel?
+				if fill then fill.Size = UDim2.fromScale(math.clamp(uCount / 25, 0.05, 1), 1) end
+				if lbl then lbl.Text = string.format("ULTRA LUCKY CAGE %d/25", uCount) end
+			end
 		end
 		local gw = Workspace:FindFirstChild("GameWorld")
 		local hub = if gw then gw:FindFirstChild("SanctuaryHub") else nil
@@ -4410,86 +5908,95 @@ end)
 -- ============================================================================
 -- 10. RESPONSIVE UI SCALING (Prevents Overlap & Oversized HUD Across Screens)
 -- ============================================================================
-local hudScaleTargets: { GuiObject } = {
-	topLeftRow,
-	biomeBanner,
-	eventBanner,
-	crateAnnounceLbl,
-	runAlertBanner,
-	rescueSuccessLbl,
-	toastLbl,
-	leftStack,
-	statsCorner,
-	rightEdgeBtns,
-	rightDrawerWrap,
-	bottomCenterHud,
-	eventTimerBox,
-}
+do
+	local hudScaleTargets: { GuiObject } = {
+		topLeftRow,
+		biomeBanner,
+		eventBanner,
+		crateAnnounceFeed,
+		runAlertBanner,
+		rescueSuccessLbl,
+		toastLbl,
+		leftStack,
+		statsCorner,
+		rightEdgeBtns,
+		rightDrawerWrap,
+		bottomCenterHud,
+		eventTimerBox,
+	}
 
-local modalScaleTargets: { GuiObject } = {
-	shopWindow,
-	trailsWindow,
-	lassosWindow,
-	vehiclesWindow,
-	fuseWindow,
-	rebirthWindow,
-	indexWindow,
-	invWindow,
-	settingsWindow,
-}
+	local modalScaleTargets: { GuiObject } = {
+		shopWindow,
+		trailsWindow,
+		lassosWindow,
+		vehiclesWindow,
+		fuseWindow,
+		rewardsUI.rebirthWindow,
+		rewardsUI.dailyWindow,
+		rewardsUI.afkWindow,
+		indexWindow,
+		invWindow,
+		settingsWindow,
+	}
 
-local function ensureUiScale(target: GuiObject): UIScale
-	local existing = target:FindFirstChildOfClass("UIScale")
-	if existing then
-		return existing
+	local function ensureUiScale(target: GuiObject): UIScale
+		local existing = target:FindFirstChildOfClass("UIScale")
+		if existing then
+			return existing
+		end
+		local s = Instance.new("UIScale")
+		s.Name = "ResponsiveScale"
+		s.Parent = target
+		return s
 	end
-	local s = Instance.new("UIScale")
-	s.Name = "ResponsiveScale"
-	s.Parent = target
-	return s
+
+	local function updateResponsiveScales()
+		local cam = Workspace.CurrentCamera
+		local vp = gui.AbsoluteSize
+		if vp.X < 100 or vp.Y < 100 then
+			vp = if cam then cam.ViewportSize else Vector2.new(1280, 720)
+		end
+		if vp.X < 100 or vp.Y < 100 then
+			vp = Vector2.new(1280, 720)
+		end
+		local hudScale = math.clamp(math.min(vp.X / 1280, vp.Y / 720), 0.52, 1.15)
+		local modalScale = math.clamp(math.min((vp.X - 36) / 720, (vp.Y - 36) / 480), 0.44, 1.15)
+
+			for _, target in ipairs(hudScaleTargets) do
+				if target == leftStack then
+					-- Keep LeftActionStack large and crisp even on compact laptop/Studio viewports
+					ensureUiScale(target).Scale = math.clamp(hudScale * 1.18, 0.80, 1.18)
+				else
+					ensureUiScale(target).Scale = hudScale
+				end
+			end
+		for _, modal in ipairs(modalScaleTargets) do
+			ensureUiScale(modal).Scale = modalScale
+		end
+
+		-- Reposition stacked/sibling containers relative to the live HUD scale
+		eventBanner.Position = UDim2.new(0.5, 0, 0, math.round(8 + 62 * hudScale))
+		rescueSuccessLbl.Position = UDim2.new(0.5, 0, 0, math.round(8 + 88 * hudScale))
+		toastLbl.Position = UDim2.new(0.5, 0, 0, math.round(8 + 100 * hudScale))
+		rightDrawerWrap.Position = UDim2.new(1, -math.round(10 + 52 * hudScale), 0.45, 0)
+		invWindow.Position = UDim2.new(0.5, 0, 1, -math.round(22 + 70 * hudScale))
+	end
+
+	local activeViewportConn: RBXScriptConnection? = nil
+	local function bindCameraViewportSignal()
+		if activeViewportConn then
+			activeViewportConn:Disconnect()
+			activeViewportConn = nil
+		end
+		local cam = Workspace.CurrentCamera
+		if cam then
+			activeViewportConn = cam:GetPropertyChangedSignal("ViewportSize"):Connect(updateResponsiveScales)
+		end
+		updateResponsiveScales()
+	end
+
+	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateResponsiveScales)
+	Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCameraViewportSignal)
+	bindCameraViewportSignal()
+	task.defer(updateResponsiveScales)
 end
-
-local function updateResponsiveScales()
-	local cam = Workspace.CurrentCamera
-	local vp = gui.AbsoluteSize
-	if vp.X < 100 or vp.Y < 100 then
-		vp = if cam then cam.ViewportSize else Vector2.new(1280, 720)
-	end
-	if vp.X < 100 or vp.Y < 100 then
-		vp = Vector2.new(1280, 720)
-	end
-	local hudScale = math.clamp(math.min(vp.X / 1280, vp.Y / 720), 0.52, 1.15)
-	local modalScale = math.clamp(math.min((vp.X - 36) / 720, (vp.Y - 36) / 480), 0.44, 1.15)
-
-	for _, target in ipairs(hudScaleTargets) do
-		ensureUiScale(target).Scale = hudScale
-	end
-	for _, modal in ipairs(modalScaleTargets) do
-		ensureUiScale(modal).Scale = modalScale
-	end
-
-	-- Reposition stacked/sibling containers relative to the live HUD scale
-	eventBanner.Position = UDim2.new(0.5, 0, 0, math.round(8 + 62 * hudScale))
-	rescueSuccessLbl.Position = UDim2.new(0.5, 0, 0, math.round(8 + 88 * hudScale))
-	toastLbl.Position = UDim2.new(0.5, 0, 0, math.round(8 + 100 * hudScale))
-	rightDrawerWrap.Position = UDim2.new(1, -math.round(10 + 52 * hudScale), 0.45, 0)
-	invWindow.Position = UDim2.new(0.5, 0, 1, -math.round(22 + 70 * hudScale))
-end
-
-local activeViewportConn: RBXScriptConnection? = nil
-local function bindCameraViewportSignal()
-	if activeViewportConn then
-		activeViewportConn:Disconnect()
-		activeViewportConn = nil
-	end
-	local cam = Workspace.CurrentCamera
-	if cam then
-		activeViewportConn = cam:GetPropertyChangedSignal("ViewportSize"):Connect(updateResponsiveScales)
-	end
-	updateResponsiveScales()
-end
-
-gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateResponsiveScales)
-Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCameraViewportSignal)
-bindCameraViewportSignal()
-task.defer(updateResponsiveScales)
