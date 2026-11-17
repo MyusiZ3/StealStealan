@@ -1,20 +1,26 @@
 --!strict
 -- AnimalConfig.luau
--- Complete 63 Animal Index across 5 Zones (10, 12, 12, 14, 15) + Size Ratio & Mutation Rolls
+-- Complete 83 Exclusive Animal Index across 5 Zones with Tiered Max-Rarity Ceilings, Size Ratio & Mutation Rolls
 
 local Types = require(script.Parent.Parent.Shared.Types)
 local GameConfig = require(script.Parent.GameConfig)
+local BiomeConfig = require(script.Parent.BiomeConfig)
 
 local AnimalConfig = {}
 
-AnimalConfig.RARITY_WEIGHTS = {
-	{ rarity = "Common" :: Types.AnimalRarity, weight = 55 },
-	{ rarity = "Uncommon" :: Types.AnimalRarity, weight = 27 },
-	{ rarity = "Rare" :: Types.AnimalRarity, weight = 12 },
-	{ rarity = "Epic" :: Types.AnimalRarity, weight = 4.5 },
-	{ rarity = "Legendary" :: Types.AnimalRarity, weight = 1.3 },
-	{ rarity = "Mythic" :: Types.AnimalRarity, weight = 0.2 },
-}
+local BIOME_BY_ID: { [string]: Types.BiomeDefinition } = {}
+for _, b in ipairs(BiomeConfig) do
+	BIOME_BY_ID[b.id] = b
+end
+
+-- Canonical weights table ordered Common -> Primordial (also referenced cleanly by Admin tools)
+AnimalConfig.RARITY_WEIGHTS = {}
+for _, r in ipairs(GameConfig.RARITY_ORDER) do
+	table.insert(AnimalConfig.RARITY_WEIGHTS, {
+		rarity = r :: Types.AnimalRarity,
+		weight = (GameConfig.RARITY_WEIGHTS :: any)[r] or 1.0,
+	})
+end
 
 local function makeSpec(
 	indexNumber: number,
@@ -117,6 +123,37 @@ local LIST: { Types.AnimalSpeciesDefinition } = {
 	makeSpec(61, "MoltenCerberus", "Molten Cerberus", "VolcanicJungle", "Epic", 96000000000000, 190.0, Color3.fromRGB(142, 42, 44), Color3.fromRGB(255, 178, 48), Color3.fromRGB(255, 245, 110), "Canine"),
 	makeSpec(62, "InfernoPhoenix", "Inferno Phoenix", "VolcanicJungle", "Legendary", 480000000000000, 42.0, Color3.fromRGB(255, 112, 36), Color3.fromRGB(255, 232, 72), Color3.fromRGB(255, 255, 255), "Bird"),
 	makeSpec(63, "MythicWhiteTiger", "Mythic White Tiger", "VolcanicJungle", "Mythic", 3200000000000000, 260.0, Color3.fromRGB(248, 250, 255), Color3.fromRGB(42, 48, 68), Color3.fromRGB(0, 245, 255), "Feline"),
+
+	-- Exclusive Biome Ceiling & Cosmic+ Extensions (#64 - #83)
+	-- PineWoods (+1 Epic -> 11 total, Max: Legendary)
+	makeSpec(64, "MossbackGrizzly", "Mossback Grizzly", "PineWoods", "Epic", 1150, 310.0, Color3.fromRGB(102, 78, 56), Color3.fromRGB(84, 178, 72), Color3.fromRGB(255, 220, 74), "Bear"),
+
+	-- MangroveSwamp (+1 Mythic -> 13 total, Max: Mythic)
+	makeSpec(65, "SwampLeviathan", "Tidewater Leviathan", "MangroveSwamp", "Mythic", 2600000, 460.0, Color3.fromRGB(42, 178, 148), Color3.fromRGB(118, 255, 186), Color3.fromRGB(255, 244, 110), "Reptile"),
+
+	-- SavannaCamp (+1 Mythic, +1 Cosmic, +1 Secret -> 15 total, Max: Secret)
+	makeSpec(66, "SunfireRoc", "Sunfire Roc", "SavannaCamp", "Mythic", 780000000, 140.0, Color3.fromRGB(255, 142, 38), Color3.fromRGB(255, 242, 92), Color3.fromRGB(255, 68, 68), "Bird"),
+	makeSpec(67, "NebulaJackal", "Nebula Dune Jackal", "SavannaCamp", "Cosmic", 3400000000, 64.0, Color3.fromRGB(98, 62, 224), Color3.fromRGB(72, 224, 255), Color3.fromRGB(255, 224, 118), "Canine"),
+	makeSpec(68, "MirageSphinx", "Mirage Phantom Sphinx", "SavannaCamp", "Secret", 16000000000, 220.0, Color3.fromRGB(36, 178, 168), Color3.fromRGB(255, 212, 96), Color3.fromRGB(128, 255, 232), "Feline"),
+
+	-- AlpinePeaks (+1 Mythic..Infinity -> 20 total, Max: Infinity)
+	makeSpec(69, "BlizzardGriffin", "Blizzard Sky Griffin", "AlpinePeaks", "Mythic", 720000000000, 320.0, Color3.fromRGB(238, 248, 255), Color3.fromRGB(78, 174, 255), Color3.fromRGB(255, 236, 112), "Bird"),
+	makeSpec(70, "AuroraPegasus", "Aurora Star Pegasus", "AlpinePeaks", "Cosmic", 3600000000000, 280.0, Color3.fromRGB(128, 112, 255), Color3.fromRGB(92, 255, 222), Color3.fromRGB(255, 255, 255), "Hooved"),
+	makeSpec(71, "SubzeroKraken", "Subzero Cryptic Owl", "AlpinePeaks", "Secret", 18000000000000, 95.0, Color3.fromRGB(38, 112, 164), Color3.fromRGB(82, 248, 224), Color3.fromRGB(212, 255, 255), "Bird"),
+	makeSpec(72, "EternalFrostWyrm", "Eternal Frost Wyrm", "AlpinePeaks", "Eternal", 92000000000000, 680.0, Color3.fromRGB(218, 242, 255), Color3.fromRGB(255, 218, 108), Color3.fromRGB(255, 255, 200), "Reptile"),
+	makeSpec(73, "DivineSeraphOwl", "Divine Halo Stag", "AlpinePeaks", "Divine", 480000000000000, 340.0, Color3.fromRGB(255, 248, 222), Color3.fromRGB(255, 214, 78), Color3.fromRGB(255, 255, 255), "Hooved"),
+	makeSpec(74, "InfinityGlacierDragon", "Infinity Void Bear", "AlpinePeaks", "Infinity", 2600000000000000, 820.0, Color3.fromRGB(48, 168, 255), Color3.fromRGB(156, 86, 255), Color3.fromRGB(186, 248, 255), "Bear"),
+
+	-- VolcanicJungle (+9 Cosmic..Primordial -> 24 total, Max: Primordial)
+	makeSpec(75, "CosmicPyroRaptor", "Cosmic PyroDrake", "VolcanicJungle", "Cosmic", 18000000000000000, 180.0, Color3.fromRGB(108, 72, 255), Color3.fromRGB(255, 118, 56), Color3.fromRGB(112, 248, 255), "Reptile"),
+	makeSpec(76, "SecretShadowWyrm", "Secret Onyx Fox", "VolcanicJungle", "Secret", 95000000000000000, 76.0, Color3.fromRGB(28, 34, 48), Color3.fromRGB(36, 242, 198), Color3.fromRGB(82, 255, 224), "Canine"),
+	makeSpec(77, "EternalAshenKitsune", "Eternal Ember Wolf", "VolcanicJungle", "Eternal", 520000000000000000, 145.0, Color3.fromRGB(255, 212, 102), Color3.fromRGB(255, 88, 38), Color3.fromRGB(255, 252, 210), "Canine"),
+	makeSpec(78, "DivineSolarSeraph", "Divine Solar Griffin", "VolcanicJungle", "Divine", 2900000000000000000, 290.0, Color3.fromRGB(255, 246, 210), Color3.fromRGB(255, 196, 52), Color3.fromRGB(255, 255, 255), "Bird"),
+	makeSpec(79, "InfinityVoidHydra", "Infinity Abyss Panther", "VolcanicJungle", "Infinity", 16000000000000000000, 310.0, Color3.fromRGB(46, 174, 255), Color3.fromRGB(168, 72, 255), Color3.fromRGB(172, 248, 255), "Feline"),
+	makeSpec(80, "AstralStarDragon", "Astral Starry Lynx", "VolcanicJungle", "Astral", 92000000000000000000, 215.0, Color3.fromRGB(174, 102, 255), Color3.fromRGB(98, 206, 255), Color3.fromRGB(255, 224, 255), "Feline"),
+	makeSpec(81, "OmegaObsidianColossus", "Omega Basalt Titan", "VolcanicJungle", "Omega", 540000000000000000000, 950.0, Color3.fromRGB(224, 38, 76), Color3.fromRGB(255, 168, 44), Color3.fromRGB(255, 244, 140), "Bear"),
+	makeSpec(82, "SingularityAbyssCore", "Singularity Void Stag", "VolcanicJungle", "Singularity", 3200000000000000000000, 480.0, Color3.fromRGB(82, 28, 168), Color3.fromRGB(36, 224, 255), Color3.fromRGB(245, 192, 255), "Hooved"),
+	makeSpec(83, "PrimordialGenesisRex", "Primordial Genesis Rex", "VolcanicJungle", "Primordial", 20000000000000000000000, 1800.0, Color3.fromRGB(255, 152, 38), Color3.fromRGB(255, 62, 184), Color3.fromRGB(255, 255, 245), "Reptile"),
 }
 
 AnimalConfig.ALL = LIST
@@ -136,30 +173,78 @@ function AnimalConfig.GetByBiome(biomeId: string): { Types.AnimalSpeciesDefiniti
 			table.insert(out, spec)
 		end
 	end
+	table.sort(out, function(a, b)
+		local ta = GameConfig.GetRarityTier(a.rarity)
+		local tb = GameConfig.GetRarityTier(b.rarity)
+		if ta ~= tb then
+			return ta < tb
+		end
+		return a.indexNumber < b.indexNumber
+	end)
 	return out
 end
 
-function AnimalConfig.RollSpeciesForBiome(biomeId: string, luckMultiplier: number?): Types.AnimalSpeciesDefinition
+function AnimalConfig.ComputeIndexRewards(spec: Types.AnimalSpeciesDefinition): (number, number)
+	local cashReward = math.max(100, math.round(spec.baseIncomePerSec * 120))
+	local biome = BIOME_BY_ID[spec.biomeId]
+	local recSpd = if biome then biome.recommendedSpeed else 50
+	local tier = GameConfig.GetRarityTier(spec.rarity)
+	local speedReward = math.max(10, math.round(recSpd * 0.05 * math.pow(1.38, math.max(0, tier - 1))))
+	return cashReward, speedReward
+end
+
+function AnimalConfig.RollSpeciesForBiome(
+	biomeId: string,
+	luckMultiplier: number?,
+	rarityWeightOverrides: { [string]: number }?,
+	forcedMaxRarity: string?
+): Types.AnimalSpeciesDefinition
 	local pool = AnimalConfig.GetByBiome(biomeId)
 	if #pool == 0 then
 		return LIST[1]
 	end
-	local luck = luckMultiplier or 1.0
+	local biome = BIOME_BY_ID[biomeId]
+	local capRarity = forcedMaxRarity or (biome and biome.maxRarity) or "Legendary"
+	local maxTier = GameConfig.GetRarityTier(capRarity)
 
-	-- Roll rarity first
-	local weightedRarities: { { rarity: Types.AnimalRarity, w: number } } = {}
+	-- Strict isolation: ONLY include rarities that both exist in this biome AND do not exceed maxRarity
+	local allowedByRarity: { [string]: { Types.AnimalSpeciesDefinition } } = {}
+	for _, spec in ipairs(pool) do
+		local tier = GameConfig.GetRarityTier(spec.rarity)
+		if tier <= maxTier then
+			if not allowedByRarity[spec.rarity] then
+				allowedByRarity[spec.rarity] = {}
+			end
+			table.insert(allowedByRarity[spec.rarity], spec)
+		end
+	end
+
+	local luck = math.max(0.05, luckMultiplier or 1.0)
+	local weightedRarities: { { rarity: string, w: number } } = {}
 	local totalW = 0
 	for _, entry in ipairs(AnimalConfig.RARITY_WEIGHTS) do
-		local w = entry.weight
-		if entry.rarity ~= "Common" then
-			w = w * luck
+		local r = entry.rarity
+		if allowedByRarity[r] and #allowedByRarity[r] > 0 then
+			local baseW = if rarityWeightOverrides and rarityWeightOverrides[r] ~= nil
+				then math.max(0, rarityWeightOverrides[r])
+				else entry.weight
+			local w = baseW
+			if r ~= "Common" and baseW > 0 then
+				w = baseW * luck
+			end
+			if w > 0 then
+				totalW += w
+				table.insert(weightedRarities, { rarity = r, w = w })
+			end
 		end
-		totalW += w
-		table.insert(weightedRarities, { rarity = entry.rarity, w = w })
+	end
+
+	if totalW <= 0 or #weightedRarities == 0 then
+		return pool[math.random(1, #pool)]
 	end
 
 	local roll = math.random() * totalW
-	local chosenRarity: Types.AnimalRarity = "Common"
+	local chosenRarity = weightedRarities[1].rarity
 	local acc = 0
 	for _, entry in ipairs(weightedRarities) do
 		acc += entry.w
@@ -169,29 +254,7 @@ function AnimalConfig.RollSpeciesForBiome(biomeId: string, luckMultiplier: numbe
 		end
 	end
 
-	-- Filter pool by chosen rarity, fallback to closest lower rarity if biome doesn't have Mythic
-	local matching = {}
-	for _, spec in ipairs(pool) do
-		if spec.rarity == chosenRarity then
-			table.insert(matching, spec)
-		end
-	end
-	if #matching == 0 then
-		local fallbackOrder = { "Legendary", "Epic", "Rare", "Uncommon", "Common" }
-		for _, fb in ipairs(fallbackOrder) do
-			for _, spec in ipairs(pool) do
-				if spec.rarity == fb then
-					table.insert(matching, spec)
-				end
-			end
-			if #matching > 0 then
-				break
-			end
-		end
-	end
-	if #matching == 0 then
-		return pool[math.random(1, #pool)]
-	end
+	local matching = allowedByRarity[chosenRarity] or pool
 	return matching[math.random(1, #matching)]
 end
 
@@ -221,18 +284,33 @@ function AnimalConfig.RollSizeRatio(giantBonusMult: number?): number
 	return math.floor(ratio * 100 + 0.5) / 100
 end
 
-function AnimalConfig.RollMutation(mutationLuckMult: number?): Types.AnimalMutation
-	local luck = mutationLuckMult or 1.0
+function AnimalConfig.RollMutation(
+	mutationLuckMult: number?,
+	mutationWeightOverrides: { [string]: number }?,
+	forcedMutation: string?
+): Types.AnimalMutation
+	if forcedMutation and forcedMutation ~= "" and forcedMutation ~= "Random" and (GameConfig.MUTATIONS :: any)[forcedMutation] then
+		return forcedMutation :: Types.AnimalMutation
+	end
+	local luck = math.max(0.05, mutationLuckMult or 1.0)
 	local total = 0
 	local entries = {}
 	for _, key in ipairs(GameConfig.MUTATION_ORDER) do
 		local m = GameConfig.MUTATIONS[key]
-		local w = m.weight
-		if key ~= "None" then
-			w = w * luck
+		local baseW = if mutationWeightOverrides and mutationWeightOverrides[key] ~= nil
+			then math.max(0, mutationWeightOverrides[key])
+			else m.weight
+		local w = baseW
+		if key ~= "None" and baseW > 0 then
+			w = baseW * luck
 		end
-		total += w
-		table.insert(entries, { id = key :: Types.AnimalMutation, w = w })
+		if w > 0 then
+			total += w
+			table.insert(entries, { id = key :: Types.AnimalMutation, w = w })
+		end
+	end
+	if total <= 0 or #entries == 0 then
+		return "None"
 	end
 	local roll = math.random() * total
 	local acc = 0
@@ -242,7 +320,7 @@ function AnimalConfig.RollMutation(mutationLuckMult: number?): Types.AnimalMutat
 			return e.id
 		end
 	end
-	return "None"
+	return entries[1].id
 end
 
 function AnimalConfig.ComputeIncomePerSec(animal: Types.AnimalInstance): number

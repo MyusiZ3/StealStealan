@@ -2,8 +2,38 @@
 -- Types.luau
 -- Shared type definitions for Wild Rescue: Poacher Run (StealStealan)
 
-export type AnimalRarity = "Common" | "Uncommon" | "Rare" | "Epic" | "Legendary" | "Mythic"
-export type AnimalMutation = "None" | "Albino" | "Golden" | "Diamond" | "Neon" | "Rainbow" | "Celestial"
+export type AnimalRarity =
+	"Common"
+	| "Uncommon"
+	| "Rare"
+	| "Epic"
+	| "Legendary"
+	| "Mythic"
+	| "Cosmic"
+	| "Secret"
+	| "Eternal"
+	| "Divine"
+	| "Infinity"
+	| "Astral"
+	| "Omega"
+	| "Singularity"
+	| "Primordial"
+
+export type AnimalMutation =
+	"None"
+	| "Albino"
+	| "Silver"
+	| "Bloom"
+	| "Golden"
+	| "Fractured"
+	| "Diamond"
+	| "SpiritBloom"
+	| "Parasite"
+	| "Neon"
+	| "Scrambled"
+	| "Monstrous"
+	| "Rainbow"
+	| "Celestial"
 export type GraphicsQuality = "Low" | "Medium" | "High"
 
 export type ItemOriginSource = "Wild" | "Hatch" | "Merge" | "Admin"
@@ -105,6 +135,10 @@ export type PlayerProfileSchema = {
 		lastClaimTime: number,
 		streak: number,
 	},
+	afkRewards: {
+		elapsedSeconds: number,
+		claimedTiers: { [string]: boolean },
+	}?,
 	settings: PlayerSettings,
 	analyticsMeta: {
 		firstJoinTime: number,
@@ -139,6 +173,8 @@ export type BiomeDefinition = {
 	crateBaseResistance: number,
 	recommendedSpeed: number,
 	indexCount: number,
+	maxRarity: AnimalRarity,
+	bannerAssetId: string?,
 }
 
 export type LassoDefinition = {

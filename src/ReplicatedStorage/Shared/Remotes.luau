@@ -54,9 +54,12 @@ local EVENT_NAMES = {
 	"TrainingTapOrb",
 	"SetMovementState",
 	"TreadmillState",
-	-- Settings, Daily & Sync
+	-- Settings, Daily, AFK & Sync
 	"UpdateSettings",
 	"ClaimDailyReward",
+	"ClaimAfkGift",
+	"ClaimAllAfkGifts",
+	"ResetAfkCycle",
 	"ProfileSync",
 	"AllPlotsSync",
 	"LeaderboardSync",
