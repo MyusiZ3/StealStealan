@@ -11,6 +11,7 @@ local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local AnimalVisualBuilder = require(ReplicatedStorage.Modules.AnimalVisualBuilder)
+local VoxelPets = require(ReplicatedStorage.Modules.VoxelPets)
 local LassoConfig = require(ReplicatedStorage.Config.LassoConfig)
 local TrailConfig = require(ReplicatedStorage.Config.TrailConfig)
 local VehicleConfig = require(ReplicatedStorage.Config.VehicleConfig)
@@ -485,7 +486,8 @@ local function rebuildMountVisual()
 	local mutation = tostring(localPlayer:GetAttribute("MountedAnimalMutation") or "Normal")
 	local sizeRatio = tonumber(localPlayer:GetAttribute("MountedAnimalSize")) or 1.0
 	local mountScale = math.clamp(sizeRatio * 0.72, 0.8, 1.35)
-	local m = AnimalVisualBuilder.BuildAnimalModel(speciesId, mountScale, mutation :: any, true)
+	local keepRig = VoxelPets.IsVoxelRigSpecies(speciesId)
+	local m = AnimalVisualBuilder.BuildAnimalModel(speciesId, mountScale, mutation :: any, not keepRig)
 	m.Name = "MountedAnimal"
 	mountBotRel = AnimalVisualBuilder.GetModelVerticalBounds(m)
 	m.Parent = Workspace
@@ -719,8 +721,15 @@ RunService.RenderStepped:Connect(function(_dt: number)
 		local now = os.clock()
 		local vel = root.AssemblyLinearVelocity
 		local horizSpeed = Vector3.new(vel.X, 0, vel.Z).Magnitude
-		local hopY = if horizSpeed > 2 then math.abs(math.sin(now * 11)) * 0.55 else math.abs(math.sin(now * 3)) * 0.05
-		local pitch = if horizSpeed > 2 then math.sin(now * 11) * 0.1 else 0
+		local isVoxelRig = (activeMountModel:GetAttribute("VoxelRig") == true)
+		if isVoxelRig then
+			VoxelPets.StepRig(activeMountModel, if horizSpeed > 2 then "Ride" else "Idle", now, 0)
+		end
+		local hopY = if isVoxelRig
+			then (if horizSpeed > 2 then math.abs(math.sin(now * 11)) * 0.08 else 0)
+			elseif horizSpeed > 2 then math.abs(math.sin(now * 11)) * 0.55
+			else math.abs(math.sin(now * 3)) * 0.05
+		local pitch = if isVoxelRig then 0 elseif horizSpeed > 2 then math.sin(now * 11) * 0.1 else 0
 		local groundY, flatLook = resolveGroundAndLook()
 		local footGroundPos = Vector3.new(root.Position.X, groundY + hopY - mountBotRel, root.Position.Z)
 		activeMountModel:PivotTo(CFrame.lookAt(footGroundPos, footGroundPos + flatLook) * CFrame.Angles(pitch, 0, 0))

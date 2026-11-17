@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(script.Parent.Parent.Shared.Types)
 local GameConfig = require(script.Parent.Parent.Config.GameConfig)
 local AnimalConfig = require(script.Parent.Parent.Config.AnimalConfig)
+local VoxelPets = require(script.Parent.VoxelPets)
 
 local AnimalVisualBuilder = {}
 
@@ -342,6 +343,9 @@ end
 
 function AnimalVisualBuilder.BuildAnimalModel(speciesId: string, sizeRatio: number, mutation: Types.AnimalMutation, lowVFX: boolean?): Model
 	local spec = AnimalConfig.GetById(speciesId) or AnimalConfig.ALL[1]
+	if VoxelPets.IsVoxelRigSpecies(spec.id) then
+		return VoxelPets.Build(spec.id, sizeRatio, mutation, lowVFX)
+	end
 	local primaryCol, secondaryCol, mat, transparency, prof = resolveMutationStyle(spec, mutation)
 	local accentMat = if prof.accentNeon then Enum.Material.SmoothPlastic else mat
 	local s = math.clamp(sizeRatio, 0.42, 6.0)
