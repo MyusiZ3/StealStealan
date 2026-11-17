@@ -20,6 +20,7 @@ local TrainingSystem = {}
 
 local lastOrbTap: { [number]: number } = {}
 local treadmillCooldownUntil: { [number]: number } = {}
+local treadmillEnteredAt: { [number]: number } = {}
 
 local function getTrailSpeedMult(trailId: string): number
 	for _, t in ipairs(TrailConfig) do
@@ -146,8 +147,9 @@ function TrainingSystem.Init()
 	Remotes.Get("TreadmillState").OnServerEvent:Connect(function(player, wantsJoin)
 		if typeof(wantsJoin) ~= "boolean" then return end
 		if not wantsJoin then
+			treadmillEnteredAt[player.UserId] = nil
 			player:SetAttribute("OnTreadmill", false)
-			treadmillCooldownUntil[player.UserId] = os.clock() + 2.5
+			treadmillCooldownUntil[player.UserId] = os.clock() + 2.0
 			Remotes.Get("TreadmillState"):FireClient(player, false, nil)
 		end
 	end)
@@ -179,12 +181,17 @@ function TrainingSystem.Init()
 					local inZone = math.abs(localOffset.X) <= (treadPad.Size.X * 0.5 + 1.0)
 						and math.abs(localOffset.Z) <= (treadPad.Size.Z * 0.5 + 1.0)
 						and math.abs(localOffset.Y) <= 9
+					local inExitZone = math.abs(localOffset.X) <= (treadPad.Size.X * 0.5 + 3.0)
+						and math.abs(localOffset.Z) <= (treadPad.Size.Z * 0.5 + 3.0)
+						and math.abs(localOffset.Y) <= 12
 
 					local isOn = player:GetAttribute("OnTreadmill") == true
 					if not isOn and inZone and now >= (treadmillCooldownUntil[player.UserId] or 0) then
 						local stunnedUntil = tonumber(player:GetAttribute("StunnedUntil")) or 0
 						if now >= stunnedUntil then
-							-- Dismount active vehicle or animal mount cleanly before snapping onto treadmill belt
+							-- Set OnTreadmill BEFORE dismounting so client mount handler skips +0.8 hop-up!
+							treadmillEnteredAt[player.UserId] = now
+							player:SetAttribute("OnTreadmill", true)
 							if player:GetAttribute("IsRidingVehicle") == true then
 								player:SetAttribute("IsRidingVehicle", false)
 								Remotes.Get("SpawnVehicle"):FireClient(player, false)
@@ -196,7 +203,6 @@ function TrainingSystem.Init()
 								player:SetAttribute("MountedAnimalSize", 1)
 								player:SetAttribute("MountedAnimalSpeedBonus", 0)
 							end
-							player:SetAttribute("OnTreadmill", true)
 							local snapCF = if treadAnchor and treadAnchor:IsA("BasePart")
 								then treadAnchor.CFrame
 								else (treadPad.CFrame * CFrame.new(0, 3.0, 0))
@@ -204,7 +210,9 @@ function TrainingSystem.Init()
 							Remotes.Get("TreadmillState"):FireClient(player, true, snapCF, beltY)
 							isOn = true
 						end
-					elseif isOn and not inZone then
+					elseif isOn and not inExitZone and (now - (treadmillEnteredAt[player.UserId] or 0)) >= 0.85 then
+						treadmillEnteredAt[player.UserId] = nil
+						treadmillCooldownUntil[player.UserId] = now + 2.0
 						player:SetAttribute("OnTreadmill", false)
 						Remotes.Get("TreadmillState"):FireClient(player, false, nil)
 						isOn = false
@@ -228,6 +236,7 @@ function TrainingSystem.Init()
 	Players.PlayerRemoving:Connect(function(player)
 		lastOrbTap[player.UserId] = nil
 		treadmillCooldownUntil[player.UserId] = nil
+		treadmillEnteredAt[player.UserId] = nil
 	end)
 end
 

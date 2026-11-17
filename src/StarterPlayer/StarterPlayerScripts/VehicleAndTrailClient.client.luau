@@ -117,7 +117,7 @@ local function applyTrailToCharacter(char: Model)
 	trail.Attachment1 = a1
 	trail.Lifetime = 0.5 + math.min(0.65, def.tier * 0.06)
 	trail.MinLength = 0.08
-	trail.LightEmission = if def.tier >= 3 then 0.85 else 0.5
+	trail.LightEmission = 0.25
 	trail.Color = ColorSequence.new(def.colorPrimary, def.colorSecondary)
 	trail.Transparency = NumberSequence.new({
 		NumberSequenceKeypoint.new(0, 0.08),
@@ -134,7 +134,7 @@ local function applyTrailToCharacter(char: Model)
 		core.Attachment1 = ac1
 		core.Lifetime = trail.Lifetime * 0.72
 		core.MinLength = 0.08
-		core.LightEmission = 1
+		core.LightEmission = 0.25
 		core.Color = ColorSequence.new(Color3.new(1, 1, 1), def.colorPrimary)
 		core.WidthScale = NumberSequence.new(1, 0)
 		core.Parent = root
@@ -147,7 +147,7 @@ local function applyTrailToCharacter(char: Model)
 		local aura = Instance.new("ParticleEmitter")
 		aura.Name = "TrailAuraEmitter"
 		aura.Color = ColorSequence.new(def.colorPrimary, def.colorSecondary)
-		aura.LightEmission = if def.tier >= 3 then 0.9 else 0.35
+		aura.LightEmission = 0.22
 		aura.Lifetime = NumberRange.new(0.45, 0.85 + def.tier * 0.05)
 		aura.Rate = 6 + def.tier * 2.5
 		aura.Speed = NumberRange.new(1.5, 4.0 + def.tier * 0.4)
@@ -189,8 +189,8 @@ local function applyTrailToCharacter(char: Model)
 			local lt = Instance.new("PointLight")
 			lt.Name = "TrailBodyGlow"
 			lt.Color = def.colorPrimary
-			lt.Range = 9 + def.tier * 0.6
-			lt.Brightness = 0.85
+			lt.Range = 7
+			lt.Brightness = 0.28
 			lt.Shadows = false
 			lt.Parent = root
 			activeTrailLight = lt
@@ -206,6 +206,7 @@ local function captureDefaultHipHeight(char: Model)
 		else
 			defaultHipHeight = 0
 		end
+		localPlayer:SetAttribute("StandingHipHeight", defaultHipHeight)
 	end
 end
 
@@ -378,11 +379,40 @@ local function rebuildHeldVisual()
 		local biomeId = tostring(localPlayer:GetAttribute("HeldItemBiome") or "PineWoods")
 		local rarity = tostring(localPlayer:GetAttribute("HeldItemRarity") or "Common") :: any
 		local scale = tonumber(localPlayer:GetAttribute("HeldItemScale")) or 1.0
-		local m = AnimalVisualBuilder.BuildCrateModel(rarity, biomeId, math.clamp(scale * 0.34, 0.24, 0.50), {
+		local isMerged = localPlayer:GetAttribute("HeldItemMerged") == true
+		local m = AnimalVisualBuilder.BuildCrateModel(rarity, biomeId, math.clamp(scale * 0.34, 0.24, 0.62), {
 			isBuried = false,
 			canCollide = false,
 			showBeacon = false,
 		})
+		if isMerged and m.PrimaryPart then
+			local hl = Instance.new("Highlight")
+			hl.Name = "MergeHandHighlight"
+			hl.Adornee = m
+			hl.FillColor = Color3.fromRGB(92, 232, 255)
+			hl.FillTransparency = 0.78
+			hl.OutlineColor = Color3.fromRGB(255, 224, 92)
+			hl.OutlineTransparency = 0.1
+			hl.Parent = m
+
+			local bb = Instance.new("BillboardGui")
+			bb.Size = UDim2.fromOffset(148, 30)
+			bb.StudsOffset = Vector3.new(0, 1.9, 0)
+			bb.AlwaysOnTop = false
+			bb.Parent = m.PrimaryPart
+			local lbl = Instance.new("TextLabel")
+			lbl.Size = UDim2.fromScale(1, 1)
+			lbl.BackgroundTransparency = 1
+			lbl.Text = "⚡ MERGE CRATE"
+			lbl.TextColor3 = Color3.fromRGB(118, 240, 255)
+			lbl.Font = Enum.Font.FredokaOne
+			lbl.TextScaled = true
+			lbl.Parent = bb
+			local st = Instance.new("UIStroke")
+			st.Thickness = 2
+			st.Color = Color3.fromRGB(12, 16, 24)
+			st.Parent = lbl
+		end
 		attachModelToRightHand(m, CFrame.new(0, 0.42, -0.55))
 	elseif hType == "Vehicle" then
 		local vehId = tostring(localPlayer:GetAttribute("HeldItemId") or equippedVehicleId)
@@ -410,13 +440,14 @@ local function restoreStandingState()
 	local char = localPlayer.Character
 	local hum = if char then char:FindFirstChildOfClass("Humanoid") else nil
 	local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
+	local onTread = localPlayer:GetAttribute("OnTreadmill") == true
 	if hum then
 		hum.HipHeight = defaultHipHeight
 	end
-	if root and root:IsA("BasePart") then
+	if not onTread and root and root:IsA("BasePart") then
 		root.CFrame = root.CFrame + Vector3.new(0, 0.8, 0)
 	end
-	if hum then
+	if hum and not onTread then
 		pcall(function()
 			hum:ChangeState(Enum.HumanoidStateType.Running)
 		end)
@@ -596,7 +627,7 @@ localPlayer.AttributeChanged:Connect(function(attrName)
 		rebuildTowedCrateVisuals()
 	elseif attrName == "ToggleVehicleRequest" then
 		setRidingVehicle(not isRidingVehicle)
-	elseif attrName == "HeldItemType" or attrName == "HeldItemId" or attrName == "HeldItemSpecies" or attrName == "HeldItemMutation" or attrName == "HeldItemBiome" or attrName == "HeldItemRarity" or attrName == "HeldItemScale" or attrName == "OnTreadmill" then
+	elseif attrName == "HeldItemType" or attrName == "HeldItemId" or attrName == "HeldItemSpecies" or attrName == "HeldItemMutation" or attrName == "HeldItemBiome" or attrName == "HeldItemRarity" or attrName == "HeldItemScale" or attrName == "HeldItemMerged" or attrName == "OnTreadmill" then
 		scheduleHeldRebuild()
 		if attrName == "OnTreadmill" then
 			if localPlayer:GetAttribute("OnTreadmill") == true then
