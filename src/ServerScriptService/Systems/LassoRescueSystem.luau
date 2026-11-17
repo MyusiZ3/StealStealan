@@ -35,6 +35,8 @@ type WorldCrate = {
 	crateTitle: string,
 	variantIdx: number,
 	sizeScale: number,
+	customSizeRatio: number,
+	customMutation: Types.AnimalMutation?,
 	resistance: number,
 	progress: number,
 	spawnPos: Vector3,
@@ -57,6 +59,8 @@ type TowedCrateRecord = {
 	speciesId: string,
 	variantIdx: number,
 	sizeScale: number,
+	customSizeRatio: number,
+	customMutation: Types.AnimalMutation?,
 	hookedAt: number,
 	originPos: Vector3,
 	originSpawnPos: Vector3,
@@ -82,34 +86,115 @@ local waveEndsAt = os.time() + 300
 local waveTotalSec = 300
 
 local BIOME_ZONE_NAMES: { [string]: string } = {
-	PineWoods = "Pine Wood Zone",
-	MangroveSwamp = "Swamp Zone",
-	SavannaCamp = "Savanna Zone",
-	AlpinePeaks = "Alpine Zone",
-	VolcanicJungle = "Volcanic Zone",
+	PineWoods = "Pine Woods",
+	MangroveSwamp = "Mangrove Swamp",
+	SavannaCamp = "Savanna Camp",
+	AlpinePeaks = "Alpine Peaks",
+	VolcanicJungle = "Volcanic Jungle",
 }
 
-local RARITY_ANNOUNCE_ICON: { [Types.AnimalRarity]: string } = {
+local RARITY_ANNOUNCE_ICON: { [string]: string } = {
 	Common = "📦",
 	Uncommon = "📦",
 	Rare = "💠",
 	Epic = "💎",
 	Legendary = "🔥",
 	Mythic = "🌟",
+	Cosmic = "🌌",
+	Secret = "👁️",
+	Eternal = "⏳",
+	Divine = "😇",
+	Infinity = "♾️",
+	Astral = "🌠",
+	Omega = "Ω",
+	Singularity = "🕳️",
+	Primordial = "👑",
 }
 
-local function announceCrateSpawn(rarity: Types.AnimalRarity, crateTitle: string, biomeId: string)
+local function makeAnnounceItem(rarity: Types.AnimalRarity, biomeId: string, mutation: Types.AnimalMutation?)
+	return {
+		rarity = rarity,
+		biomeId = biomeId,
+		zoneName = BIOME_ZONE_NAMES[biomeId] or biomeId,
+		mutation = mutation or "None",
+	}
+end
+
+local function announceCrateSpawn(rarity: Types.AnimalRarity, crateTitle: string, biomeId: string, mutation: Types.AnimalMutation?)
 	local zoneName = BIOME_ZONE_NAMES[biomeId] or biomeId
 	local icon = RARITY_ANNOUNCE_ICON[rarity] or "📦"
 	local col = GameConfig.RARITY_COLORS[rarity] or Color3.fromRGB(255, 224, 92)
-	local msg = string.format("%s %s Crate (%s) spawned in %s!", icon, rarity, crateTitle, zoneName)
+	local mutStr = if mutation and mutation ~= "None" then string.format(" [%s]", string.upper(mutation)) else ""
+	local fallbackMsg = string.format("%s %s Crate%s Spawned In %s!", icon, rarity, mutStr, zoneName)
 	Remotes.Get("CrateSpawnAnnounce"):FireAllClients({
-		message = msg,
+		isWaveReset = false,
+		items = { makeAnnounceItem(rarity, biomeId, mutation) },
+		message = fallbackMsg,
 		rarity = rarity,
 		crateTitle = crateTitle,
 		biomeId = biomeId,
 		zoneName = zoneName,
+		mutation = mutation or "None",
 		color = col,
+	})
+end
+
+local function announceWaveResetBatch(headerText: string, crates: { WorldCrate })
+	if #crates == 0 then return end
+	local function scoreCrate(c: WorldCrate): number
+		local pts = (GameConfig.RARITY_WAVE_POINTS :: any)[c.rarity] or 1
+		local mutBonus = if c.customMutation and c.customMutation ~= "None" then 4.5 else 0
+		return pts + mutBonus
+	end
+
+	-- Pick the best crate from each biome first for zone variety (up to 5 lines), then fill remaining slots
+	local bestByBiome: { [string]: WorldCrate } = {}
+	local sortedAll = table.clone(crates)
+	table.sort(sortedAll, function(a, b)
+		return scoreCrate(a) > scoreCrate(b)
+	end)
+	for _, c in ipairs(sortedAll) do
+		if not bestByBiome[c.biomeId] then
+			bestByBiome[c.biomeId] = c
+		end
+	end
+
+	local chosen: { WorldCrate } = {}
+	local seen: { [string]: boolean } = {}
+	for _, biome in ipairs(BiomeConfig) do
+		local c = bestByBiome[biome.id]
+		if c and #chosen < 5 then
+			table.insert(chosen, c)
+			seen[c.id] = true
+		end
+	end
+	for _, c in ipairs(sortedAll) do
+		if #chosen >= 5 then break end
+		if not seen[c.id] then
+			table.insert(chosen, c)
+			seen[c.id] = true
+		end
+	end
+
+	table.sort(chosen, function(a, b)
+		local aMut = if a.customMutation and a.customMutation ~= "None" then 1 else 0
+		local bMut = if b.customMutation and b.customMutation ~= "None" then 1 else 0
+		if aMut ~= bMut then
+			return aMut < bMut
+		end
+		return scoreCrate(a) > scoreCrate(b)
+	end)
+
+	local items = {}
+	for _, c in ipairs(chosen) do
+		table.insert(items, makeAnnounceItem(c.rarity, c.biomeId, c.customMutation))
+	end
+	Remotes.Get("CrateSpawnAnnounce"):FireAllClients({
+		isWaveReset = true,
+		headerText = headerText,
+		items = items,
+		message = headerText,
+		color = Color3.new(1, 1, 1),
 	})
 end
 
@@ -181,29 +266,35 @@ local function computePlayerPullPower(player: Player): (number, number)
 	return power, lasso.maxRange
 end
 
-local RARITY_RESISTANCE_MULT: { [Types.AnimalRarity]: number } = {
-	Common = 1.0,
-	Uncommon = 2.2,
-	Rare = 5.5,
-	Epic = 14.0,
-	Legendary = 38.0,
-	Mythic = 95.0,
-}
-
-local function spawnCrateAt(biomeId: string, spawnPos: Vector3, isOnboarding: boolean, forcedRarity: Types.AnimalRarity?, announceSpawn: boolean?): WorldCrate?
+local function spawnCrateAt(
+	biomeId: string,
+	spawnPos: Vector3,
+	isOnboarding: boolean,
+	forcedRarity: Types.AnimalRarity?,
+	announceSpawn: boolean?,
+	forcedSpeciesId: string?,
+	forcedMutation: Types.AnimalMutation?
+): WorldCrate?
 	local cratesFolder = Workspace:FindFirstChild("GameWorld") and Workspace.GameWorld:FindFirstChild("ActiveCrates")
 	if not cratesFolder then return nil end
 
 	local biome = getBiomeDef(biomeId)
-	local luckMult = PassManager.GetServerLuckMultiplier() * AdminService.GetMutationLuckMultiplier()
-	local spec = if isOnboarding
-		then (AnimalConfig.GetById("RustyFox") or AnimalConfig.ALL[1])
-		else AnimalConfig.RollSpeciesForBiome(biomeId, luckMult)
+	local luckMult = PassManager.GetServerLuckMultiplier() * AdminService.GetRarityLuckMultiplier()
+	local customSpec = if forcedSpeciesId then AnimalConfig.GetById(forcedSpeciesId) else nil
+	local spec = if customSpec
+		then customSpec
+		elseif isOnboarding then (AnimalConfig.GetById("RustyFox") or AnimalConfig.ALL[1])
+		else AnimalConfig.RollSpeciesForBiome(biomeId, luckMult, AdminService.GetRarityWeightOverrides())
 	local rarity = forcedRarity or spec.rarity
-	local sizeScale = GameConfig.ComputeCrateScale(rarity)
-	local resistance = if isOnboarding
-		then 180
-		else biome.crateBaseResistance * (RARITY_RESISTANCE_MULT[rarity] or 1.0)
+	local preSizeRatio = if isOnboarding then 1.0 else AnimalConfig.RollSizeRatio(AdminService.GetGiantSizeMultiplier())
+	local sizeScale = GameConfig.ComputeCrateScale(rarity, preSizeRatio)
+	local mutLuck = PassManager.GetServerLuckMultiplier() * AdminService.GetMutationLuckMultiplier()
+	local preMutation: Types.AnimalMutation = if forcedMutation
+		then forcedMutation
+		elseif isOnboarding then "None"
+		else AnimalConfig.RollMutation(mutLuck, AdminService.GetMutationWeightOverrides(), AdminService.GetForcedWildMutation())
+	local resMult = (GameConfig.RARITY_RESISTANCE_MULT :: any)[rarity] or 1.0
+	local resistance = if isOnboarding then 180 else biome.crateBaseResistance * resMult
 
 	local id = HttpService:GenerateGUID(false)
 	local variantIdx = (spec.indexNumber % 3) + 1
@@ -217,21 +308,39 @@ local function spawnCrateAt(biomeId: string, spawnPos: Vector3, isOnboarding: bo
 	model:SetAttribute("CrateVariant", variantIdx)
 	model:SetAttribute("SizeScale", sizeScale)
 	model:SetAttribute("Resistance", resistance)
+	model:SetAttribute("Mutation", preMutation)
 	model:PivotTo(CFrame.new(spawnPos))
+
+	local mutMeta = if preMutation ~= "None" then (GameConfig.MUTATIONS :: any)[preMutation] else nil
+	if mutMeta then
+		local hl = Instance.new("Highlight")
+		hl.Name = "WildMutationHighlight"
+		hl.Adornee = model
+		hl.DepthMode = Enum.HighlightDepthMode.Occluded
+		hl.FillColor = mutMeta.color
+		hl.FillTransparency = 0.72
+		hl.OutlineColor = Color3.new(1, 1, 1)
+		hl.OutlineTransparency = 0.15
+		hl.Parent = model
+	end
 
 	-- Clean 2-Line Floating Crate Label (Image 11 style: Crate Name top + Rarity bottom, NO dark box!)
 	local root = model.PrimaryPart :: BasePart
 	local bb = Instance.new("BillboardGui")
-	bb.Size = UDim2.fromOffset(185, 52)
+	bb.Size = UDim2.fromOffset(195, 54)
 	bb.StudsOffset = Vector3.new(0, 4.4 * sizeScale + 1.1, 0)
-	bb.MaxDistance = 85
+	bb.MaxDistance = if GameConfig.IsCosmicOrAbove(rarity) or mutMeta then 135 else 85
+	if GameConfig.IsCosmicOrAbove(rarity) then
+		bb:SetAttribute("CosmicRarity", rarity)
+	end
 	bb.Parent = root
 
 	local lbl = Instance.new("TextLabel")
+	lbl.Name = "CrateTitleLabel"
 	lbl.Size = UDim2.fromScale(1, 0.52)
 	lbl.BackgroundTransparency = 1
-	lbl.Text = crateTitle
-	lbl.TextColor3 = Color3.new(1, 1, 1)
+	lbl.Text = if mutMeta then string.format("[%s] %s", string.upper(mutMeta.label), crateTitle) else crateTitle
+	lbl.TextColor3 = if mutMeta then mutMeta.color else Color3.new(1, 1, 1)
 	lbl.Font = Enum.Font.FredokaOne
 	lbl.TextScaled = true
 	lbl.Parent = bb
@@ -241,6 +350,7 @@ local function spawnCrateAt(biomeId: string, spawnPos: Vector3, isOnboarding: bo
 	lblStroke.Parent = lbl
 
 	local rarityLbl = Instance.new("TextLabel")
+	rarityLbl.Name = "RarityLabel"
 	rarityLbl.Size = UDim2.fromScale(1, 0.44)
 	rarityLbl.Position = UDim2.fromScale(0, 0.52)
 	rarityLbl.BackgroundTransparency = 1
@@ -284,6 +394,8 @@ local function spawnCrateAt(biomeId: string, spawnPos: Vector3, isOnboarding: bo
 		crateTitle = crateTitle,
 		variantIdx = variantIdx,
 		sizeScale = sizeScale,
+		customSizeRatio = preSizeRatio,
+		customMutation = preMutation,
 		resistance = resistance,
 		progress = 0,
 		spawnPos = spawnPos,
@@ -305,7 +417,7 @@ local function spawnCrateAt(biomeId: string, spawnPos: Vector3, isOnboarding: bo
 		LassoRescueSystem.GrabExtractedCrate(player, id)
 	end)
 	if announceSpawn then
-		announceCrateSpawn(rarity, crateTitle, biomeId)
+		announceCrateSpawn(rarity, crateTitle, biomeId, preMutation)
 	end
 	return rec
 end
@@ -420,6 +532,8 @@ function LassoRescueSystem.GrabExtractedCrate(player: Player, crateId: string)
 		speciesId = crate.speciesId,
 		variantIdx = crate.variantIdx,
 		sizeScale = crate.sizeScale,
+		customSizeRatio = crate.customSizeRatio or 1.0,
+		customMutation = crate.customMutation,
 		hookedAt = os.clock(),
 		originPos = cRoot.Position,
 		originSpawnPos = crate.spawnPos,
@@ -537,7 +651,7 @@ function LassoRescueSystem.DropPlayerCrates(player: Player, dropOrigin: Vector3)
 					end
 					-- Return crate to its original biome spawn position if current wave is still open
 					if wavePhase == "OPEN" then
-						spawnCrateAt(rec.biomeId, rec.originSpawnPos, rec.isOnboarding, rec.rarity, true)
+						spawnCrateAt(rec.biomeId, rec.originSpawnPos, rec.isOnboarding, rec.rarity, true, rec.speciesId, rec.customMutation)
 					end
 					break
 				end
@@ -590,6 +704,8 @@ function LassoRescueSystem.TryDeliverToPen(player: Player)
 		if not claimedWorldTokens[rec.worldToken] then
 			claimedWorldTokens[rec.worldToken] = true
 			local cUid = PlotService.AddCrateToInventory(player, rec.biomeId, rec.rarity, rec.speciesId, rec.sizeScale, {
+				customSizeRatio = rec.customSizeRatio,
+				customMutation = rec.customMutation,
 				originSource = "Wild",
 			})
 			if cUid then
@@ -615,14 +731,7 @@ function LassoRescueSystem.TryDeliverToPen(player: Player)
 	end
 end
 
-local RARITY_WAVE_POINTS: { [Types.AnimalRarity]: number } = {
-	Common = 1,
-	Uncommon = 2,
-	Rare = 4,
-	Epic = 7,
-	Legendary = 11,
-	Mythic = 16,
-}
+local RARITY_WAVE_POINTS = GameConfig.RARITY_WAVE_POINTS
 
 local CRATES_PER_BIOME_WAVE: { [string]: number } = {
 	PineWoods = 12,
@@ -635,49 +744,223 @@ local CRATES_PER_BIOME_WAVE: { [string]: number } = {
 local biomeGroundRayParams = RaycastParams.new()
 biomeGroundRayParams.FilterType = Enum.RaycastFilterType.Include
 
+local function buildSakuraBlossom(parent: Instance, name: string, pos: UDim2, sizePx: number, baseRot: number)
+	local wrap = Instance.new("Frame")
+	wrap.Name = name
+	wrap.AnchorPoint = Vector2.new(0.5, 0.5)
+	wrap.Position = pos
+	wrap.Size = UDim2.fromOffset(sizePx, sizePx)
+	wrap.BackgroundTransparency = 1
+	wrap.ZIndex = 2
+	wrap.Parent = parent
+
+	local outlineCol = Color3.fromRGB(198, 86, 138)
+	local petalFillCol = Color3.fromRGB(252, 204, 226)
+	for i = 1, 5 do
+		local spoke = Instance.new("Frame")
+		spoke.Name = "PetalSpoke_" .. i
+		spoke.AnchorPoint = Vector2.new(0.5, 0.5)
+		spoke.Position = UDim2.fromScale(0.5, 0.5)
+		spoke.Size = UDim2.fromScale(1, 1)
+		spoke.Rotation = baseRot + (i - 1) * 72
+		spoke.BackgroundTransparency = 1
+		spoke.ZIndex = 2
+		spoke.Parent = wrap
+
+		local petal = Instance.new("Frame")
+		petal.Name = "Petal"
+		petal.AnchorPoint = Vector2.new(0.5, 0.5)
+		petal.Position = UDim2.fromScale(0.5, 0.25)
+		petal.Size = UDim2.fromScale(0.36, 0.48)
+		petal.BackgroundColor3 = petalFillCol
+		petal.BorderSizePixel = 0
+		petal.ZIndex = 2
+		petal.Parent = spoke
+
+		local pc = Instance.new("UICorner")
+		pc.CornerRadius = UDim.new(0.5, 0)
+		pc.Parent = petal
+
+		local ps = Instance.new("UIStroke")
+		ps.Thickness = 4.2
+		ps.Color = outlineCol
+		ps.Parent = petal
+	end
+
+	local center = Instance.new("Frame")
+	center.Name = "CenterBud"
+	center.AnchorPoint = Vector2.new(0.5, 0.5)
+	center.Position = UDim2.fromScale(0.5, 0.5)
+	center.Size = UDim2.fromScale(0.24, 0.24)
+	center.BackgroundColor3 = Color3.fromRGB(246, 152, 194)
+	center.BorderSizePixel = 0
+	center.ZIndex = 3
+	center.Parent = wrap
+
+	local cc = Instance.new("UICorner")
+	cc.CornerRadius = UDim.new(0.5, 0)
+	cc.Parent = center
+
+	local cs = Instance.new("UIStroke")
+	cs.Thickness = 3.2
+	cs.Color = outlineCol
+	cs.Parent = center
+end
+
+local function ensureGateSurfaceText(barrier: Part, face: Enum.NormalId): (SurfaceGui, TextLabel, TextLabel)
+	local guiName = "GateClosedSign_" .. face.Name
+	local sg = barrier:FindFirstChild(guiName) :: SurfaceGui?
+	-- Rebuild legacy gate sign if it lacks the redesigned CenterPanel
+	if sg then
+		local existingHolder = sg:FindFirstChild("SignHolder")
+		if not existingHolder or not existingHolder:FindFirstChild("CenterPanel") then
+			sg:Destroy()
+			sg = nil
+		end
+	end
+	if not sg then
+		sg = Instance.new("SurfaceGui") :: SurfaceGui
+		sg.Name = guiName
+		sg.Face = face
+		sg.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
+		sg.CanvasSize = Vector2.new(2720, 280)
+		sg.LightInfluence = 0
+		sg.Brightness = 1.05
+		sg.Parent = barrier
+
+		local holder = Instance.new("Frame")
+		holder.Name = "SignHolder"
+		holder.Size = UDim2.fromScale(1, 1)
+		holder.BackgroundColor3 = Color3.new(1, 1, 1)
+		holder.BackgroundTransparency = 0.03
+		holder.BorderSizePixel = 0
+		holder.Parent = sg
+
+		local bgGrad = Instance.new("UIGradient")
+		bgGrad.Rotation = 90
+		bgGrad.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(252, 238, 248)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(240, 212, 234)),
+		})
+		bgGrad.Parent = holder
+
+		for _, bSpec in ipairs({
+			{ name = "TopTrim", pos = UDim2.fromOffset(0, 0) },
+			{ name = "BottomTrim", pos = UDim2.new(0, 0, 1, -5) },
+		}) do
+			local trim = Instance.new("Frame")
+			trim.Name = bSpec.name
+			trim.Size = UDim2.new(1, 0, 0, 5)
+			trim.Position = bSpec.pos
+			trim.BackgroundColor3 = Color3.fromRGB(224, 168, 206)
+			trim.BorderSizePixel = 0
+			trim.ZIndex = 2
+			trim.Parent = holder
+		end
+
+		buildSakuraBlossom(holder, "SakuraLeft", UDim2.new(0.5, -310, 0.52, 0), 158, -14)
+		buildSakuraBlossom(holder, "SakuraRight", UDim2.new(0.5, 310, 0.48, 0), 124, 18)
+
+		local centerPanel = Instance.new("Frame")
+		centerPanel.Name = "CenterPanel"
+		centerPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+		centerPanel.Position = UDim2.fromScale(0.5, 0.5)
+		centerPanel.Size = UDim2.fromOffset(500, 224)
+		centerPanel.BackgroundTransparency = 1
+		centerPanel.ZIndex = 4
+		centerPanel.Parent = holder
+
+		local topLbl = Instance.new("TextLabel")
+		topLbl.Name = "TitleLabel"
+		topLbl.Size = UDim2.fromScale(1, 0.30)
+		topLbl.Position = UDim2.fromScale(0, 0.10)
+		topLbl.BackgroundTransparency = 1
+		topLbl.Text = "CRATES RESET IN"
+		topLbl.TextColor3 = Color3.fromRGB(172, 74, 228)
+		topLbl.Font = Enum.Font.FredokaOne
+		topLbl.TextScaled = true
+		topLbl.ZIndex = 5
+		topLbl.Parent = centerPanel
+		local s1 = Instance.new("UIStroke")
+		s1.Thickness = 3.8
+		s1.Color = Color3.fromRGB(48, 20, 74)
+		s1.Parent = topLbl
+
+		local cdLbl = Instance.new("TextLabel")
+		cdLbl.Name = "CountdownLabel"
+		cdLbl.Size = UDim2.fromScale(1, 0.52)
+		cdLbl.Position = UDim2.fromScale(0, 0.40)
+		cdLbl.BackgroundTransparency = 1
+		cdLbl.Text = "30s"
+		cdLbl.TextColor3 = Color3.fromRGB(238, 228, 255)
+		cdLbl.Font = Enum.Font.FredokaOne
+		cdLbl.TextScaled = true
+		cdLbl.ZIndex = 5
+		cdLbl.Parent = centerPanel
+		local s2 = Instance.new("UIStroke")
+		s2.Thickness = 5.2
+		s2.Color = Color3.fromRGB(58, 34, 92)
+		s2.Parent = cdLbl
+	end
+	local h = (sg :: SurfaceGui):FindFirstChild("SignHolder") :: Frame
+	local cp = h:FindFirstChild("CenterPanel") :: Frame
+	return sg :: SurfaceGui, cp:FindFirstChild("TitleLabel") :: TextLabel, cp:FindFirstChild("CountdownLabel") :: TextLabel
+end
+
 local function updateStartGateVisuals(isClosed: boolean, remainingSec: number)
 	local gw = Workspace:FindFirstChild("GameWorld")
 	local hub = if gw then gw:FindFirstChild("SanctuaryHub") else nil
 	local gate = if hub then hub:FindFirstChild("SanctuaryExitGate") else nil
 	if not gate then return end
 
+	-- Clean up any legacy gapura archway instances if still present in saved workspace
+	for _, legacyName in ipairs({ "GatePillarLeft", "GatePillarRight", "GateBanner" }) do
+		local legacyObj = gate:FindFirstChild(legacyName)
+		if legacyObj then
+			legacyObj:Destroy()
+		end
+	end
+
 	local barrier = gate:FindFirstChild("BiomeResetBarrier") :: Part?
 	if not barrier then
 		local p = Instance.new("Part")
 		p.Name = "BiomeResetBarrier"
-		p.Size = Vector3.new(260, 28, 3)
-		p.CFrame = CFrame.new(0, 14, 148)
-		p.Color = Color3.fromRGB(255, 64, 64)
-		p.Material = Enum.Material.ForceField
+		p.Size = Vector3.new(272, 28, 3.2)
+		p.CFrame = CFrame.new(0, 14, 148.5)
+		p.Color = Color3.fromRGB(246, 224, 238)
+		p.Material = Enum.Material.SmoothPlastic
 		p.Anchored = true
 		p.CanQuery = false
 		p.CastShadow = false
 		p.Parent = gate
 		barrier = p
 	end
-	if barrier then
-		barrier.CanCollide = isClosed
-		barrier.Transparency = if isClosed then 0.42 else 1
-	end
 
-	local banner = gate:FindFirstChild("GateBanner")
-	if banner then
-		local timeStr = FormatUtil.Time(math.max(0, remainingSec))
-		for _, d in ipairs(banner:GetChildren()) do
-			if d:IsA("SurfaceGui") then
-				if d.Name == "Sign_Front" or (d.Face == Enum.NormalId.Front) then
-					d.Enabled = true
-					for _, child in ipairs(d:GetDescendants()) do
-						if child:IsA("TextLabel") then
-							if child.LayoutOrder == 1 or string.find(child.Text, "SAFE") or string.find(child.Text, "GATE") or string.find(child.Text, "LEAVING") then
-								child.Text = if isClosed then "🔒 GATE CLOSED" else "🟢 GATE OPEN ->"
-							else
-								child.Text = if isClosed then ("Spawning New Animals: " .. timeStr) else ("Biome Reset In: " .. timeStr)
-							end
-						end
-					end
-				end
+	local sec = math.max(0, math.floor(remainingSec + 0.5))
+	local cdText = if sec < 60
+		then string.format("%ds", sec)
+		else string.format("%dm %02ds", math.floor(sec / 60), sec % 60)
+
+	if barrier then
+		for _, legacyTrim in ipairs({ "GateTrimTop", "GateTrimBot" }) do
+			local oldTrim = barrier:FindFirstChild(legacyTrim)
+			if oldTrim then
+				oldTrim:Destroy()
 			end
+		end
+
+		barrier.Size = Vector3.new(272, 28, 3.2)
+		barrier.CFrame = CFrame.new(0, 14, 148.5)
+		barrier.Color = Color3.fromRGB(246, 224, 238)
+		barrier.Material = Enum.Material.SmoothPlastic
+		barrier.CanCollide = isClosed
+		barrier.Transparency = if isClosed then 0 else 1
+
+		for _, face in ipairs({ Enum.NormalId.Back, Enum.NormalId.Front }) do
+			local sg, titleL, cdL = ensureGateSurfaceText(barrier, face)
+			sg.Enabled = isClosed
+			titleL.Text = "CRATES RESET IN"
+			cdL.Text = cdText
 		end
 	end
 end
@@ -731,7 +1014,7 @@ local function clearFieldCratesForReset()
 	end
 end
 
-local function spawnSingleBiomeWaveBatch(biome: Types.BiomeDefinition, announceHighlights: boolean?): number
+local function spawnSingleBiomeWaveBatch(biome: Types.BiomeDefinition, announceHighlights: boolean?): (number, { WorldCrate })
 	local count = CRATES_PER_BIOME_WAVE[biome.id] or 10
 	local spawned: { WorldCrate } = {}
 	local totalRarityScore = 0
@@ -749,9 +1032,9 @@ local function spawnSingleBiomeWaveBatch(biome: Types.BiomeDefinition, announceH
 		table.sort(spawned, function(a, b)
 			return (RARITY_WAVE_POINTS[a.rarity] or 1) > (RARITY_WAVE_POINTS[b.rarity] or 1)
 		end)
-		announceCrateSpawn(spawned[1].rarity, spawned[1].crateTitle, biome.id)
+		announceCrateSpawn(spawned[1].rarity, spawned[1].crateTitle, biome.id, spawned[1].customMutation)
 		if spawned[2] and (RARITY_WAVE_POINTS[spawned[2].rarity] or 1) >= (RARITY_WAVE_POINTS.Epic or 7) then
-			announceCrateSpawn(spawned[2].rarity, spawned[2].crateTitle, biome.id)
+			announceCrateSpawn(spawned[2].rarity, spawned[2].crateTitle, biome.id, spawned[2].customMutation)
 		end
 	end
 	for _, crate in pairs(worldCrates) do
@@ -759,7 +1042,7 @@ local function spawnSingleBiomeWaveBatch(biome: Types.BiomeDefinition, announceH
 			totalRarityScore += RARITY_WAVE_POINTS[crate.rarity] or 1
 		end
 	end
-	return totalRarityScore
+	return totalRarityScore, spawned
 end
 
 local function computeWaveOpenSeconds(): number
@@ -786,21 +1069,48 @@ local function broadcastWaveState()
 end
 
 function LassoRescueSystem.SpawnCrateRain()
-	local rarities: { Types.AnimalRarity } = { "Epic", "Legendary", "Mythic" }
+	local rainBest: { WorldCrate } = {}
 	for _, biome in ipairs(BiomeConfig) do
 		local best: WorldCrate? = nil
-		for i = 1, 5 do
+		for _ = 1, 5 do
 			local pos = sampleBiomeCrateGroundPos(biome)
-			local rar = rarities[math.random(1, #rarities)]
-			local rec = spawnCrateAt(biome.id, pos, false, rar, false)
+			local rainSpec = AnimalConfig.RollSpeciesForBiome(biome.id, 16.0, AdminService.GetRarityWeightOverrides())
+			local rec = spawnCrateAt(biome.id, pos, false, rainSpec.rarity, false, rainSpec.id)
 			if rec and (not best or (RARITY_WAVE_POINTS[rec.rarity] or 1) > (RARITY_WAVE_POINTS[best.rarity] or 1)) then
 				best = rec
 			end
 		end
 		if best then
-			announceCrateSpawn(best.rarity, best.crateTitle, biome.id)
+			table.insert(rainBest, best)
 		end
 	end
+	announceWaveResetBatch("CRATE RAIN!", rainBest)
+end
+
+function LassoRescueSystem.SpawnCustomCrate(biomeId: string, rarity: Types.AnimalRarity?, speciesId: string?, nearPos: Vector3?, forcedMutation: Types.AnimalMutation?): boolean
+	local biome = getBiomeDef(biomeId)
+	local pos = if nearPos
+		then Vector3.new(math.clamp(nearPos.X, -82, 82), math.max(0.2, nearPos.Y - 2), math.clamp(nearPos.Z, biome.zStart + 10, biome.zEnd - 10))
+		else sampleBiomeCrateGroundPos(biome)
+	local rec = spawnCrateAt(biome.id, pos, false, rarity, true, speciesId, forcedMutation)
+	return rec ~= nil
+end
+
+function LassoRescueSystem.TriggerImmediateWaveReset()
+	clearFieldCratesForReset()
+	local allSpawned: { WorldCrate } = {}
+	for _, biome in ipairs(BiomeConfig) do
+		local _, spawned = spawnSingleBiomeWaveBatch(biome, false)
+		for _, c in ipairs(spawned) do
+			table.insert(allSpawned, c)
+		end
+	end
+	local openSec = computeWaveOpenSeconds()
+	wavePhase = "OPEN"
+	waveTotalSec = openSec
+	waveEndsAt = os.time() + openSec
+	broadcastWaveState()
+	announceWaveResetBatch("ALL CRATES RESET!", allSpawned)
 end
 
 function LassoRescueSystem.Init()
@@ -812,11 +1122,19 @@ function LassoRescueSystem.Init()
 	cratesFolder.Parent = gw
 
 	AdminService.RegisterCrateRainCallback(LassoRescueSystem.SpawnCrateRain)
+	AdminService.RegisterWorldSpawnerCallback(function(bId, rar, spId, nearP)
+		return LassoRescueSystem.SpawnCustomCrate(bId, rar, spId, nearP)
+	end)
+	AdminService.RegisterWaveResetCallback(LassoRescueSystem.TriggerImmediateWaveReset)
+	AdminService.RegisterKillCleanupCallback(function(p, pos)
+		LassoRescueSystem.CancelPull(p)
+		LassoRescueSystem.DropPlayerCrates(p, pos)
+	end)
 	PlotService.RegisterPenDropHandler(LassoRescueSystem.TryDeliverToPen)
 
 	-- Initial random biome-scoped crate wave
 	for _, biome in ipairs(BiomeConfig) do
-		spawnSingleBiomeWaveBatch(biome)
+		spawnSingleBiomeWaveBatch(biome, false)
 	end
 	wavePhase = "OPEN"
 	waveTotalSec = computeWaveOpenSeconds()
@@ -839,6 +1157,8 @@ function LassoRescueSystem.Init()
 	-- Autonomous 4-8m Open Window & 20-40s Gate-Closed Random Respawn Wave Loop + Live Random Crate Spawns
 	local nextLiveSpawnAt = os.clock() + 18
 	local firstJoinAnnounced = false
+	local pendingResetCrates: { WorldCrate } = {}
+	local resetSpawningDone = true
 	task.spawn(function()
 		while true do
 			task.wait(1)
@@ -886,13 +1206,9 @@ function LassoRescueSystem.Init()
 					wavePhase = "RESETTING"
 					waveTotalSec = resetDur
 					waveEndsAt = os.time() + resetDur
+					pendingResetCrates = {}
+					resetSpawningDone = false
 					broadcastWaveState()
-
-					Remotes.Get("GlobalEventBanner"):FireAllClients(
-						string.format("🔒 BIOME GATE CLOSED! Spawning new animals (%ds)...", resetDur),
-						Color3.fromRGB(255, 96, 84),
-						resetDur
-					)
 
 					-- Safely bring players back inside Safe Zone (banking carried crates!) & clear old field crates
 					for _, p in ipairs(Players:GetPlayers()) do
@@ -910,12 +1226,18 @@ function LassoRescueSystem.Init()
 					end
 
 					clearFieldCratesForReset()
-					-- Stagger random spawn smoothly across the 20-40s closure window before reopening gate
-					local stepWait = math.max(1.2, (resetDur - 6) / #BiomeConfig)
-					for _, biome in ipairs(BiomeConfig) do
-						task.wait(stepWait)
-						spawnSingleBiomeWaveBatch(biome, true)
-					end
+					-- Stagger random spawn in background so the gate's 1s countdown updates smoothly every second
+					task.spawn(function()
+						local stepWait = math.max(1.0, (resetDur - 6) / #BiomeConfig)
+						for _, biome in ipairs(BiomeConfig) do
+							task.wait(stepWait)
+							local _, spawned = spawnSingleBiomeWaveBatch(biome, false)
+							for _, c in ipairs(spawned) do
+								table.insert(pendingResetCrates, c)
+							end
+						end
+						resetSpawningDone = true
+					end)
 				else
 					broadcastWaveState()
 				end
@@ -929,18 +1251,15 @@ function LassoRescueSystem.Init()
 					end
 				end
 
-				if rem <= 0 then
+				if rem <= 0 and resetSpawningDone then
 					local openSec = computeWaveOpenSeconds()
 					wavePhase = "OPEN"
 					waveTotalSec = openSec
 					waveEndsAt = os.time() + openSec
 					nextLiveSpawnAt = os.clock() + math.random(22, 35)
 					broadcastWaveState()
-					Remotes.Get("GlobalEventBanner"):FireAllClients(
-						string.format("🟢 BIOME GATE OPEN! New animals spawned (Reset in %s)!", FormatUtil.Time(openSec)),
-						Color3.fromRGB(88, 255, 132),
-						8
-					)
+					announceWaveResetBatch("ALL CRATES RESET!", pendingResetCrates)
+					pendingResetCrates = {}
 				else
 					broadcastWaveState()
 				end

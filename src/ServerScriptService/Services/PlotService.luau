@@ -31,6 +31,8 @@ local liveGetters = {
 	getMutationLuckMultiplier = function(): number return 1.0 end,
 	getGiantSizeMultiplier = function(): number return 1.0 end,
 	isInstantUnbox = function(_player: Player): boolean return false end,
+	getMutationWeightOverrides = function(): { [string]: number }? return nil end,
+	getForcedWildMutation = function(): string? return nil end,
 }
 
 local penDropHandler: ((Player) -> ())? = nil
@@ -123,14 +125,7 @@ local function getIndexCashBonus(profile: Types.PlayerProfileSchema): number
 	return bonus
 end
 
-function PlotService.ComputePlayerIncomePerSec(player: Player, profile: Types.PlayerProfileSchema): number
-	local baseSum = 0
-	for _, uid in ipairs(profile.roamingAnimalUids) do
-		local animal = profile.inventoryAnimals[uid]
-		if animal then
-			baseSum += AnimalConfig.ComputeIncomePerSec(animal)
-		end
-	end
+function PlotService.ComputePlayerCashMultiplier(player: Player, profile: Types.PlayerProfileSchema): number
 	local penMult = 1 + (profile.penUpgradeLevel - 1) * GameConfig.PEN.INCOME_BONUS_PER_LEVEL
 	local rebirthMult = 1 + profile.rebirths * GameConfig.ECONOMY.REBIRTH_INCOME_BONUS
 	local vipMult = if PassManager.OwnsPass(player, "VIP") then 1.5 else 1.0
@@ -139,7 +134,18 @@ function PlotService.ComputePlayerIncomePerSec(player: Player, profile: Types.Pl
 	local friendMult = 1 + PassManager.GetFriendBoost(player)
 	local eventMult = liveGetters.getCashMultiplier()
 
-	return baseSum * penMult * rebirthMult * vipMult * trailMult * indexMult * friendMult * eventMult
+	return penMult * rebirthMult * vipMult * trailMult * indexMult * friendMult * eventMult
+end
+
+function PlotService.ComputePlayerIncomePerSec(player: Player, profile: Types.PlayerProfileSchema): number
+	local baseSum = 0
+	for _, uid in ipairs(profile.roamingAnimalUids) do
+		local animal = profile.inventoryAnimals[uid]
+		if animal then
+			baseSum += AnimalConfig.ComputeIncomePerSec(animal)
+		end
+	end
+	return baseSum * PlotService.ComputePlayerCashMultiplier(player, profile)
 end
 
 local function updateSignGui(part: Instance?, titleText: string, subText: string?)
@@ -174,7 +180,9 @@ function PlotService.RefreshPlotBoardVisuals(player: Player)
 	if not model then
 		return
 	end
+	local cashMult = PlotService.ComputePlayerCashMultiplier(player, profile)
 	local incomePerSec = PlotService.ComputePlayerIncomePerSec(player, profile)
+	player:SetAttribute("CashMult", cashMult)
 	player:SetAttribute("IncomePerSec", incomePerSec)
 	local maxCap = PlotService.GetMaxPenCapacity(player, profile)
 
@@ -327,8 +335,10 @@ function PlotService.GrantAnimalToPlayer(
 	end
 	local spec = AnimalConfig.GetById(speciesId) or AnimalConfig.ALL[1]
 	local luckMult = PassManager.GetServerLuckMultiplier() * liveGetters.getMutationLuckMultiplier()
+	local mutOverrides = if liveGetters.getMutationWeightOverrides then liveGetters.getMutationWeightOverrides() else nil
+	local forcedWild = if liveGetters.getForcedWildMutation then liveGetters.getForcedWildMutation() else nil
 	local sizeRatio = forcedSizeRatio or AnimalConfig.RollSizeRatio(liveGetters.getGiantSizeMultiplier())
-	local mutation = forcedMutation or AnimalConfig.RollMutation(luckMult)
+	local mutation = forcedMutation or AnimalConfig.RollMutation(luckMult, mutOverrides, forcedWild)
 	local weightKg = math.floor(spec.baseWeightKg * math.pow(sizeRatio, 2.2) * 10 + 0.5) / 10
 
 	local uid, serialNonce = DataService.MintUniqueId(profile)
@@ -339,7 +349,7 @@ function PlotService.GrantAnimalToPlayer(
 		sizeRatio = sizeRatio,
 		weightKg = weightKg,
 		mutation = mutation,
-		locked = (mutation ~= "None" or spec.rarity == "Legendary" or spec.rarity == "Mythic"),
+		locked = (mutation ~= "None" or GameConfig.GetRarityTier(spec.rarity) >= 5),
 		acquiredAt = os.time(),
 		serialNonce = serialNonce,
 		mintedByUserId = player.UserId,
@@ -613,6 +623,9 @@ function PlotService.OpenCrate(player: Player, crateUid: string)
 	profile.crateInventory[crateUid] = nil
 	DataService.MarkUidConsumed(profile, crateUid)
 	DataService.ReleaseTransactionLock(player.UserId, { crateUid })
+
+	local currentOpened = (player:GetAttribute("CratesOpened") or 0) + 1
+	player:SetAttribute("CratesOpened", currentOpened)
 
 	local animal = PlotService.GrantAnimalToPlayer(player, crate.speciesId, crate.customSizeRatio, crate.customMutation, {
 		originSource = "Hatch",

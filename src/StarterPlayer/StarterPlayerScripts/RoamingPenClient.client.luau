@@ -14,8 +14,11 @@ local Types = require(ReplicatedStorage.Shared.Types)
 local GameConfig = require(ReplicatedStorage.Config.GameConfig)
 local AnimalConfig = require(ReplicatedStorage.Config.AnimalConfig)
 local AnimalVisualBuilder = require(ReplicatedStorage.Modules.AnimalVisualBuilder)
+local RarityEffects = require(ReplicatedStorage.Modules.RarityEffects)
 local FormatUtil = require(ReplicatedStorage.Modules.FormatUtil)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
+
+RarityEffects.BindWorldCrateEffects()
 
 local localPlayer = Players.LocalPlayer
 
@@ -24,6 +27,8 @@ type RoamingEntity = {
 	plotIndex: number,
 	model: Model,
 	isRainbow: boolean,
+	isScrambled: boolean,
+	orbitParts: { { part: BasePart, radius: number, phase: number, y: number } },
 	pos: Vector3,
 	targetPos: Vector3,
 	yaw: number,
@@ -43,6 +48,9 @@ type PlacedCrateVisual = {
 	localX: number,
 	localZ: number,
 	sizeScale: number,
+	hatchDuration: number,
+	lastRelScale: number,
+	originSource: string?,
 	unlockAt: number,
 	rarity: Types.AnimalRarity,
 	statusLabel: TextLabel,
@@ -180,6 +188,9 @@ local function rebuildEntities(forceReset: boolean?)
 								lblSt.Thickness = 2.6
 								lblSt.Color = Color3.fromRGB(10, 12, 16)
 								lblSt.Parent = lbl
+								if spec and GameConfig.IsCosmicOrAbove(spec.rarity) then
+									RarityEffects.ApplyTextEffect(lbl, spec.rarity)
+								end
 
 								local footBotRel = AnimalVisualBuilder.GetModelVerticalBounds(model)
 								local startLocal = randomLocalPaddockPos(paddockTopY)
@@ -187,10 +198,19 @@ local function rebuildEntities(forceReset: boolean?)
 								model:PivotTo(computeEntityGroundCFrame(paddockCF, startLocal.X, paddockTopY, startLocal.Z, 0, initYaw, footBotRel))
 								model.Parent = entitiesRoot
 
-								if animal.mutation == "Rainbow" then
-									for _, d in ipairs(model:GetDescendants()) do
-										if d:IsA("BasePart") and d.Name ~= "Eye" then
+								local entOrbits: { { part: BasePart, radius: number, phase: number, y: number } } = {}
+								for _, d in ipairs(model:GetDescendants()) do
+									if d:IsA("BasePart") then
+										if animal.mutation == "Rainbow" and d.Name ~= "Eye" then
 											table.insert(rainbowParts, d)
+										end
+										if d:GetAttribute("OrbitRing") == true then
+											table.insert(entOrbits, {
+												part = d,
+												radius = tonumber(d:GetAttribute("OrbitRadius")) or 1.8,
+												phase = tonumber(d:GetAttribute("OrbitPhase")) or 0,
+												y = tonumber(d:GetAttribute("OrbitY")) or 2.2,
+											})
 										end
 									end
 								end
@@ -200,6 +220,8 @@ local function rebuildEntities(forceReset: boolean?)
 									plotIndex = plotData.plotIndex,
 									model = model,
 									isRainbow = (animal.mutation == "Rainbow"),
+									isScrambled = (animal.mutation == "Scrambled"),
+									orbitParts = entOrbits,
 									pos = startLocal,
 									targetPos = randomLocalPaddockPos(paddockTopY),
 									yaw = initYaw,
@@ -262,8 +284,9 @@ local function rebuildEntities(forceReset: boolean?)
 							topLbl.Size = UDim2.new(1, -4, 0.48, 0)
 							topLbl.Position = UDim2.fromOffset(2, 2)
 							topLbl.BackgroundTransparency = 1
-							topLbl.Text = string.format("%s (%s)", crateTitle, crate.rarity)
-							topLbl.TextColor3 = rarityCol
+							local mergePrefix = if crate.originSource == "Merge" then "⚡ MERGED " else ""
+							topLbl.Text = string.format("%s%s (%s)", mergePrefix, crateTitle, crate.rarity)
+							topLbl.TextColor3 = if crate.originSource == "Merge" then Color3.fromRGB(118, 240, 255) else rarityCol
 							topLbl.Font = Enum.Font.FredokaOne
 							topLbl.TextScaled = true
 							topLbl.Parent = bb
@@ -271,8 +294,16 @@ local function rebuildEntities(forceReset: boolean?)
 							topSt.Thickness = 2.5
 							topSt.Color = Color3.fromRGB(10, 12, 16)
 							topSt.Parent = topLbl
+							RarityEffects.ApplyTextEffect(topLbl, crate.rarity)
 
-							local rem = math.max(0, (crate.unlockAt or 0) - nowUnix)
+							local srvNow = math.floor(Workspace:GetServerTimeNow())
+							local rem = math.max(0, (crate.unlockAt or 0) - srvNow)
+							local hDur = math.max(1, tonumber(crate.hatchDuration) or GameConfig.ComputeHatchSeconds(crate.rarity, crate.biomeId))
+							local initProg = math.clamp(1 - (rem / hDur), 0, 1)
+							local initRelScale = 0.72 + initProg * 0.34
+							pcall(function()
+								crateModel:ScaleTo(initRelScale)
+							end)
 							local statLbl = Instance.new("TextLabel")
 							statLbl.Size = UDim2.new(1, -4, 0.48, 0)
 							statLbl.Position = UDim2.new(0, 2, 0.50, 0)
@@ -319,7 +350,10 @@ local function rebuildEntities(forceReset: boolean?)
 								localX = localPos.X,
 								localZ = localPos.Z,
 								sizeScale = sc,
-								unlockAt = crate.unlockAt or nowUnix,
+								hatchDuration = hDur,
+								lastRelScale = initRelScale,
+								originSource = crate.originSource,
+								unlockAt = crate.unlockAt or srvNow,
 								rarity = crate.rarity,
 								statusLabel = statLbl,
 								prompt = hatchPrompt,
@@ -1014,12 +1048,20 @@ RunService.RenderStepped:Connect(function(dt: number)
 		destroyPlacementGhost()
 	end
 
-	-- Update Placed Crates inside Pens (hatch countdown + egg-like wiggle animation)
+	-- Update Placed Crates inside Pens (hatch countdown + gradual Steal-an-Egg growth + egg wiggle)
 	if #activePlacedCrates > 0 then
-		local nowUnix = os.time()
+		local nowUnix = math.floor(Workspace:GetServerTimeNow())
 		for _, cr in ipairs(activePlacedCrates) do
 			if cr.model and cr.model.Parent then
 				local rem = math.max(0, cr.unlockAt - nowUnix)
+				local prog = if cr.hatchDuration > 0 then math.clamp(1 - (rem / cr.hatchDuration), 0, 1) else 1
+				local targetRelScale = 0.72 + prog * 0.34
+				if math.abs(targetRelScale - cr.lastRelScale) >= 0.015 then
+					cr.lastRelScale = targetRelScale
+					pcall(function()
+						cr.model:ScaleTo(targetRelScale)
+					end)
+				end
 				if refreshTimers then
 					if rem > 0 then
 						cr.statusLabel.Text = "⏳ Hatch: " .. FormatUtil.Time(rem)
@@ -1119,7 +1161,20 @@ RunService.RenderStepped:Connect(function(dt: number)
 			end
 
 			local worldCF = computeEntityGroundCFrame(ent.paddockCF, ent.pos.X, ent.topY, ent.pos.Z, hopY, ent.yaw, ent.footBotRel)
+			if ent.isScrambled and not currentSettings.lowVFX then
+				worldCF = worldCF * CFrame.new(math.sin(now * 38 + ent.phase) * 0.08, 0, math.cos(now * 43) * 0.08)
+			end
 			ent.model:PivotTo(worldCF)
+			if #ent.orbitParts > 0 and not currentSettings.lowVFX then
+				local basePiv = worldCF
+				for _, orb in ipairs(ent.orbitParts) do
+					if orb.part.Parent then
+						local a = orb.phase + now * 2.2
+						local bob = math.sin(now * 3.4 + orb.phase) * 0.22
+						orb.part.CFrame = basePiv * CFrame.new(math.cos(a) * orb.radius, orb.y + bob, math.sin(a) * orb.radius) * CFrame.Angles(now * 1.4, a, 0)
+					end
+				end
+			end
 		end
 	end
 end)

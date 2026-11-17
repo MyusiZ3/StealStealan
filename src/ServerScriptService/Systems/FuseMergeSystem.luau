@@ -13,15 +13,6 @@ local PlotService = require(script.Parent.Parent.Services.PlotService)
 
 local FuseMergeSystem = {}
 
-local RARITY_RANK: { [string]: number } = {
-	Common = 1,
-	Uncommon = 2,
-	Rare = 3,
-	Epic = 4,
-	Legendary = 5,
-	Mythic = 6,
-}
-
 local function removeAnimalFromPenAndInventory(profile: Types.PlayerProfileSchema, uid: string)
 	profile.inventoryAnimals[uid] = nil
 	for i, rUid in ipairs(profile.roamingAnimalUids) do
@@ -67,13 +58,25 @@ local function handleUnifiedMerge(player: Player, uidList: any)
 		table.insert(cleanUids, uid)
 	end
 
+	-- Reject any pet currently roaming inside the Open Pen (must be unequipped in Backpack first)
+	local roamingSet: { [string]: boolean } = {}
+	for _, rUid in ipairs(profile.roamingAnimalUids) do
+		roamingSet[rUid] = true
+	end
+	for _, uid in ipairs(cleanUids) do
+		if roamingSet[uid] then
+			Remotes.Get("NotifyClient"):FireClient(player, "Cannot merge pets inside your Pen! Unequip them first.", Color3.fromRGB(255, 96, 96))
+			return
+		end
+	end
+
 	-- Acquire per-player + per-UID transaction lock (blocks race-condition / duplicate UID spam)
 	if not DataService.AcquireTransactionLock(player.UserId, cleanUids) then
 		return
 	end
 
 	local animals: { Types.AnimalInstance } = {}
-	local forecastInputs: { { sizeRatio: number, mutation: string } } = {}
+	local forecastInputs: { { sizeRatio: number, mutation: string, weightKg: number? } } = {}
 	local candidateSpecs: { Types.AnimalSpeciesDefinition } = {}
 
 	for _, uid in ipairs(cleanUids) do
@@ -83,7 +86,7 @@ local function handleUnifiedMerge(player: Player, uidList: any)
 			return
 		end
 		table.insert(animals, a)
-		table.insert(forecastInputs, { sizeRatio = a.sizeRatio, mutation = a.mutation })
+		table.insert(forecastInputs, { sizeRatio = a.sizeRatio, mutation = a.mutation, weightKg = a.weightKg })
 		local spec = AnimalConfig.GetById(a.speciesId) or AnimalConfig.ALL[1]
 		table.insert(candidateSpecs, spec)
 	end
@@ -97,24 +100,24 @@ local function handleUnifiedMerge(player: Player, uidList: any)
 		end
 	end
 
-	local boostedSize, crateScale, chances = GameConfig.ComputeMergeForecast(forecastInputs)
-	local rolledMut = rollForecastMutation(chances)
-
 	-- Pick species weighted slightly toward higher rarity inputs (or identical if all match)
 	local totalRank = 0
 	for _, sp in ipairs(candidateSpecs) do
-		totalRank += (RARITY_RANK[sp.rarity] or 1)
+		totalRank += GameConfig.GetRarityTier(sp.rarity)
 	end
 	local spRoll = math.random() * math.max(1, totalRank)
 	local spAcc = 0
 	local chosenSpec = candidateSpecs[1]
 	for _, sp in ipairs(candidateSpecs) do
-		spAcc += (RARITY_RANK[sp.rarity] or 1)
+		spAcc += GameConfig.GetRarityTier(sp.rarity)
 		if spRoll <= spAcc then
 			chosenSpec = sp
 			break
 		end
 	end
+
+	local boostedSize, crateScale, chances, fMeta = GameConfig.ComputeMergeForecast(forecastInputs, chosenSpec.baseWeightKg, chosenSpec.rarity)
+	local rolledMut = rollForecastMutation(chances)
 
 	-- Consume all input pets & record their UIDs in consumedUids tombstone list FIRST!
 	for _, uid in ipairs(cleanUids) do
@@ -123,7 +126,7 @@ local function handleUnifiedMerge(player: Player, uidList: any)
 	end
 	DataService.ReleaseTransactionLock(player.UserId, cleanUids)
 
-	-- Merged result is delivered inside an oversized Crate in player's Backpack/Hotbar to hatch!
+	-- Merged result is delivered inside an oversized Merge Crate AND automatically held in player's hand!
 	local crateUid = PlotService.AddCrateToInventory(player, chosenSpec.biomeId, chosenSpec.rarity, chosenSpec.id, crateScale, {
 		customSizeRatio = boostedSize,
 		customMutation = rolledMut,
@@ -133,12 +136,23 @@ local function handleUnifiedMerge(player: Player, uidList: any)
 	PlotService.RefreshPlotBoardVisuals(player)
 	PlotService.BroadcastAllPlotsSync()
 	DataService.SyncProfile(player)
+	task.spawn(DataService.SaveProfile, player)
 
 	if crateUid then
+		player:SetAttribute("HeldItemType", "Crate")
+		player:SetAttribute("HeldItemId", crateUid)
+		player:SetAttribute("HeldItemSpecies", chosenSpec.id)
+		player:SetAttribute("HeldItemMutation", rolledMut)
+		player:SetAttribute("HeldItemBiome", chosenSpec.biomeId)
+		player:SetAttribute("HeldItemRarity", chosenSpec.rarity)
+		player:SetAttribute("HeldItemScale", crateScale)
+		player:SetAttribute("HeldItemMerged", true)
+		Remotes.Get("CrateDelivered"):FireClient(player, 1, crateUid, true)
+
 		local mutText = if rolledMut ~= "None" then ("[" .. rolledMut .. "] ") else ""
 		Remotes.Get("NotifyClient"):FireClient(
 			player,
-			string.format("MERGED! %s%s Crate (%.2fx Size) added to your Backpack — place in Pen to hatch!", mutText, chosenSpec.name, boostedSize),
+			string.format("⚡ MERGE CRATE IN HAND! %s%s (+%d%% Size / %.1fkg) — place in Pen to hatch!", mutText, chosenSpec.name, fMeta.sizeGainPct, fMeta.expectedKg),
 			GameConfig.MUTATIONS[rolledMut].color
 		)
 	end

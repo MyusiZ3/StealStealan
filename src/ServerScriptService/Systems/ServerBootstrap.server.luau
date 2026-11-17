@@ -29,6 +29,13 @@ local sessionStartTimes: { [number]: number } = {}
 -- Initialize Services & Systems
 PassManager.Init()
 PlotService.Init()
+PassManager.RegisterRewardCallbacks({
+	addCrateToInventory = function(p, biomeId, rarity, speciesId, sizeScale, customStats)
+		return PlotService.AddCrateToInventory(p, biomeId, rarity, speciesId, sizeScale, customStats)
+	end,
+	refreshPlotVisuals = PlotService.RefreshPlotBoardVisuals,
+	refreshLeaderboards = LeaderboardService.RefreshGlobalLeaderboards,
+})
 EconomyService.Init()
 AdminService.Init()
 LeaderboardService.Init()
@@ -50,6 +57,7 @@ Players.PlayerAdded:Connect(function(player)
 	sessionStartTimes[player.UserId] = os.time()
 	AnalyticsTracker.LogOnboardingStep(player, 1, "JoinedExperience")
 	PlotService.AssignPlot(player)
+	AdminService.OnPlayerJoined(player)
 	LeaderboardService.OnPlayerReady(player)
 	PoacherAISystem.ResetShieldsForPlayer(player)
 
@@ -61,6 +69,16 @@ Players.PlayerAdded:Connect(function(player)
 
 	player.CharacterAdded:Connect(function(character)
 		PoacherAISystem.ResetShieldsForPlayer(player)
+		AdminService.ApplyCharacterTag(player, character)
+		local hum = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 5)
+		if hum and hum:IsA("Humanoid") then
+			hum.Died:Connect(function()
+				LassoRescueSystem.CancelPull(player)
+				local hrp = character:FindFirstChild("HumanoidRootPart")
+				local dropPos = if hrp and hrp:IsA("BasePart") then hrp.Position else Vector3.new(0, 2, 160)
+				LassoRescueSystem.DropPlayerCrates(player, dropPos)
+			end)
+		end
 		local prof = DataService.GetProfile(player)
 		if prof then
 			player:SetAttribute("EquippedTrail", prof.equippedTrail)
@@ -121,6 +139,7 @@ Remotes.Get("SetHeldItem").OnServerEvent:Connect(function(player, itemType, item
 			player:SetAttribute("HeldItemBiome", "")
 			player:SetAttribute("HeldItemRarity", "")
 			player:SetAttribute("HeldItemScale", 1)
+			player:SetAttribute("HeldItemMerged", false)
 			return
 		end
 	elseif itemType == "Crate" and typeof(itemId) == "string" then
@@ -128,11 +147,12 @@ Remotes.Get("SetHeldItem").OnServerEvent:Connect(function(player, itemType, item
 		if crate then
 			player:SetAttribute("HeldItemType", "Crate")
 			player:SetAttribute("HeldItemId", itemId)
-			player:SetAttribute("HeldItemSpecies", "")
-			player:SetAttribute("HeldItemMutation", "")
+			player:SetAttribute("HeldItemSpecies", crate.speciesId or "")
+			player:SetAttribute("HeldItemMutation", crate.customMutation or "")
 			player:SetAttribute("HeldItemBiome", crate.biomeId)
 			player:SetAttribute("HeldItemRarity", crate.rarity)
 			player:SetAttribute("HeldItemScale", crate.sizeScale or 1)
+			player:SetAttribute("HeldItemMerged", crate.originSource == "Merge")
 			return
 		end
 	elseif itemType == "Vehicle" then
@@ -143,6 +163,7 @@ Remotes.Get("SetHeldItem").OnServerEvent:Connect(function(player, itemType, item
 		player:SetAttribute("HeldItemBiome", "")
 		player:SetAttribute("HeldItemRarity", "")
 		player:SetAttribute("HeldItemScale", 1)
+		player:SetAttribute("HeldItemMerged", false)
 		return
 	elseif itemType == "Lasso" then
 		player:SetAttribute("HeldItemType", "Lasso")
@@ -152,6 +173,7 @@ Remotes.Get("SetHeldItem").OnServerEvent:Connect(function(player, itemType, item
 		player:SetAttribute("HeldItemBiome", "")
 		player:SetAttribute("HeldItemRarity", "")
 		player:SetAttribute("HeldItemScale", 1)
+		player:SetAttribute("HeldItemMerged", false)
 		return
 	end
 
@@ -162,6 +184,7 @@ Remotes.Get("SetHeldItem").OnServerEvent:Connect(function(player, itemType, item
 	player:SetAttribute("HeldItemBiome", "")
 	player:SetAttribute("HeldItemRarity", "")
 	player:SetAttribute("HeldItemScale", 1)
+	player:SetAttribute("HeldItemMerged", false)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
