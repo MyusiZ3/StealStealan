@@ -51,7 +51,7 @@ local function addBiomeDividerLine(zPos: number, biome: any, parent: Instance)
 		size = Vector3.new(188, 0.25, 2.2),
 		cframe = CFrame.new(0, 0.22, zPos),
 		color = biome.accentColor,
-		material = Enum.Material.Neon,
+		material = Enum.Material.SmoothPlastic,
 		studded = false,
 		canCollide = false,
 		canQuery = false,
@@ -267,8 +267,8 @@ local function buildSwampMushroom(pos: Vector3, scale: number, parent: Instance)
 		name = "Cap",
 		size = Vector3.new(8.2 * scale, 3.2 * scale, 8.2 * scale),
 		cframe = CFrame.new(pos + Vector3.new(0, 8.2 * scale, 0)),
-		color = Color3.fromRGB(112, 232, 148),
-		material = Enum.Material.Neon,
+		color = Color3.fromRGB(96, 214, 134),
+		material = Enum.Material.SmoothPlastic,
 		studded = false,
 		canQuery = false,
 		parent = m,
@@ -317,8 +317,8 @@ local function buildVolcanoSpire(pos: Vector3, scale: number, parent: Instance)
 		name = "LavaCore",
 		size = Vector3.new(7 * scale, 2.2 * scale, 7 * scale),
 		cframe = CFrame.new(pos + Vector3.new(0, 19.2 * scale, 0)),
-		color = Color3.fromRGB(255, 96, 28),
-		material = Enum.Material.Neon,
+		color = Color3.fromRGB(214, 78, 28),
+		material = Enum.Material.SmoothPlastic,
 		studded = false,
 		canQuery = false,
 		parent = m,
@@ -326,6 +326,12 @@ local function buildVolcanoSpire(pos: Vector3, scale: number, parent: Instance)
 end
 
 function BlockyMapBiomeGenerator.Build(worldFolder: Folder)
+	if not worldFolder:FindFirstChild("BrushedDecor") then
+		local brushed = Instance.new("Folder")
+		brushed.Name = "BrushedDecor"
+		brushed.Parent = worldFolder
+	end
+
 	local existing = worldFolder:FindFirstChild("Biomes")
 	if existing then
 		existing:Destroy()
@@ -364,6 +370,30 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder)
 			studded = true,
 			parent = terrainGroup,
 		})
+
+		-- Floating Sky-Island tapered rock strata underneath each Biome
+		local bHull1 = makeBlock({
+			name = "BiomeIslandHullUpper",
+			size = Vector3.new(mapWidth - 10, 18, lenZ - 4),
+			cframe = CFrame.new(0, -13, centerZ),
+			color = biome.cliffColor,
+			material = Enum.Material.Slate,
+			canCollide = false,
+			canQuery = false,
+			parent = terrainGroup,
+		})
+		bHull1.CastShadow = false
+		local bHull2 = makeBlock({
+			name = "BiomeIslandHullKeel",
+			size = Vector3.new(mapWidth - 74, 24, lenZ - 24),
+			cframe = CFrame.new(0, -32, centerZ),
+			color = biome.cliffColor:Lerp(Color3.fromRGB(28, 24, 34), 0.35),
+			material = Enum.Material.Basalt,
+			canCollide = false,
+			canQuery = false,
+			parent = terrainGroup,
+		})
+		bHull2.CastShadow = false
 
 		-- Mosaic Checkerboard Stud Tiles flanking the center trail for lively blocky terrain texture
 		local tileW = 24
@@ -615,8 +645,8 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder)
 					name = "LavaTrench",
 					size = Vector3.new(152, 0.32, 18),
 					cframe = CFrame.new(0, 0.14, z),
-					color = Color3.fromRGB(255, 92, 28),
-					material = Enum.Material.Neon,
+					color = Color3.fromRGB(214, 78, 28),
+					material = Enum.Material.SmoothPlastic,
 					studded = false,
 					parent = terrainGroup,
 				})
@@ -736,8 +766,8 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder)
 				name = "OnboardingCrateSpawn",
 				size = Vector3.new(4, 0.4, 4),
 				cframe = CFrame.new(10, 0.25, 174),
-				color = Color3.fromRGB(255, 224, 92),
-				material = Enum.Material.Neon,
+				color = Color3.fromRGB(242, 206, 78),
+				material = Enum.Material.SmoothPlastic,
 				canCollide = false,
 				transparency = 0.6,
 				parent = crateSpawnsFolder,
@@ -788,15 +818,26 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder)
 		end
 	end
 
-	-- End of World Abyss Wall after Biome 5
-	local endZ = BiomeConfig[#BiomeConfig].zEnd + 10
-	makeBlock({
+	-- Invisible Abyss Barrier at end of Biome 5 (open sky horizon view toward floating islands)
+	local endZ = BiomeConfig[#BiomeConfig].zEnd + 6
+	local endBarrier = makeBlock({
 		name = "EndOfWorldWall",
-		size = Vector3.new(mapWidth + 20, 32, 16),
-		cframe = CFrame.new(0, 16, endZ),
+		size = Vector3.new(mapWidth + 24, 42, 8),
+		cframe = CFrame.new(0, 21, endZ),
 		color = Color3.fromRGB(32, 24, 34),
+		canCollide = true,
+		canQuery = false,
+		transparency = 1,
+		parent = biomesFolder,
+	})
+	endBarrier.CastShadow = false
+
+	makeBlock({
+		name = "EndOfWorldCurb",
+		size = Vector3.new(mapWidth, 1.0, 4),
+		cframe = CFrame.new(0, 0.35, endZ - 6),
+		color = Color3.fromRGB(255, 108, 42),
 		material = Enum.Material.Basalt,
-		materialVariant = "BlockyStudVolcanic",
 		studded = true,
 		parent = biomesFolder,
 	})

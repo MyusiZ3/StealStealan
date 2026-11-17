@@ -27,9 +27,18 @@ local biomeCache: { [string]: { model: Folder, decor: Folder?, zStart: number, z
 local worldShadowOptimized = false
 
 local function ensureEffect<T>(className: string, name: string): T
-	local existing = Lighting:FindFirstChild(name)
-	if existing and existing.ClassName == className then
-		return existing :: any
+	local kept: Instance? = nil
+	for _, ch in ipairs(Lighting:GetChildren()) do
+		if ch.ClassName == className then
+			if ch.Name == name and not kept then
+				kept = ch
+			else
+				ch:Destroy()
+			end
+		end
+	end
+	if kept then
+		return kept :: any
 	end
 	local inst = Instance.new(className) :: any
 	inst.Name = name
@@ -37,19 +46,53 @@ local function ensureEffect<T>(className: string, name: string): T
 	return inst
 end
 
+-- Comfortable anti-glare sunlit palette (stops flat sunlit floors/slabs from blowing out white!)
+pcall(function()
+	Lighting.Brightness = 1.65
+	Lighting.ExposureCompensation = -0.12
+	Lighting.Ambient = Color3.fromRGB(96, 106, 124)
+	Lighting.OutdoorAmbient = Color3.fromRGB(112, 124, 142)
+	Lighting.EnvironmentDiffuseScale = 0.55
+	Lighting.EnvironmentSpecularScale = 0.22
+	Lighting.ClockTime = 15.2
+end)
+
+local atmosphere: Atmosphere = ensureEffect("Atmosphere", "GameAtmosphere")
+atmosphere.Density = 0.20
+atmosphere.Offset = 0.15
+atmosphere.Color = Color3.fromRGB(246, 226, 238)
+atmosphere.Decay = Color3.fromRGB(236, 204, 224)
+atmosphere.Glare = 0
+atmosphere.Haze = 0.65
+
+local terrainClouds = Workspace.Terrain:FindFirstChildOfClass("Clouds") or Instance.new("Clouds")
+terrainClouds.Cover = 0.58
+terrainClouds.Density = 0.42
+terrainClouds.Color = Color3.fromRGB(250, 228, 238)
+terrainClouds.Parent = Workspace.Terrain
+
 local colorCorr: ColorCorrectionEffect = ensureEffect("ColorCorrectionEffect", "GameColorCorrection")
-colorCorr.Saturation = 0.22
-colorCorr.Contrast = 0.08
-colorCorr.Brightness = 0.03
+colorCorr.Saturation = 0.14
+colorCorr.Contrast = 0.06
+colorCorr.Brightness = -0.02
 
 local bloom: BloomEffect = ensureEffect("BloomEffect", "GameBloom")
-bloom.Intensity = 0.35
-bloom.Size = 18
-bloom.Threshold = 1.05
+bloom.Intensity = 0.10
+bloom.Size = 14
+bloom.Threshold = 2.40
 
 local sunRays: SunRaysEffect = ensureEffect("SunRaysEffect", "GameSunRays")
-sunRays.Intensity = 0.08
-sunRays.Spread = 0.45
+sunRays.Intensity = 0.02
+sunRays.Spread = 0.20
+
+local depthOfField: DepthOfFieldEffect = ensureEffect("DepthOfFieldEffect", "GameDepthOfField")
+depthOfField.FocusDistance = 58
+depthOfField.InFocusRadius = 96
+depthOfField.NearIntensity = 0
+depthOfField.FarIntensity = 0.16
+
+local skyIslandCache: { { inst: Model, z: number, visible: boolean } } = {}
+local brushedDecorCache: { { inst: Instance, z: number, visible: boolean } } = {}
 
 -- Ambient particle anchor following player on High graphics
 local ambientAnchor = Instance.new("Part")
@@ -85,25 +128,48 @@ local function applyGraphicsQuality(quality: Types.GraphicsQuality)
 	if quality == "Low" then
 		pcall(function() Lighting.GlobalShadows = false end)
 		colorCorr.Enabled = true
-		colorCorr.Saturation = 0.10
+		colorCorr.Brightness = -0.02
+		colorCorr.Contrast = 0.06
+		colorCorr.Saturation = 0.08
 		bloom.Enabled = false
 		sunRays.Enabled = false
+		depthOfField.Enabled = false
 		ambientEmitter.Enabled = false
 	elseif quality == "Medium" then
 		pcall(function() Lighting.GlobalShadows = true end)
 		colorCorr.Enabled = true
-		colorCorr.Saturation = 0.20
+		colorCorr.Brightness = -0.02
+		colorCorr.Contrast = 0.06
+		colorCorr.Saturation = 0.14
 		bloom.Enabled = true
-		bloom.Intensity = 0.30
+		bloom.Intensity = 0.10
+		bloom.Size = 14
+		bloom.Threshold = 2.40
 		sunRays.Enabled = false
+		depthOfField.Enabled = true
+		depthOfField.FocusDistance = 58
+		depthOfField.InFocusRadius = 96
+		depthOfField.NearIntensity = 0
+		depthOfField.FarIntensity = 0.16
 		ambientEmitter.Enabled = false
 	else -- High
 		pcall(function() Lighting.GlobalShadows = true end)
 		colorCorr.Enabled = true
-		colorCorr.Saturation = 0.26
+		colorCorr.Brightness = -0.02
+		colorCorr.Contrast = 0.06
+		colorCorr.Saturation = 0.18
 		bloom.Enabled = true
-		bloom.Intensity = 0.45
+		bloom.Intensity = 0.16
+		bloom.Size = 14
+		bloom.Threshold = 2.40
 		sunRays.Enabled = true
+		sunRays.Intensity = 0.02
+		sunRays.Spread = 0.20
+		depthOfField.Enabled = true
+		depthOfField.FocusDistance = 68
+		depthOfField.InFocusRadius = 115
+		depthOfField.NearIntensity = 0
+		depthOfField.FarIntensity = 0.24
 		ambientEmitter.Enabled = true
 	end
 end
@@ -154,6 +220,53 @@ task.spawn(function()
 			task.wait()
 		end
 	end
+	local skyFolder = gw:FindFirstChild("SkyIslands")
+	if skyFolder then
+		for _, ch in ipairs(skyFolder:GetChildren()) do
+			if ch:IsA("Model") and ch.PrimaryPart then
+				table.insert(skyIslandCache, {
+					inst = ch,
+					z = ch.PrimaryPart.Position.Z,
+					visible = true,
+				})
+			end
+		end
+	end
+
+	-- Optimize & register any Brushtool 2.1 painted props in Workspace.GameWorld.BrushedDecor
+	local brushedFolder = gw:FindFirstChild("BrushedDecor")
+	if brushedFolder then
+		for _, prop in ipairs(brushedFolder:GetChildren()) do
+			local zPos: number? = nil
+			if prop:IsA("BasePart") then
+				zPos = prop.Position.Z
+				if prop.Size.Magnitude < 28 then
+					prop.CastShadow = false
+					prop.CanQuery = false
+					prop.CanTouch = false
+				end
+			elseif prop:IsA("Model") then
+				local okBox, cf = pcall(function() return prop:GetBoundingBox() end)
+				if okBox and cf then
+					zPos = cf.Position.Z
+				end
+				for _, d in ipairs(prop:GetDescendants()) do
+					if d:IsA("BasePart") and d.Size.Magnitude < 28 then
+						d.CastShadow = false
+						d.CanQuery = false
+						d.CanTouch = false
+					end
+				end
+			end
+			if zPos then
+				table.insert(brushedDecorCache, {
+					inst = prop,
+					z = zPos,
+					visible = true,
+				})
+			end
+		end
+	end
 	worldShadowOptimized = true
 end)
 
@@ -173,8 +286,37 @@ RunService.Heartbeat:Connect(function(dt: number)
 		-- Pre-render ahead of movement direction (~1.6s velocity lookahead so fast travel never shows pop-in!)
 		local predZ = posZ + math.clamp(velZ * 1.6, -260, 260)
 
-		local loadHalfSpan = if currentQuality == "High" then 520 elseif currentQuality == "Medium" then 450 else 360
+		local loadHalfSpan = if currentQuality == "High" then 560 elseif currentQuality == "Medium" then 440 else 300
 		local unloadHalfSpan = loadHalfSpan + 95 -- Hysteresis buffer prevents flickering on borders
+		local skySpan = if currentQuality == "High" then 1150 elseif currentQuality == "Medium" then 900 else 650
+
+		local gwSky = Workspace:FindFirstChild("GameWorld") and Workspace.GameWorld:FindFirstChild("SkyIslands")
+		if gwSky then
+			for _, sky in ipairs(skyIslandCache) do
+				local dZ = math.abs(sky.z - predZ)
+				if not sky.visible and dZ <= skySpan then
+					sky.inst.Parent = gwSky
+					sky.visible = true
+				elseif sky.visible and dZ > (skySpan + 120) then
+					sky.inst.Parent = decorCacheRoot
+					sky.visible = false
+				end
+			end
+		end
+
+		local gwBrushed = Workspace:FindFirstChild("GameWorld") and Workspace.GameWorld:FindFirstChild("BrushedDecor")
+		if gwBrushed then
+			for _, bp in ipairs(brushedDecorCache) do
+				local dZ = math.abs(bp.z - predZ)
+				if not bp.visible and dZ <= loadHalfSpan then
+					bp.inst.Parent = gwBrushed
+					bp.visible = true
+				elseif bp.visible and dZ > (loadHalfSpan + 160) then
+					bp.inst.Parent = decorCacheRoot
+					bp.visible = false
+				end
+			end
+		end
 
 		-- Toggle 1 biome decor folder at most per tick for zero frame drops
 		for biomeId, entry in pairs(biomeCache) do

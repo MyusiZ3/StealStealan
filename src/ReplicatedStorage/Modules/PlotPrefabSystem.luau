@@ -3,12 +3,36 @@
 -- Unity-style Prefab system for Open-Pen Plots: maintains ReplicatedStorage.Prefabs.OpenPlotPrefab
 -- as the single editable source template and synchronizes Plot_1..Plot_6 from it cleanly.
 
+local MaterialService = game:GetService("MaterialService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local PlotVisualBuilder = require(ReplicatedStorage.Modules.PlotVisualBuilder)
 
 local PlotPrefabSystem = {}
+
+local RESURFACE_STUDS_COLOR_MAP = "rbxassetid://10509831729"
+local RESURFACE_STUDS_NORMAL_MAP = "rbxassetid://10509831753"
+
+function PlotPrefabSystem.EnsureClassicStudsVariant(): MaterialVariant
+	for _, obj in ipairs(MaterialService:GetDescendants()) do
+		if obj:IsA("MaterialVariant")
+			and obj.ColorMap == RESURFACE_STUDS_COLOR_MAP
+			and obj.NormalMap == RESURFACE_STUDS_NORMAL_MAP
+			and obj.StudsPerTile == 1
+		then
+			return obj
+		end
+	end
+	local variant = Instance.new("MaterialVariant")
+	variant.Name = "Studs"
+	variant.BaseMaterial = Enum.Material.Plastic
+	variant.ColorMap = RESURFACE_STUDS_COLOR_MAP
+	variant.NormalMap = RESURFACE_STUDS_NORMAL_MAP
+	variant.StudsPerTile = 1
+	variant.Parent = MaterialService
+	return variant
+end
 
 PlotPrefabSystem.PLOT_BASE_Y = -0.98 -- PlotBase Size.Y = 2 -> top at +0.02 (flush with HubFloor Y=0 without Z-fighting)
 PlotPrefabSystem.Z_POSITIONS = { -82, -4, 74 }
@@ -57,6 +81,7 @@ function PlotPrefabSystem.GetOpenPlotPrefab(): Model?
 end
 
 function PlotPrefabSystem.BuildDefaultOpenPlotPrefab(forceRebuild: boolean?): Model
+	PlotPrefabSystem.EnsureClassicStudsVariant()
 	local prefabsFolder = PlotPrefabSystem.GetOrCreatePrefabsFolder()
 	local existing = prefabsFolder:FindFirstChild("OpenPlotPrefab")
 	if existing and existing:IsA("Model") and not forceRebuild then
@@ -82,8 +107,8 @@ function PlotPrefabSystem.BuildDefaultOpenPlotPrefab(forceRebuild: boolean?): Mo
 		size = Vector3.new(64, 2, 64),
 		cframe = plotCF,
 		color = Color3.fromRGB(108, 184, 88),
-		material = Enum.Material.Grass,
-		materialVariant = "BlockyStudGrass",
+		material = Enum.Material.Plastic,
+		materialVariant = "Studs",
 		studded = true,
 		parent = prefabModel,
 	})
@@ -96,7 +121,8 @@ function PlotPrefabSystem.BuildDefaultOpenPlotPrefab(forceRebuild: boolean?): Mo
 		size = Vector3.new(64, 0.08, 2.2),
 		cframe = plotCF * CFrame.new(0, 1.00, -30.9),
 		color = Color3.fromRGB(224, 206, 168),
-		material = Enum.Material.Cobblestone,
+		material = Enum.Material.Plastic,
+		materialVariant = "Studs",
 		studded = true,
 		parent = prefabModel,
 	})
@@ -107,8 +133,8 @@ function PlotPrefabSystem.BuildDefaultOpenPlotPrefab(forceRebuild: boolean?): Mo
 		size = Vector3.new(52, 0.08, 36),
 		cframe = plotCF * CFrame.new(0, 1.00, 10),
 		color = Color3.fromRGB(122, 198, 94),
-		material = Enum.Material.Grass,
-		materialVariant = "BlockyStudGrass",
+		material = Enum.Material.Plastic,
+		materialVariant = "Studs",
 		studded = true,
 		parent = prefabModel,
 	})

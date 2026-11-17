@@ -42,6 +42,9 @@ local function cloneCuratedModel(name: string, targetCFrame: CFrame, scaleFactor
 	for _, d in ipairs(clone:GetDescendants()) do
 		if d:IsA("BasePart") then
 			d.Anchored = true
+			if d.Material == Enum.Material.Neon then
+				d.Material = Enum.Material.SmoothPlastic
+			end
 			if nonCollide or d:IsA("SpawnLocation") then
 				d.CanCollide = false
 				d.CanQuery = false
@@ -50,7 +53,7 @@ local function cloneCuratedModel(name: string, targetCFrame: CFrame, scaleFactor
 			if d:IsA("SpawnLocation") then
 				d:Destroy()
 			end
-		elseif d:IsA("BaseScript") or d:IsA("ForceField") then
+		elseif d:IsA("BaseScript") or d:IsA("ForceField") or d:IsA("Light") then
 			d:Destroy()
 		end
 	end
@@ -62,7 +65,65 @@ local function cloneCuratedModel(name: string, targetCFrame: CFrame, scaleFactor
 	return clone
 end
 
+local function placeCuratedNatureProp(
+	packPath: { string },
+	targetCF: CFrame,
+	scaleFactor: number,
+	leafTint: Color3?,
+	parent: Instance,
+	groundY: number
+): Model?
+	local curr: Instance? = ReplicatedStorage:FindFirstChild("CuratedAssets")
+	for _, seg in ipairs(packPath) do
+		if not curr then
+			return nil
+		end
+		curr = curr:FindFirstChild(seg)
+	end
+	if not curr or not curr:IsA("Model") then
+		return nil
+	end
+	local clone = curr:Clone()
+	if scaleFactor ~= 1 then
+		pcall(function()
+			clone:ScaleTo(clone:GetScale() * scaleFactor)
+		end)
+	end
+	for _, d in ipairs(clone:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.Anchored = true
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+			d.CastShadow = false
+			if d.Material == Enum.Material.Neon then
+				d.Material = Enum.Material.SmoothPlastic
+			end
+			if leafTint then
+				local lower = string.lower(d.Name)
+				local isTrunk = string.find(lower, "trunk") or string.find(lower, "wood") or string.find(lower, "stick") or string.find(lower, "stem")
+				local isCanopy = string.find(lower, "canopy") or string.find(lower, "leaf") or string.find(lower, "leaves") or string.find(lower, "foliage")
+				if (isCanopy or (not isTrunk and d.Color.G > d.Color.R + 0.05)) and (not d:IsA("MeshPart") or d.TextureID == "") then
+					d.Color = leafTint
+				end
+			end
+		elseif d:IsA("BaseScript") or d:IsA("ForceField") or d:IsA("Light") then
+			d:Destroy()
+		end
+	end
+	clone:PivotTo(targetCF)
+	clone.Parent = parent
+	groundModel(clone, groundY)
+	return clone
+end
+
 function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
+	if not worldFolder:FindFirstChild("BrushedDecor") then
+		local brushed = Instance.new("Folder")
+		brushed.Name = "BrushedDecor"
+		brushed.Parent = worldFolder
+	end
+
 	local existing = worldFolder:FindFirstChild("SanctuaryHub")
 	if existing then
 		existing:Destroy()
@@ -72,15 +133,14 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 	hub.Name = "SanctuaryHub"
 	hub.Parent = worldFolder
 
-	-- 1. Main Sanctuary Floor (Blocky Studded Grass)
+	-- 1. Main Sanctuary Floor (Classic Studs via Resurface)
 	makePart({
 		name = "HubFloor",
 		size = Vector3.new(260, 4, 290),
 		cframe = CFrame.new(0, -2, 5),
 		color = Color3.fromRGB(94, 174, 82),
-		material = Enum.Material.Grass,
-		materialVariant = "BlockyStudGrass",
-		studded = true,
+		material = Enum.Material.Plastic,
+		materialVariant = "Studs",
 		parent = hub,
 	})
 
@@ -90,8 +150,8 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 		size = Vector3.new(44, 0.6, 290),
 		cframe = CFrame.new(0, 0.25, 5),
 		color = Color3.fromRGB(162, 158, 148),
-		material = Enum.Material.Cobblestone,
-		studded = true,
+		material = Enum.Material.Plastic,
+		materialVariant = "Studs",
 		parent = hub,
 	})
 
@@ -138,25 +198,25 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 			name = "TopMoneyBoard",
 			offsetX = 16.5,
 			title = "💵 Top Money 💵",
-			frameColor = Color3.fromRGB(36, 224, 92),
-			headerColor = Color3.fromRGB(28, 198, 64),
-			darkBg = Color3.fromRGB(234, 240, 248),
+			frameColor = Color3.fromRGB(36, 208, 86),
+			headerColor = Color3.fromRGB(28, 186, 62),
+			darkBg = Color3.fromRGB(222, 230, 242),
 		},
 		{
 			name = "TopSpeedBoard",
 			offsetX = 0,
 			title = "👟 Top Speed 👟",
-			frameColor = Color3.fromRGB(48, 168, 255),
-			headerColor = Color3.fromRGB(24, 128, 248),
-			darkBg = Color3.fromRGB(234, 240, 248),
+			frameColor = Color3.fromRGB(48, 158, 238),
+			headerColor = Color3.fromRGB(24, 122, 228),
+			darkBg = Color3.fromRGB(222, 230, 242),
 		},
 		{
 			name = "TopPlaytimeBoard",
 			offsetX = -16.5,
 			title = "🕒 Top Playtime 🕒",
-			frameColor = Color3.fromRGB(255, 68, 118),
-			headerColor = Color3.fromRGB(238, 38, 86),
-			darkBg = Color3.fromRGB(234, 240, 248),
+			frameColor = Color3.fromRGB(238, 66, 112),
+			headerColor = Color3.fromRGB(218, 38, 84),
+			darkBg = Color3.fromRGB(222, 230, 242),
 		},
 	}
 
@@ -167,13 +227,13 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 
 		local bCF = wallCenterCF * CFrame.new(spec.offsetX, 0, 0)
 
-		-- Neon Base Pedestal Glow Strip
+		-- Crisp Accent Base Pedestal (SmoothPlastic prevents HDR glare)
 		makePart({
 			name = "BasePedestal",
 			size = Vector3.new(14.0, 0.5, 2.4),
 			cframe = bCF * CFrame.new(0, 0.25, 0),
 			color = spec.frameColor,
-			material = Enum.Material.Neon,
+			material = Enum.Material.SmoothPlastic,
 			canCollide = false,
 			parent = bm,
 		})
@@ -228,7 +288,7 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 		boardGui.Active = false
 		boardGui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
 		boardGui.PixelsPerStud = 36
-		boardGui.LightInfluence = 0.2
+		boardGui.LightInfluence = 0
 		boardGui.Parent = display
 
 		local container = Instance.new("Frame")
@@ -334,7 +394,7 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 			size = Vector3.new(0.16, r * 2, r * 2),
 			cframe = CFrame.new(opts.pos.X, 0.42, opts.pos.Z) * CFrame.Angles(0, 0, math.rad(90)),
 			color = col,
-			material = Enum.Material.Neon,
+			material = Enum.Material.SmoothPlastic,
 			canCollide = false,
 			canQuery = false,
 			transparency = 0.34,
@@ -349,23 +409,23 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 			name = opts.name .. "_Inner",
 			size = Vector3.new(0.18, r * 1.66, r * 1.66),
 			cframe = CFrame.new(opts.pos.X, 0.43, opts.pos.Z) * CFrame.Angles(0, 0, math.rad(90)),
-			color = Color3.fromRGB(44, 240, 108),
-			material = Enum.Material.Neon,
+			color = Color3.fromRGB(44, 224, 104),
+			material = Enum.Material.SmoothPlastic,
 			canCollide = false,
 			canQuery = false,
-			transparency = 0.72,
+			transparency = 0.68,
 			parent = hub,
 		})
 		innerFill.Shape = Enum.PartType.Cylinder
 		innerFill.CastShadow = false
 
-		-- Transparent Green Light Column marking the stand zone cleanly in 3D space
+		-- Translucent Green Aura Column marking the stand zone cleanly in 3D space
 		local lightAura = makePart({
 			name = opts.name .. "_LightAura",
 			size = Vector3.new(3.8, r * 1.80, r * 1.80),
 			cframe = CFrame.new(opts.pos.X, 2.25, opts.pos.Z) * CFrame.Angles(0, 0, math.rad(90)),
 			color = col,
-			material = Enum.Material.Neon,
+			material = Enum.Material.SmoothPlastic,
 			canCollide = false,
 			canQuery = false,
 			transparency = 0.86,
@@ -374,22 +434,14 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 		lightAura.Shape = Enum.PartType.Cylinder
 		lightAura.CastShadow = false
 
-		local zoneLight = Instance.new("PointLight")
-		zoneLight.Name = "StandZoneLight"
-		zoneLight.Color = col
-		zoneLight.Brightness = 1.8
-		zoneLight.Range = r * 2.6
-		zoneLight.Shadows = false
-		zoneLight.Parent = outerRing
-
 		local vfx = Instance.new("ParticleEmitter")
 		vfx.Name = "StandZoneVFX"
 		vfx.EmissionDirection = Enum.NormalId.Right -- Cylinder rotated 90 deg around Z -> +X faces world +Y up
-		vfx.Rate = 16
+		vfx.Rate = 12
 		vfx.Lifetime = NumberRange.new(1.1, 1.8)
 		vfx.Speed = NumberRange.new(1.8, 3.2)
 		vfx.SpreadAngle = Vector2.new(16, 16)
-		vfx.LightEmission = 0.85
+		vfx.LightEmission = 0.20
 		vfx.Color = ColorSequence.new(Color3.fromRGB(118, 255, 164), Color3.fromRGB(48, 232, 102))
 		vfx.Size = NumberSequence.new({
 			NumberSequenceKeypoint.new(0, 0.24),
@@ -473,53 +525,27 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 		accentColor = Color3.fromRGB(84, 255, 132),
 	})
 
-	-- 6. Grand Sanctuary Safe-Zone Exit Gate at Z = 148
+	-- 6. Grand Sanctuary Safe-Zone Exit Barrier at Z = 148.5 (Open Horizon — NO Gapura!)
 	local gateFolder = Instance.new("Model")
 	gateFolder.Name = "SanctuaryExitGate"
 	gateFolder.Parent = hub
 
 	makePart({
-		name = "GatePillarLeft",
-		size = Vector3.new(6, 22, 6),
-		cframe = CFrame.new(-24, 11, 148),
-		color = Color3.fromRGB(118, 82, 48),
-		material = Enum.Material.Wood,
-		parent = gateFolder,
-	})
-	makePart({
-		name = "GatePillarRight",
-		size = Vector3.new(6, 22, 6),
-		cframe = CFrame.new(24, 11, 148),
-		color = Color3.fromRGB(118, 82, 48),
-		material = Enum.Material.Wood,
-		parent = gateFolder,
-	})
-	local gateBanner = makePart({
-		name = "GateBanner",
-		size = Vector3.new(54, 7, 3),
-		cframe = CFrame.new(0, 21, 148),
-		color = Color3.fromRGB(36, 46, 62),
-		parent = gateFolder,
-	})
-	addSurfaceSign(gateBanner, Enum.NormalId.Front, "LEAVING SAFE ZONE ->", "63 Animals Across 5 Zones!", Color3.fromRGB(178, 54, 48))
-	addSurfaceSign(gateBanner, Enum.NormalId.Back, "<- SANCTUARY SAFE ZONE", "Bring rescued crates home!", Color3.fromRGB(42, 146, 86))
-
-	makePart({
 		name = "SafeZoneLine",
 		size = Vector3.new(260, 0.25, 2),
 		cframe = CFrame.new(0, 0.2, 150),
-		color = Color3.fromRGB(68, 255, 138),
-		material = Enum.Material.Neon,
+		color = Color3.fromRGB(64, 218, 122),
+		material = Enum.Material.SmoothPlastic,
 		canCollide = false,
 		parent = gateFolder,
 	})
 
 	local barrier = makePart({
 		name = "BiomeResetBarrier",
-		size = Vector3.new(260, 28, 3),
-		cframe = CFrame.new(0, 14, 148),
-		color = Color3.fromRGB(255, 64, 64),
-		material = Enum.Material.ForceField,
+		size = Vector3.new(272, 28, 3.2),
+		cframe = CFrame.new(0, 14, 148.5),
+		color = Color3.fromRGB(246, 224, 238),
+		material = Enum.Material.SmoothPlastic,
 		canCollide = false,
 		canQuery = false,
 		transparency = 1,
@@ -527,26 +553,264 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 	})
 	barrier.CastShadow = false
 
-	-- Hub Perimeter Walls
-	makePart({
+	-- Invisible Safe-Zone Edge Colliders (Open sky horizon matching Image 3, ZERO opaque perimeter walls!)
+	local backWall = makePart({
 		name = "HubWallBack",
-		size = Vector3.new(264, 18, 6),
-		cframe = CFrame.new(0, 9, -142),
-		color = Color3.fromRGB(98, 92, 86),
-		material = Enum.Material.Slate,
-		studded = true,
+		size = Vector3.new(272, 38, 6),
+		cframe = CFrame.new(0, 19, -142),
+		color = Color3.fromRGB(220, 215, 200),
+		transparency = 1,
+		canQuery = false,
 		parent = hub,
 	})
-	for _, xSide in { -130, 130 } do
-		makePart({
+	backWall.CastShadow = false
+
+	for _, xSide in { -131, 131 } do
+		local sideWall = makePart({
 			name = "HubWallSide_" .. tostring(xSide),
-			size = Vector3.new(6, 18, 294),
-			cframe = CFrame.new(xSide, 9, 5),
-			color = Color3.fromRGB(98, 92, 86),
-			material = Enum.Material.Slate,
+			size = Vector3.new(6, 38, 294),
+			cframe = CFrame.new(xSide, 19, 5),
+			color = Color3.fromRGB(220, 215, 200),
+			transparency = 1,
+			canQuery = false,
+			parent = hub,
+		})
+		sideWall.CastShadow = false
+
+		-- Crisp Low Rim Trim along cliff dropoff edge
+		makePart({
+			name = "HubEdgeTrim_" .. tostring(xSide),
+			size = Vector3.new(3.2, 0.9, 294),
+			cframe = CFrame.new(xSide - (if xSide > 0 then 1.5 else -1.5), 0.35, 5),
+			color = Color3.fromRGB(226, 214, 184),
+			material = Enum.Material.Cobblestone,
 			studded = true,
 			parent = hub,
 		})
+	end
+	makePart({
+		name = "HubEdgeTrim_Back",
+		size = Vector3.new(264, 0.9, 3.2),
+		cframe = CFrame.new(0, 0.35, -139),
+		color = Color3.fromRGB(226, 214, 184),
+		material = Enum.Material.Cobblestone,
+		studded = true,
+		parent = hub,
+	})
+
+	-- Floating Island Rock Underside & Cliff Dropoff Hull beneath SanctuaryHub
+	local islandHullSpecs = {
+		{ name = "IslandCrustRim", size = Vector3.new(258, 12, 286), y = -9.5, col = Color3.fromRGB(132, 98, 72), mat = Enum.Material.Slate },
+		{ name = "IslandRockUpper", size = Vector3.new(224, 18, 248), y = -22.5, col = Color3.fromRGB(112, 96, 92), mat = Enum.Material.Slate },
+		{ name = "IslandRockMid", size = Vector3.new(172, 22, 196), y = -41.0, col = Color3.fromRGB(88, 78, 84), mat = Enum.Material.Slate },
+		{ name = "IslandRockKeel", size = Vector3.new(104, 24, 128), y = -61.5, col = Color3.fromRGB(68, 62, 74), mat = Enum.Material.Basalt },
+	}
+	for _, hs in ipairs(islandHullSpecs) do
+		local hp = makePart({
+			name = hs.name,
+			size = hs.size,
+			cframe = CFrame.new(0, hs.y, 5),
+			color = hs.col,
+			material = hs.mat,
+			canCollide = false,
+			canQuery = false,
+			parent = hub,
+		})
+		hp.CastShadow = false
+	end
+
+	-- Hanging Edge Rock Columns around Floating Island Perimeter
+	for _, cornerOff in { Vector3.new(-108, -28, -110), Vector3.new(108, -30, -110), Vector3.new(-112, -26, 25), Vector3.new(112, -28, 25), Vector3.new(-102, -32, 120), Vector3.new(102, -29, 120) } do
+		local col = makePart({
+			name = "FloatingIslandSpire",
+			size = Vector3.new(26, 42, 26),
+			cframe = CFrame.new(cornerOff) * CFrame.Angles(0, math.rad(22), 0),
+			color = Color3.fromRGB(96, 84, 86),
+			material = Enum.Material.Slate,
+			canCollide = false,
+			canQuery = false,
+			parent = hub,
+		})
+		col.CastShadow = false
+	end
+
+	-- Distant Floating Sky Islands (No CloudSea flat slabs! Lush CuratedAssets Nature + Resurface Terrain!)
+	local oldSky = worldFolder:FindFirstChild("SkyIslands")
+	if oldSky then oldSky:Destroy() end
+	local skyIslands = Instance.new("Folder")
+	skyIslands.Name = "SkyIslands"
+	skyIslands.Parent = worldFolder
+
+	-- Perimeter Sakura & Nature clusters along outer SanctuaryHub cliff lawn (safely outside X=+-62 plots)
+	local hubDecorFolder = Instance.new("Folder")
+	hubDecorFolder.Name = "HubPerimeterNature"
+	hubDecorFolder.Parent = hub
+	for _, zPos in ipairs({ -118, -42, 36, 114 }) do
+		for _, xSide in ipairs({ -116, 116 }) do
+			local yaw = (if xSide > 0 then 0.5 else -0.5) + zPos * 0.02
+			placeCuratedNatureProp(
+				{ "Pack_Veedubmike1_Nature", "Trees", if (math.abs(zPos) % 8 == 2) then "Oak Tree" else "Maple Tree" },
+				CFrame.new(xSide, 0, zPos) * CFrame.Angles(0, yaw, 0),
+				1.05,
+				Color3.fromRGB(255, 146, 198),
+				hubDecorFolder,
+				0
+			)
+			placeCuratedNatureProp(
+				{ "Pack_Veedubmike1_Nature", "Bushes", if zPos > 0 then "Bush A" else "Bush B" },
+				CFrame.new(xSide + (if xSide > 0 then -6.5 else 6.5), 0, zPos + 5) * CFrame.Angles(0, yaw + 1.1, 0),
+				1.15,
+				nil,
+				hubDecorFolder,
+				0
+			)
+			placeCuratedNatureProp(
+				{ "Pack_Veedubmike1_Nature", "Rocks", "Rock A" },
+				CFrame.new(xSide + (if xSide > 0 then -4.5 else 4.5), 0, zPos - 6) * CFrame.Angles(0, yaw + 2.0, 0),
+				1.25,
+				nil,
+				hubDecorFolder,
+				0
+			)
+		end
+	end
+
+	local skySpots = {
+		{ pos = Vector3.new(-320, 46, -150), sc = 1.4, treeCol = Color3.fromRGB(255, 146, 198), hasWaterfall = true, isSnow = false },
+		{ pos = Vector3.new(310, 54, -95), sc = 1.25, treeCol = Color3.fromRGB(255, 168, 214), hasWaterfall = true, isSnow = false },
+		{ pos = Vector3.new(-340, 38, 320), sc = 1.5, treeCol = Color3.fromRGB(92, 186, 98), hasWaterfall = true, isSnow = false },
+		{ pos = Vector3.new(350, 52, 690), sc = 1.6, treeCol = Color3.fromRGB(255, 152, 206), hasWaterfall = true, isSnow = false },
+		{ pos = Vector3.new(-355, 48, 1220), sc = 1.45, treeCol = Color3.fromRGB(168, 224, 250), hasWaterfall = true, isSnow = true },
+		{ pos = Vector3.new(330, 56, 1920), sc = 1.55, treeCol = Color3.fromRGB(238, 124, 62), hasWaterfall = false, isSnow = false },
+	}
+	for idx, sp in ipairs(skySpots) do
+		local sc = sp.sc
+		local isl = Instance.new("Model")
+		isl.Name = "SkyIsland_" .. idx
+		isl.Parent = skyIslands
+
+		local deckHeight = 6 * sc
+		local deckTopY = sp.pos.Y + deckHeight * 0.5
+		local topGrass = makePart({
+			name = "IslandDeck",
+			size = Vector3.new(88 * sc, deckHeight, 78 * sc),
+			cframe = CFrame.new(sp.pos),
+			color = if sp.isSnow then Color3.fromRGB(218, 236, 248) else Color3.fromRGB(108, 178, 86),
+			material = if sp.isSnow then Enum.Material.Snow else Enum.Material.Grass,
+			materialVariant = if sp.isSnow then "BlockyStudSnow" else "BlockyStudGrass",
+			studded = false,
+			canCollide = false,
+			canQuery = false,
+			parent = isl,
+		})
+		topGrass.CastShadow = false
+		isl.PrimaryPart = topGrass
+
+		local hull1 = makePart({
+			name = "IslandHullUpper",
+			size = Vector3.new(72 * sc, 24 * sc, 64 * sc),
+			cframe = CFrame.new(sp.pos - Vector3.new(0, 15 * sc, 0)),
+			color = Color3.fromRGB(134, 104, 84),
+			material = Enum.Material.Slate,
+			materialVariant = "CartoonCliffWall",
+			canCollide = false,
+			canQuery = false,
+			parent = isl,
+		})
+		hull1.CastShadow = false
+		local hull2 = makePart({
+			name = "IslandHullTip",
+			size = Vector3.new(42 * sc, 28 * sc, 38 * sc),
+			cframe = CFrame.new(sp.pos - Vector3.new(0, 38 * sc, 0)),
+			color = Color3.fromRGB(92, 76, 74),
+			material = Enum.Material.Slate,
+			materialVariant = "CartoonCliffWall",
+			canCollide = false,
+			canQuery = false,
+			parent = isl,
+		})
+		hull2.CastShadow = false
+
+		-- Asymmetric tapered side rock ledges for an organic floating-island silhouette
+		for sideIdx, sideOff in ipairs({ Vector3.new(-28 * sc, -12 * sc, 16 * sc), Vector3.new(26 * sc, -16 * sc, -14 * sc) }) do
+			local ledge = makePart({
+				name = "IslandSideLedge_" .. sideIdx,
+				size = Vector3.new(30 * sc, 18 * sc, 28 * sc),
+				cframe = CFrame.new(sp.pos + sideOff) * CFrame.Angles(0, math.rad(sideIdx * 24), 0),
+				color = Color3.fromRGB(114, 92, 82),
+				material = Enum.Material.Slate,
+				materialVariant = "CartoonCliffWall",
+				canCollide = false,
+				canQuery = false,
+				parent = isl,
+			})
+			ledge.CastShadow = false
+		end
+
+		-- Rich Multi-Part Nature Trees, Boulders & Bushes from CuratedAssets
+		local primaryTreePath = if sp.isSnow
+			then { "Pack_Cliosow_PineSnowy", "Low-Poly Pine Trees by Cliosow", "SpruceSnowy1" }
+			elseif idx % 2 == 1 then { "Pack_Veedubmike1_Nature", "Trees", "Oak Tree" }
+			else { "Pack_Veedubmike1_Nature", "Trees", "Maple Tree" }
+		local secondaryTreePath = if sp.isSnow
+			then { "Pack_Cliosow_PineSnowy", "Low-Poly Pine Trees by Cliosow", "SpruceSnowy3" }
+			else { "Pack_K3LLo29_Nature", "LowPolyNaturePack", "Tree1" }
+
+		placeCuratedNatureProp(
+			primaryTreePath,
+			CFrame.new(sp.pos.X - 10 * sc, deckTopY, sp.pos.Z - 4 * sc) * CFrame.Angles(0, idx * 0.9, 0),
+			1.95 * sc,
+			if sp.isSnow then nil else sp.treeCol,
+			isl,
+			deckTopY - 0.3
+		)
+		placeCuratedNatureProp(
+			secondaryTreePath,
+			CFrame.new(sp.pos.X + 18 * sc, deckTopY, sp.pos.Z + 14 * sc) * CFrame.Angles(0, idx * 1.4, 0),
+			1.85 * sc,
+			nil,
+			isl,
+			deckTopY - 0.3
+		)
+		placeCuratedNatureProp(
+			{ "Pack_Veedubmike1_Nature", "Rocks", "Rock A" },
+			CFrame.new(sp.pos.X + 14 * sc, deckTopY, sp.pos.Z - 14 * sc) * CFrame.Angles(0, idx * 0.7, 0),
+			2.4 * sc,
+			nil,
+			isl,
+			deckTopY - 0.4
+		)
+		placeCuratedNatureProp(
+			{ "Pack_K3LLo29_Nature", "LowPolyNaturePack", "Rock2" },
+			CFrame.new(sp.pos.X - 22 * sc, deckTopY, sp.pos.Z + 16 * sc) * CFrame.Angles(0, idx * 1.2, 0),
+			2.1 * sc,
+			nil,
+			isl,
+			deckTopY - 0.4
+		)
+		placeCuratedNatureProp(
+			{ "Pack_Veedubmike1_Nature", "Bushes", "Bush A" },
+			CFrame.new(sp.pos.X + 4 * sc, deckTopY, sp.pos.Z + 18 * sc) * CFrame.Angles(0, idx * 0.5, 0),
+			2.2 * sc,
+			nil,
+			isl,
+			deckTopY - 0.2
+		)
+
+		if sp.hasWaterfall then
+			local fall = makePart({
+				name = "SkyWaterfall",
+				size = Vector3.new(16 * sc, 118, 4 * sc),
+				cframe = CFrame.new(sp.pos + Vector3.new((if sp.pos.X > 0 then -38 else 38) * sc, -54, 0)),
+				color = Color3.fromRGB(118, 204, 245),
+				material = Enum.Material.Glass,
+				transparency = 0.35,
+				canCollide = false,
+				canQuery = false,
+				parent = isl,
+			})
+			fall.CastShadow = false
+		end
 	end
 
 	-- 7. Build All 6 Pre-Allocated Open-Pen Plots from Single Editable OpenPlotPrefab

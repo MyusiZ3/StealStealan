@@ -28,14 +28,20 @@ function PlotVisualBuilder.MakePart(props: {
 	p.Size = props.size
 	p.CFrame = props.cframe
 	p.Color = props.color
-	p.Material = props.material or Enum.Material.SmoothPlastic
-	if props.materialVariant and props.materialVariant ~= "" then
-		p.MaterialVariant = props.materialVariant
+	if props.materialVariant == "Studs" or (props.studded and (not props.materialVariant or props.materialVariant == "")) then
+		p.Material = Enum.Material.Plastic
+		p.MaterialVariant = "Studs"
+		p.TopSurface = Enum.SurfaceType.Smooth
+	else
+		p.Material = props.material or Enum.Material.SmoothPlastic
+		if props.materialVariant and props.materialVariant ~= "" then
+			p.MaterialVariant = props.materialVariant
+		end
+		p.TopSurface = if props.studded then Enum.SurfaceType.Studs else Enum.SurfaceType.Smooth
 	end
 	if props.shape then
 		p.Shape = props.shape
 	end
-	p.TopSurface = if props.studded then Enum.SurfaceType.Studs else Enum.SurfaceType.Smooth
 	p.BottomSurface = Enum.SurfaceType.Smooth
 	p.Anchored = true
 	p.CanCollide = if props.canCollide ~= nil then props.canCollide else true
@@ -152,19 +158,19 @@ function PlotVisualBuilder.MakeEnhancedPad(opts: {
 		parent = opts.parent,
 	})
 
-	-- 2. Glowing Neon Perimeter Rim
+	-- 2. Crisp Clean Perimeter Rim (Non-Neon so sunlight/bloom never blows out!)
 	makePart({
 		name = opts.name .. "_NeonRim",
 		size = Vector3.new(opts.size.X + 0.95, opts.size.Y - 0.08, opts.size.Z + 0.95),
 		cframe = opts.cframe * CFrame.new(0, -0.06, 0),
 		color = opts.accentColor,
-		material = Enum.Material.Neon,
+		material = Enum.Material.SmoothPlastic,
 		canCollide = false,
 		canQuery = false,
 		parent = opts.parent,
 	})
 
-	-- 3. Corner Accent Pillars with Neon Caps
+	-- 3. Corner Accent Pillars with Colored Caps
 	local hx = opts.size.X * 0.5 + 0.45
 	local hz = opts.size.Z * 0.5 + 0.45
 	for i, corner in ipairs({
@@ -188,7 +194,7 @@ function PlotVisualBuilder.MakeEnhancedPad(opts: {
 			size = Vector3.new(0.85, 0.16, 0.85),
 			cframe = opts.cframe * CFrame.new(corner + Vector3.new(0, opts.size.Y * 0.5 + 0.24, 0)),
 			color = opts.accentColor,
-			material = Enum.Material.Neon,
+			material = Enum.Material.SmoothPlastic,
 			canCollide = false,
 			canQuery = false,
 			parent = opts.parent,
@@ -213,20 +219,13 @@ function PlotVisualBuilder.MakeEnhancedPad(opts: {
 			size = Vector3.new(opts.size.X + 2.8, 0.08, opts.size.Z + 2.8),
 			cframe = opts.cframe * CFrame.new(0, -opts.size.Y * 0.5 + 0.05, 0),
 			color = opts.accentColor,
-			material = Enum.Material.Neon,
+			material = Enum.Material.SmoothPlastic,
 			canCollide = false,
 			canQuery = false,
-			transparency = 0.65,
+			transparency = 0.72,
 			parent = opts.parent,
 		})
 		halo.CastShadow = false
-		local pl = Instance.new("PointLight")
-		pl.Name = "PadGlow"
-		pl.Color = opts.accentColor
-		pl.Range = 14
-		pl.Brightness = 0.75
-		pl.Shadows = false
-		pl.Parent = deck
 	end
 
 	return deck
@@ -306,8 +305,8 @@ local function buildFenceSegment(
 			parent = parent,
 		})
 	elseif tier == 2 then
-		-- Clean White Picket Fence with Oak Trim (Image 9 style!)
-		local railCol = Color3.fromRGB(242, 245, 250)
+		-- Clean Soft White Picket Fence with Oak Trim
+		local railCol = Color3.fromRGB(224, 228, 236)
 		local postCol = Color3.fromRGB(132, 86, 48)
 		makePart({
 			name = "LowerRail",
@@ -357,7 +356,8 @@ local function buildFenceSegment(
 			size = Vector3.new(1.5, 1.0, length),
 			cframe = segCF * CFrame.new(0, 0.5, 0),
 			color = stoneCol,
-			material = Enum.Material.Cobblestone,
+			material = Enum.Material.Plastic,
+			materialVariant = "Studs",
 			studded = true,
 			parent = parent,
 		})
@@ -396,8 +396,8 @@ local function buildFenceSegment(
 					name = "LanternCap",
 					size = Vector3.new(0.95, 0.75, 0.95),
 					cframe = segCF * CFrame.new(0, 4.7, zOff),
-					color = Color3.fromRGB(255, 204, 88),
-					material = Enum.Material.Neon,
+					color = Color3.fromRGB(245, 194, 78),
+					material = Enum.Material.SmoothPlastic,
 					canCollide = false,
 					canQuery = false,
 					parent = parent,
@@ -416,9 +416,9 @@ local function buildFenceSegment(
 			end
 		end
 	elseif tier == 4 then
-		-- Royal Marble & Gold Conservatory with Emerald Orbs
-		local marbleCol = Color3.fromRGB(238, 240, 245)
-		local goldCol = Color3.fromRGB(246, 196, 56)
+		-- Royal Marble & Gold Conservatory with Emerald Finials
+		local marbleCol = Color3.fromRGB(220, 224, 232)
+		local goldCol = Color3.fromRGB(236, 188, 56)
 		makePart({
 			name = "MarbleWall",
 			size = Vector3.new(1.6, 1.4, length),
@@ -462,11 +462,12 @@ local function buildFenceSegment(
 					name = "EmeraldFinial",
 					size = Vector3.new(1.1, 1.1, 1.1),
 					cframe = segCF * CFrame.new(0, 5.2, zOff),
-					color = Color3.fromRGB(64, 248, 148),
-					material = Enum.Material.Neon,
+					color = Color3.fromRGB(58, 212, 132),
+					material = Enum.Material.Glass,
 					shape = Enum.PartType.Ball,
 					canCollide = false,
 					canQuery = false,
+					transparency = 0.15,
 					parent = parent,
 				})
 			else
@@ -483,16 +484,17 @@ local function buildFenceSegment(
 			end
 		end
 	else
-		-- Tier 5: Celestial Obsidian & Neon Sanctum
+		-- Tier 5: Celestial Obsidian & Trim Sanctum (Non-glare)
 		local obsCol = Color3.fromRGB(32, 28, 42)
-		local goldCol = Color3.fromRGB(255, 210, 72)
-		local neonCol = Color3.fromRGB(72, 238, 255)
+		local goldCol = Color3.fromRGB(238, 194, 68)
+		local trimCol = Color3.fromRGB(58, 198, 235)
 		makePart({
 			name = "ObsidianBase",
 			size = Vector3.new(1.7, 1.6, length),
 			cframe = segCF * CFrame.new(0, 0.8, 0),
 			color = obsCol,
-			material = Enum.Material.Basalt,
+			material = Enum.Material.Plastic,
+			materialVariant = "Studs",
 			studded = true,
 			parent = parent,
 		})
@@ -500,8 +502,8 @@ local function buildFenceSegment(
 			name = "NeonLaserMid",
 			size = Vector3.new(0.3, 0.3, length),
 			cframe = segCF * CFrame.new(0, 2.7, 0),
-			color = neonCol,
-			material = Enum.Material.Neon,
+			color = trimCol,
+			material = Enum.Material.SmoothPlastic,
 			canCollide = false,
 			canQuery = false,
 			parent = parent,
@@ -539,8 +541,8 @@ local function buildFenceSegment(
 				name = "StarOrb",
 				size = Vector3.new(1.25, 1.25, 1.25),
 				cframe = segCF * CFrame.new(0, 5.8, zOff),
-				color = if i % 2 == 0 then neonCol else Color3.fromRGB(238, 92, 255),
-				material = Enum.Material.Neon,
+				color = if i % 2 == 0 then trimCol else Color3.fromRGB(196, 88, 238),
+				material = Enum.Material.SmoothPlastic,
 				shape = Enum.PartType.Ball,
 				canCollide = false,
 				canQuery = false,
@@ -700,7 +702,7 @@ function PlotVisualBuilder.BuildTreadmillTier(plotModel: Model, plotCF: CFrame, 
 				size = Vector3.new(2.2, 0.06, 0.36),
 				cframe = groundedCF * CFrame.new(0, 1.25, idx * 1.25 - 0.35),
 				color = beltCol,
-				material = Enum.Material.Neon,
+				material = Enum.Material.SmoothPlastic,
 				canCollide = false,
 				canQuery = false,
 				parent = treadModel,
@@ -755,14 +757,14 @@ function PlotVisualBuilder.BuildTreadmillTier(plotModel: Model, plotCF: CFrame, 
 					size = Vector3.new(1.48, 0.45, 0.55),
 					cframe = groundedCF * CFrame.new(sx, 6.15, 2.1),
 					color = beltCol,
-					material = Enum.Material.Neon,
+					material = Enum.Material.SmoothPlastic,
 					canCollide = false,
 					canQuery = false,
 					parent = treadModel,
 				})
 			end
 		end
-		-- Overhead Console Arch & Glowing Screen at local +Z = +2.8
+		-- Overhead Console Arch & Screen at local +Z = +2.8
 		makePart({
 			name = "ConsoleCrossbar",
 			size = Vector3.new(5.8, 0.9, 1.1),
@@ -778,13 +780,28 @@ function PlotVisualBuilder.BuildTreadmillTier(plotModel: Model, plotCF: CFrame, 
 			size = Vector3.new(2.8, 1.6, 0.5),
 			cframe = groundedCF * CFrame.new(0, 4.3, 2.4) * CFrame.Angles(math.rad(-15), 0, 0),
 			color = beltCol,
-			material = Enum.Material.Neon,
+			material = Enum.Material.SmoothPlastic,
 			canCollide = false,
 			canQuery = false,
 			parent = treadModel,
 		})
 		beltSurfaceY = surfaceY + 1.26
 	end
+
+	-- Invisible solid floor at beltSurfaceY across all tiers so Humanoid never falls onto grass underneath
+	makePart({
+		name = "BeltFloorCollider",
+		size = Vector3.new(4.2, 0.3, 7.6),
+		cframe = CFrame.new(treadBaseCF.Position.X, beltSurfaceY - 0.15, treadBaseCF.Position.Z)
+			* (treadBaseCF - treadBaseCF.Position)
+			* CFrame.new(0, 0, -0.35),
+		color = Color3.fromRGB(24, 28, 34),
+		material = Enum.Material.SmoothPlastic,
+		transparency = 1,
+		canCollide = true,
+		canQuery = true,
+		parent = treadModel,
+	})
 
 	-- Keep invisible trigger zone for TrainingSystem (NO visible glowing slab on floor!)
 	local oldZone = plotModel:FindFirstChild("TreadmillPad")
