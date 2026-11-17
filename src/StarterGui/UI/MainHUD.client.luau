@@ -27,6 +27,7 @@ local AnimalConfig = require(ReplicatedStorage.Config.AnimalConfig)
 local MonetizationConfig = require(ReplicatedStorage.Config.MonetizationConfig)
 local SoundConfig = require(ReplicatedStorage.Config.SoundConfig)
 local FormatUtil = require(ReplicatedStorage.Modules.FormatUtil)
+local AnimalVisualBuilder = require(ReplicatedStorage.Modules.AnimalVisualBuilder)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 
 local localPlayer = Players.LocalPlayer
@@ -48,14 +49,15 @@ local function playClickSFX()
 end
 
 local profile: Types.PlayerProfileSchema? = nil
-local currentModal: string? = nil -- "Shop" | "Index" | "Settings" | "Inventory"
-local shopSubTab = "Featured" -- "Featured" | "Passes" | "Lassos" | "Trails" | "Vehicles" | "Fuse" | "Rebirth"
+local currentModal: string? = nil -- "Shop" | "Trails" | "Lassos" | "Vehicles" | "Fuse" | "Rebirth" | "Index" | "Settings" | "Inventory"
 local indexRightTab = "Normal" -- "Normal" | "Limited" | "Mutations"
 local selectedIndexSpeciesId = AnimalConfig.ALL[1].id
 local invLeftTab = "Pets" -- "Pets" | "Crates" | "Mounts" | "Fuse"
 local sellModeActive = false
 local invSearchQuery = ""
 local selectedFuseUids: { string } = {}
+local fuseSlotUids: { [number]: string? } = {}
+local fusePickerSlot: number? = nil
 local drawerMode = "Active" -- "Active" | "Crates"
 local drawerCollapsed = false
 local lastSpeedStat = 0
@@ -117,6 +119,39 @@ local function makeOutlinedLabel(parent: Instance, text: string, size: UDim2, po
 	lbl.Parent = parent
 	makeTextStroke(lbl, strokeThick or 2.4)
 	return lbl
+end
+
+local function setViewportThumbnail(holder: Instance, modelBuilder: () -> Model?)
+	for _, ch in ipairs(holder:GetChildren()) do
+		ch:Destroy()
+	end
+	local m = modelBuilder()
+	if not m then
+		return
+	end
+	local vp = Instance.new("ViewportFrame")
+	vp.Size = UDim2.fromScale(1, 1)
+	vp.BackgroundTransparency = 1
+	vp.Ambient = Color3.fromRGB(190, 200, 215)
+	vp.LightColor = Color3.fromRGB(255, 250, 240)
+	vp.LightDirection = Vector3.new(-1, -1, -1)
+	vp.ZIndex = if holder:IsA("GuiObject") then holder.ZIndex + 1 else 2
+	vp.Parent = holder
+
+	local wm = Instance.new("WorldModel")
+	wm.Parent = vp
+
+	local cf, size = m:GetBoundingBox()
+	m:PivotTo(m:GetPivot() - cf.Position)
+	m.Parent = wm
+
+	local maxDim = math.max(size.X, size.Y, size.Z, 1.0)
+	local dist = maxDim * 1.42
+	local cam = Instance.new("Camera")
+	cam.FieldOfView = 40
+	cam.CFrame = CFrame.lookAt(Vector3.new(dist * 0.58, dist * 0.36, -dist * 0.92), Vector3.zero)
+	cam.Parent = vp
+	vp.CurrentCamera = cam
 end
 
 local function makeWindowHeader(parent: Frame, titleText: string, topCol: Color3, botCol: Color3, onClose: () -> ()): Frame
@@ -250,7 +285,8 @@ end
 -- 1. TOP-LEFT SETTINGS GEAR + RIDE BUTTON + TOASTS & BIOME BANNER
 -- ============================================================================
 local topLeftRow = Instance.new("Frame")
-topLeftRow.Size = UDim2.fromOffset(265, 38)
+topLeftRow.Name = "TopLeftActions"
+topLeftRow.Size = UDim2.fromOffset(156, 38)
 topLeftRow.Position = UDim2.new(0, 12, 0, 8)
 topLeftRow.BackgroundTransparency = 1
 topLeftRow.Parent = gui
@@ -258,6 +294,7 @@ topLeftRow.Parent = gui
 local settingsGearBtn = Instance.new("TextButton")
 settingsGearBtn.Name = "SettingsGearButton"
 settingsGearBtn.Size = UDim2.fromOffset(36, 36)
+settingsGearBtn.Position = UDim2.fromOffset(0, 1)
 settingsGearBtn.BackgroundColor3 = Color3.fromRGB(32, 36, 44)
 settingsGearBtn.Text = "⚙️"
 settingsGearBtn.TextColor3 = Color3.new(1, 1, 1)
@@ -266,29 +303,10 @@ settingsGearBtn.Parent = topLeftRow
 makeCorner(settingsGearBtn, 18)
 makeStroke(settingsGearBtn, 2.5)
 
-local rideTopBtn = Instance.new("TextButton")
-rideTopBtn.Name = "RideTopButton"
-rideTopBtn.Size = UDim2.fromOffset(96, 34)
-rideTopBtn.Position = UDim2.fromOffset(44, 1)
-rideTopBtn.BackgroundColor3 = Color3.fromRGB(52, 184, 108)
-rideTopBtn.Text = "🚙 Ride (V)"
-rideTopBtn.TextColor3 = Color3.new(1, 1, 1)
-rideTopBtn.Font = Enum.Font.FredokaOne
-rideTopBtn.TextScaled = true
-rideTopBtn.Parent = topLeftRow
-makeCorner(rideTopBtn, 8)
-makeStroke(rideTopBtn, 2.2)
-makeTextStroke(rideTopBtn, 2)
-makeGradient(rideTopBtn, Color3.fromRGB(82, 224, 134), Color3.fromRGB(32, 146, 76))
-rideTopBtn.MouseButton1Click:Connect(function()
-	playClickSFX()
-	localPlayer:SetAttribute("ToggleVehicleRequest", not (localPlayer:GetAttribute("ToggleVehicleRequest") == true))
-end)
-
 local inviteFriendsBtn = Instance.new("TextButton")
 inviteFriendsBtn.Name = "InviteFriendsButton"
-inviteFriendsBtn.Size = UDim2.fromOffset(108, 34)
-inviteFriendsBtn.Position = UDim2.fromOffset(146, 1)
+inviteFriendsBtn.Size = UDim2.fromOffset(110, 34)
+inviteFriendsBtn.Position = UDim2.fromOffset(44, 2)
 inviteFriendsBtn.BackgroundColor3 = Color3.fromRGB(72, 152, 248)
 inviteFriendsBtn.Text = "👥 +10% Boost"
 inviteFriendsBtn.TextColor3 = Color3.new(1, 1, 1)
@@ -309,8 +327,9 @@ end)
 -- Top-Center Biome Entry Banner (leaves Top-Right free for Roblox leaderstats PlayerList!)
 local biomeBanner = Instance.new("Frame")
 biomeBanner.Name = "BiomeBanner"
-biomeBanner.Size = UDim2.fromOffset(420, 64)
-biomeBanner.Position = UDim2.new(0.5, -210, 0, 8)
+biomeBanner.AnchorPoint = Vector2.new(0.5, 0)
+biomeBanner.Size = UDim2.fromOffset(400, 58)
+biomeBanner.Position = UDim2.new(0.5, 0, 0, 8)
 biomeBanner.BackgroundTransparency = 1
 biomeBanner.Visible = false
 biomeBanner.Parent = gui
@@ -323,8 +342,9 @@ biomeRecLbl.TextXAlignment = Enum.TextXAlignment.Center
 -- Center Top Global Event Banner & Notification Toast
 local eventBanner = Instance.new("TextLabel")
 eventBanner.Name = "GlobalEventBanner"
-eventBanner.Size = UDim2.fromOffset(620, 38)
-eventBanner.Position = UDim2.new(0.5, -310, 0, 74)
+eventBanner.AnchorPoint = Vector2.new(0.5, 0)
+eventBanner.Size = UDim2.fromOffset(560, 34)
+eventBanner.Position = UDim2.new(0.5, 0, 0, 70)
 eventBanner.BackgroundColor3 = Color3.fromRGB(34, 24, 52)
 eventBanner.TextColor3 = Color3.fromRGB(255, 214, 64)
 eventBanner.Font = Enum.Font.FredokaOne
@@ -337,8 +357,9 @@ makeTextStroke(eventBanner, 2.2)
 
 local toastLbl = Instance.new("TextLabel")
 toastLbl.Name = "ToastLabel"
-toastLbl.Size = UDim2.fromOffset(480, 32)
-toastLbl.Position = UDim2.new(0.5, -240, 0, 116)
+toastLbl.AnchorPoint = Vector2.new(0.5, 0)
+toastLbl.Size = UDim2.fromOffset(460, 30)
+toastLbl.Position = UDim2.new(0.5, 0, 0, 108)
 toastLbl.BackgroundColor3 = Color3.fromRGB(18, 22, 30)
 toastLbl.BackgroundTransparency = 0.2
 toastLbl.TextColor3 = Color3.new(1, 1, 1)
@@ -349,23 +370,103 @@ toastLbl.Parent = gui
 makeCorner(toastLbl, 8)
 makeTextStroke(toastLbl, 2)
 
+-- Danger Red Edge Vignette & Bold "RUN!" Chase Banner (shown while carrying crates / hunted by Poachers)
+local runVignette = Instance.new("Frame")
+runVignette.Name = "RunDangerVignette"
+runVignette.Size = UDim2.fromScale(1, 1)
+runVignette.BackgroundTransparency = 1
+runVignette.ZIndex = 1
+runVignette.Visible = false
+runVignette.Parent = gui
+
+local runEdgeStrips: { { bar: Frame, grad: UIGradient } } = {}
+local edgeDefs = {
+	{ size = UDim2.new(1, 0, 0.16, 0), pos = UDim2.fromScale(0, 0), rot = 90 },
+	{ size = UDim2.new(1, 0, 0.16, 0), pos = UDim2.fromScale(0, 0.84), rot = 270 },
+	{ size = UDim2.new(0.11, 0, 1, 0), pos = UDim2.fromScale(0, 0), rot = 0 },
+	{ size = UDim2.new(0.11, 0, 1, 0), pos = UDim2.fromScale(0.89, 0), rot = 180 },
+}
+for idx, ed in ipairs(edgeDefs) do
+	local bar = Instance.new("Frame")
+	bar.Name = "RunEdge_" .. idx
+	bar.Size = ed.size
+	bar.Position = ed.pos
+	bar.BackgroundColor3 = Color3.fromRGB(255, 22, 36)
+	bar.BorderSizePixel = 0
+	bar.ZIndex = 1
+	bar.Parent = runVignette
+	local gr = Instance.new("UIGradient")
+	gr.Rotation = ed.rot
+	gr.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.12),
+		NumberSequenceKeypoint.new(0.65, 0.72),
+		NumberSequenceKeypoint.new(1, 1.0),
+	})
+	gr.Parent = bar
+	table.insert(runEdgeStrips, { bar = bar, grad = gr })
+end
+
+local runAlertBanner = Instance.new("TextLabel")
+runAlertBanner.Name = "RunAlertBanner"
+runAlertBanner.AnchorPoint = Vector2.new(0.5, 0)
+runAlertBanner.Size = UDim2.fromOffset(220, 56)
+runAlertBanner.Position = UDim2.new(0.5, 0, 0, 68)
+runAlertBanner.BackgroundColor3 = Color3.fromRGB(64, 66, 82)
+runAlertBanner.Text = "RUN!"
+runAlertBanner.TextColor3 = Color3.new(1, 1, 1)
+runAlertBanner.Font = Enum.Font.FredokaOne
+runAlertBanner.TextScaled = true
+runAlertBanner.ZIndex = 20
+runAlertBanner.Visible = false
+runAlertBanner.Parent = gui
+makeCorner(runAlertBanner, 10)
+makeStroke(runAlertBanner, 3.5, Color3.fromRGB(255, 42, 54))
+makeTextStroke(runAlertBanner, 3.0)
+local isPoacherChasing = false
+
 -- ============================================================================
--- 2. LEFT STACK: STEP POP + SHOP + INDEX + SLOW MODE (Screenshot 1)
+-- 2. LEFT STACK: STEP POP + REBIRTH + SHOP + INDEX + SLOW MODE
 -- ============================================================================
 local leftStack = Instance.new("Frame")
 leftStack.Name = "LeftActionStack"
-leftStack.Size = UDim2.fromOffset(180, 185)
-leftStack.Position = UDim2.new(0, 14, 0.37, 0)
+leftStack.AnchorPoint = Vector2.new(0, 0.5)
+leftStack.Size = UDim2.fromOffset(158, 194)
+leftStack.Position = UDim2.new(0, 12, 0.45, 0)
 leftStack.BackgroundTransparency = 1
 leftStack.Parent = gui
 
-local stepPopLbl = makeOutlinedLabel(leftStack, "👟 +2/Step", UDim2.fromOffset(170, 26), UDim2.fromOffset(4, 0), Color3.fromRGB(88, 224, 255), 2.4)
+local stepPopLbl = makeOutlinedLabel(leftStack, "👟 +2/Step", UDim2.fromOffset(152, 22), UDim2.fromOffset(2, 0), Color3.fromRGB(88, 224, 255), 2.2)
 stepPopLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+local rebirthBtn = Instance.new("TextButton")
+rebirthBtn.Name = "RebirthButton"
+rebirthBtn.Size = UDim2.fromOffset(118, 38)
+rebirthBtn.Position = UDim2.fromOffset(0, 24)
+rebirthBtn.BackgroundColor3 = Color3.new(1, 1, 1)
+rebirthBtn.Text = ""
+rebirthBtn.Parent = leftStack
+makeCorner(rebirthBtn, 8)
+makeStroke(rebirthBtn, 2.8)
+makeGradient(rebirthBtn, Color3.fromRGB(255, 118, 212), Color3.fromRGB(198, 36, 132))
+
+-- Steal & Ride a Pet inspired circular Rebirth Emblem + Label
+local rebIconRing = Instance.new("Frame")
+rebIconRing.Size = UDim2.fromOffset(28, 28)
+rebIconRing.Position = UDim2.fromOffset(6, 5)
+rebIconRing.BackgroundColor3 = Color3.fromRGB(255, 224, 62)
+rebIconRing.Parent = rebirthBtn
+makeCorner(rebIconRing, 14)
+makeStroke(rebIconRing, 2, Color3.fromRGB(28, 14, 24))
+local rebArrows = makeOutlinedLabel(rebIconRing, "♻️", UDim2.fromScale(0.95, 0.95), UDim2.fromScale(0.025, 0.025), Color3.new(1, 1, 1), 1.4)
+rebArrows.TextScaled = true
+
+local rebText = makeOutlinedLabel(rebirthBtn, "Rebirth", UDim2.new(1, -38, 1, -4), UDim2.fromOffset(35, 2), Color3.new(1, 1, 1), 2.4)
+rebText.TextXAlignment = Enum.TextXAlignment.Center
 
 local shopBtn = Instance.new("TextButton")
 shopBtn.Name = "ShopButton"
-shopBtn.Size = UDim2.fromOffset(132, 46)
-shopBtn.Position = UDim2.fromOffset(0, 30)
+shopBtn.Size = UDim2.fromOffset(118, 40)
+shopBtn.Position = UDim2.fromOffset(0, 66)
 shopBtn.BackgroundColor3 = Color3.new(1, 1, 1)
 shopBtn.Text = "🛒 Shop"
 shopBtn.TextColor3 = Color3.new(1, 1, 1)
@@ -378,21 +479,21 @@ makeTextStroke(shopBtn, 2.5)
 makeGradient(shopBtn, Color3.fromRGB(128, 255, 48), Color3.fromRGB(52, 198, 20))
 
 local shopBadge = Instance.new("TextLabel")
-shopBadge.Size = UDim2.fromOffset(22, 22)
-shopBadge.Position = UDim2.new(1, -12, 0, -8)
+shopBadge.Size = UDim2.fromOffset(20, 20)
+shopBadge.Position = UDim2.new(1, -10, 0, -7)
 shopBadge.BackgroundColor3 = Color3.fromRGB(224, 38, 38)
 shopBadge.Text = "!"
 shopBadge.TextColor3 = Color3.new(1, 1, 1)
 shopBadge.Font = Enum.Font.FredokaOne
 shopBadge.TextScaled = true
 shopBadge.Parent = shopBtn
-makeCorner(shopBadge, 11)
+makeCorner(shopBadge, 10)
 makeStroke(shopBadge, 2)
 
 local indexBtn = Instance.new("TextButton")
 indexBtn.Name = "IndexButton"
-indexBtn.Size = UDim2.fromOffset(132, 46)
-indexBtn.Position = UDim2.fromOffset(0, 84)
+indexBtn.Size = UDim2.fromOffset(118, 40)
+indexBtn.Position = UDim2.fromOffset(0, 110)
 indexBtn.BackgroundColor3 = Color3.new(1, 1, 1)
 indexBtn.Text = "📖 Index"
 indexBtn.TextColor3 = Color3.new(1, 1, 1)
@@ -407,8 +508,8 @@ makeGradient(indexBtn, Color3.fromRGB(64, 224, 255), Color3.fromRGB(18, 142, 232
 -- Slow Mode Switch Row
 local slowSwitchTrack = Instance.new("TextButton")
 slowSwitchTrack.Name = "SlowModeSwitch"
-slowSwitchTrack.Size = UDim2.fromOffset(74, 32)
-slowSwitchTrack.Position = UDim2.fromOffset(0, 140)
+slowSwitchTrack.Size = UDim2.fromOffset(64, 28)
+slowSwitchTrack.Position = UDim2.fromOffset(0, 158)
 slowSwitchTrack.BackgroundColor3 = Color3.fromRGB(56, 72, 22)
 slowSwitchTrack.Text = ""
 slowSwitchTrack.Parent = leftStack
@@ -416,18 +517,18 @@ makeCorner(slowSwitchTrack, 6)
 makeStroke(slowSwitchTrack, 2.5)
 
 local slowKnob = Instance.new("Frame")
-slowKnob.Size = UDim2.fromOffset(26, 24)
+slowKnob.Size = UDim2.fromOffset(22, 20)
 slowKnob.Position = UDim2.fromOffset(4, 4)
 slowKnob.BackgroundColor3 = Color3.fromRGB(218, 46, 46)
 slowKnob.Parent = slowSwitchTrack
 makeCorner(slowKnob, 4)
 makeStroke(slowKnob, 2)
 
-local slowText = makeOutlinedLabel(leftStack, "Slow Mode", UDim2.fromOffset(92, 28), UDim2.fromOffset(82, 142), Color3.new(1, 1, 1), 2.3)
+local slowText = makeOutlinedLabel(leftStack, "Slow Mode", UDim2.fromOffset(84, 24), UDim2.fromOffset(70, 160), Color3.new(1, 1, 1), 2.1)
 slowText.TextXAlignment = Enum.TextXAlignment.Left
 
 local function updateSlowModeVisual(on: boolean)
-	slowKnob.Position = if on then UDim2.fromOffset(44, 4) else UDim2.fromOffset(4, 4)
+	slowKnob.Position = if on then UDim2.fromOffset(38, 4) else UDim2.fromOffset(4, 4)
 	slowKnob.BackgroundColor3 = if on then Color3.fromRGB(72, 224, 72) else Color3.fromRGB(218, 46, 46)
 end
 
@@ -445,34 +546,37 @@ end)
 -- ============================================================================
 local statsCorner = Instance.new("Frame")
 statsCorner.Name = "BottomLeftStats"
-statsCorner.Size = UDim2.fromOffset(420, 88)
-statsCorner.Position = UDim2.new(0, 14, 1, -96)
+statsCorner.AnchorPoint = Vector2.new(0, 1)
+statsCorner.Size = UDim2.fromOffset(0, 76)
+statsCorner.AutomaticSize = Enum.AutomaticSize.X
+statsCorner.Position = UDim2.new(0, 12, 1, -10)
 statsCorner.BackgroundTransparency = 1
 statsCorner.Parent = gui
 
 local speedRow = Instance.new("Frame")
 speedRow.Name = "SpeedRow"
-speedRow.Size = UDim2.fromOffset(420, 42)
+speedRow.Size = UDim2.fromOffset(0, 36)
+speedRow.AutomaticSize = Enum.AutomaticSize.X
 speedRow.Position = UDim2.fromOffset(0, 0)
 speedRow.BackgroundTransparency = 1
 speedRow.Parent = statsCorner
 local speedRowLayout = Instance.new("UIListLayout")
 speedRowLayout.FillDirection = Enum.FillDirection.Horizontal
 speedRowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-speedRowLayout.Padding = UDim.new(0, 8)
+speedRowLayout.Padding = UDim.new(0, 6)
 speedRowLayout.SortOrder = Enum.SortOrder.LayoutOrder
 speedRowLayout.Parent = speedRow
 
 local speedIconBtn = Instance.new("TextButton")
 speedIconBtn.LayoutOrder = 1
-speedIconBtn.Size = UDim2.fromOffset(38, 38)
+speedIconBtn.Size = UDim2.fromOffset(34, 34)
 speedIconBtn.BackgroundTransparency = 1
 speedIconBtn.Text = "👟"
 speedIconBtn.TextScaled = true
 speedIconBtn.Parent = speedRow
 local speedPlus = Instance.new("TextLabel")
-speedPlus.Size = UDim2.fromOffset(16, 16)
-speedPlus.Position = UDim2.fromOffset(22, 20)
+speedPlus.Size = UDim2.fromOffset(14, 14)
+speedPlus.Position = UDim2.fromOffset(20, 18)
 speedPlus.BackgroundColor3 = Color3.fromRGB(255, 214, 48)
 speedPlus.Text = "+"
 speedPlus.TextColor3 = Color3.fromRGB(16, 18, 22)
@@ -483,63 +587,59 @@ speedPlus.Parent = speedIconBtn
 makeCorner(speedPlus, 4)
 makeStroke(speedPlus, 1.8)
 
-local speedValLbl = makeOutlinedLabel(speedRow, "0", UDim2.fromOffset(0, 38), UDim2.fromOffset(0, 0), Color3.fromRGB(98, 108, 255), 3.2)
+local speedValLbl = makeOutlinedLabel(speedRow, "0", UDim2.fromOffset(0, 34), UDim2.fromOffset(0, 0), Color3.fromRGB(98, 108, 255), 3.0)
 speedValLbl.LayoutOrder = 2
 speedValLbl.AutomaticSize = Enum.AutomaticSize.X
 speedValLbl.TextScaled = false
-speedValLbl.TextSize = 30
+speedValLbl.TextSize = 26
 speedValLbl.TextXAlignment = Enum.TextXAlignment.Left
 
-local speedMultLbl = makeOutlinedLabel(speedRow, "(x1.25)", UDim2.fromOffset(0, 36), UDim2.fromOffset(0, 0), Color3.fromRGB(76, 248, 86), 3.0)
+local speedMultLbl = makeOutlinedLabel(speedRow, "(x1.25)", UDim2.fromOffset(0, 32), UDim2.fromOffset(0, 0), Color3.fromRGB(76, 248, 86), 2.8)
 speedMultLbl.LayoutOrder = 3
 speedMultLbl.AutomaticSize = Enum.AutomaticSize.X
 speedMultLbl.TextScaled = false
-speedMultLbl.TextSize = 27
+speedMultLbl.TextSize = 24
 speedMultLbl.TextXAlignment = Enum.TextXAlignment.Left
 
 local cashRow = Instance.new("Frame")
 cashRow.Name = "CashRow"
-cashRow.Size = UDim2.fromOffset(420, 42)
-cashRow.Position = UDim2.fromOffset(0, 44)
+cashRow.Size = UDim2.fromOffset(0, 36)
+cashRow.AutomaticSize = Enum.AutomaticSize.X
+cashRow.Position = UDim2.fromOffset(0, 38)
 cashRow.BackgroundTransparency = 1
 cashRow.Parent = statsCorner
 local cashRowLayout = Instance.new("UIListLayout")
 cashRowLayout.FillDirection = Enum.FillDirection.Horizontal
 cashRowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-cashRowLayout.Padding = UDim.new(0, 8)
+cashRowLayout.Padding = UDim.new(0, 6)
 cashRowLayout.SortOrder = Enum.SortOrder.LayoutOrder
 cashRowLayout.Parent = cashRow
 
-local cashIconLbl = makeOutlinedLabel(cashRow, "💵", UDim2.fromOffset(38, 38), UDim2.fromOffset(0, 0), Color3.new(1, 1, 1), 1.5)
+local cashIconLbl = makeOutlinedLabel(cashRow, "💵", UDim2.fromOffset(34, 34), UDim2.fromOffset(0, 0), Color3.new(1, 1, 1), 1.5)
 cashIconLbl.LayoutOrder = 1
 cashIconLbl.BackgroundTransparency = 1
 
-local cashValLbl = makeOutlinedLabel(cashRow, "$150", UDim2.fromOffset(0, 40), UDim2.fromOffset(0, 0), Color3.fromRGB(76, 248, 86), 3.2)
+local cashValLbl = makeOutlinedLabel(cashRow, "$150", UDim2.fromOffset(0, 36), UDim2.fromOffset(0, 0), Color3.fromRGB(76, 248, 86), 3.0)
 cashValLbl.LayoutOrder = 2
 cashValLbl.AutomaticSize = Enum.AutomaticSize.X
 cashValLbl.TextScaled = false
-cashValLbl.TextSize = 31
+cashValLbl.TextSize = 27
 cashValLbl.TextXAlignment = Enum.TextXAlignment.Left
-
-local cashRateLbl = makeOutlinedLabel(cashRow, "+$0", UDim2.fromOffset(0, 34), UDim2.fromOffset(0, 0), Color3.fromRGB(132, 255, 96), 2.8)
-cashRateLbl.LayoutOrder = 3
-cashRateLbl.AutomaticSize = Enum.AutomaticSize.X
-cashRateLbl.TextScaled = false
-cashRateLbl.TextSize = 25
-cashRateLbl.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ============================================================================
 -- 4. RIGHT EDGE TOGGLES + COLLAPSIBLE DRAWER (Active Pets & Pending Crates)
 -- ============================================================================
 local rightEdgeBtns = Instance.new("Frame")
 rightEdgeBtns.Name = "RightEdgeToggles"
-rightEdgeBtns.Size = UDim2.fromOffset(50, 108)
-rightEdgeBtns.Position = UDim2.new(1, -60, 0.42, 0)
+rightEdgeBtns.AnchorPoint = Vector2.new(1, 0.5)
+rightEdgeBtns.Size = UDim2.fromOffset(46, 100)
+rightEdgeBtns.Position = UDim2.new(1, -10, 0.45, 0)
 rightEdgeBtns.BackgroundTransparency = 1
 rightEdgeBtns.Parent = gui
 
 local cratesEdgeBtn = Instance.new("TextButton")
-cratesEdgeBtn.Size = UDim2.fromOffset(48, 48)
+cratesEdgeBtn.Size = UDim2.fromOffset(44, 44)
+cratesEdgeBtn.Position = UDim2.fromOffset(1, 0)
 cratesEdgeBtn.BackgroundColor3 = Color3.fromRGB(208, 48, 40)
 cratesEdgeBtn.Text = "📦"
 cratesEdgeBtn.TextScaled = true
@@ -548,8 +648,8 @@ makeCorner(cratesEdgeBtn, 8)
 makeStroke(cratesEdgeBtn, 2.5)
 
 local petsEdgeBtn = Instance.new("TextButton")
-petsEdgeBtn.Size = UDim2.fromOffset(48, 48)
-petsEdgeBtn.Position = UDim2.fromOffset(0, 56)
+petsEdgeBtn.Size = UDim2.fromOffset(44, 44)
+petsEdgeBtn.Position = UDim2.fromOffset(1, 52)
 petsEdgeBtn.BackgroundColor3 = Color3.fromRGB(196, 130, 58)
 petsEdgeBtn.Text = "🐾"
 petsEdgeBtn.TextScaled = true
@@ -559,8 +659,9 @@ makeStroke(petsEdgeBtn, 2.5)
 
 local rightDrawerWrap = Instance.new("Frame")
 rightDrawerWrap.Name = "RightSideDrawer"
-rightDrawerWrap.Size = UDim2.fromOffset(256, 270)
-rightDrawerWrap.Position = UDim2.new(1, -326, 0.36, 0)
+rightDrawerWrap.AnchorPoint = Vector2.new(1, 0.5)
+rightDrawerWrap.Size = UDim2.fromOffset(256, 264)
+rightDrawerWrap.Position = UDim2.new(1, -62, 0.45, 0)
 rightDrawerWrap.BackgroundTransparency = 1
 rightDrawerWrap.Parent = gui
 
@@ -773,86 +874,236 @@ petsEdgeBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ============================================================================
--- 5. BOTTOM-CENTER 9-SLOT HOTBAR (1-3 LOCKED POSITIONS + 4-9 PETS) & MOUNT CTA
+-- 5. BOTTOM-CENTER 9-SLOT HOTBAR (1-3 LOCKED + 4-9 CRATES & PETS) & MOUNT CTA
 -- ============================================================================
-local selectedHotbarSlot = 2 -- Default select Vehicle (Slot 2) so Mount/Ride button is ready
-local hotbarPetUids: { [number]: string } = {}
+type HotbarSlotItem = { kind: "Crate" | "Pet", uid: string }
+local selectedHotbarSlot = 0 -- 0 = empty hands, 1 = Lasso, 2 = Vehicle, 4..9 = Crates / Pets
+local selectedCustomCrateUid: string? = nil
+local hotbarItems: { [number]: HotbarSlotItem } = {}
+local lastMountThumbKey = ""
+
+local bottomCenterHud = Instance.new("Frame")
+bottomCenterHud.Name = "BottomCenterHUD"
+bottomCenterHud.AnchorPoint = Vector2.new(0.5, 1)
+bottomCenterHud.Size = UDim2.fromOffset(472, 102)
+bottomCenterHud.Position = UDim2.new(0.5, 0, 1, -8)
+bottomCenterHud.BackgroundTransparency = 1
+bottomCenterHud.Parent = gui
 
 local mountActionBtn = Instance.new("TextButton")
 mountActionBtn.Name = "MountActionButton"
-mountActionBtn.Size = UDim2.fromOffset(248, 50)
-mountActionBtn.Position = UDim2.new(0.5, -124, 1, -122)
+mountActionBtn.AnchorPoint = Vector2.new(0.5, 0)
+mountActionBtn.Size = UDim2.fromOffset(220, 44)
+mountActionBtn.Position = UDim2.new(0.5, 0, 0, 0)
 mountActionBtn.BackgroundColor3 = Color3.new(1, 1, 1)
 mountActionBtn.Text = ""
 mountActionBtn.ZIndex = 10
-mountActionBtn.Parent = gui
+mountActionBtn.Parent = bottomCenterHud
 makeCorner(mountActionBtn, 10)
 makeStroke(mountActionBtn, 3)
 local mountBtnGrad = makeGradient(mountActionBtn, Color3.fromRGB(132, 255, 42), Color3.fromRGB(64, 198, 18))
 
+local mountIconHolder = Instance.new("Frame")
+mountIconHolder.Name = "MountIconHolder"
+mountIconHolder.Size = UDim2.fromOffset(38, 38)
+mountIconHolder.Position = UDim2.fromOffset(10, 3)
+mountIconHolder.BackgroundTransparency = 1
+mountIconHolder.ZIndex = 11
+mountIconHolder.Parent = mountActionBtn
+
 local mountIconLbl = Instance.new("TextLabel")
-mountIconLbl.Size = UDim2.fromOffset(42, 42)
-mountIconLbl.Position = UDim2.fromOffset(14, 4)
+mountIconLbl.Size = UDim2.fromScale(1, 1)
 mountIconLbl.BackgroundTransparency = 1
-mountIconLbl.Text = "🚙"
+mountIconLbl.Text = ""
 mountIconLbl.TextScaled = true
 mountIconLbl.ZIndex = 11
-mountIconLbl.Parent = mountActionBtn
+mountIconLbl.Parent = mountIconHolder
 
-local mountTextLbl = makeOutlinedLabel(mountActionBtn, "Ride", UDim2.new(1, -66, 1, -8), UDim2.fromOffset(60, 4), Color3.new(1, 1, 1), 2.8)
+local mountTextLbl = makeOutlinedLabel(mountActionBtn, "Ride", UDim2.new(1, -56, 1, -8), UDim2.fromOffset(52, 4), Color3.new(1, 1, 1), 2.8)
 mountTextLbl.TextXAlignment = Enum.TextXAlignment.Center
 mountTextLbl.ZIndex = 11
 
+local dropCrateBtn = Instance.new("TextButton")
+dropCrateBtn.Name = "DropCrateButton"
+dropCrateBtn.AnchorPoint = Vector2.new(0.5, 0)
+dropCrateBtn.Size = UDim2.fromOffset(170, 42)
+dropCrateBtn.Position = UDim2.new(0.5, 0, 0, 1)
+dropCrateBtn.BackgroundColor3 = Color3.new(1, 1, 1)
+dropCrateBtn.Text = ""
+dropCrateBtn.ZIndex = 10
+dropCrateBtn.Visible = false
+dropCrateBtn.Parent = bottomCenterHud
+makeCorner(dropCrateBtn, 10)
+makeStroke(dropCrateBtn, 3)
+makeGradient(dropCrateBtn, Color3.fromRGB(94, 98, 118), Color3.fromRGB(58, 60, 76))
+makeOutlinedLabel(dropCrateBtn, "🗑️ Drop", UDim2.new(1, -12, 1, -6), UDim2.fromOffset(6, 3), Color3.new(1, 1, 1), 2.6).ZIndex = 11
+dropCrateBtn.MouseButton1Click:Connect(function()
+	playClickSFX()
+	Remotes.Get("DropCarriedCrate"):FireServer()
+end)
+
 local hotbar = Instance.new("Frame")
 hotbar.Name = "BottomHotbar"
-hotbar.Size = UDim2.fromOffset(472, 54)
-hotbar.Position = UDim2.new(0.5, -236, 1, -62)
+hotbar.AnchorPoint = Vector2.new(0.5, 1)
+hotbar.Size = UDim2.fromOffset(472, 52)
+hotbar.Position = UDim2.new(0.5, 0, 1, 0)
 hotbar.BackgroundTransparency = 1
-hotbar.Parent = gui
+hotbar.Parent = bottomCenterHud
 
 local hbLayout = Instance.new("UIListLayout")
 hbLayout.FillDirection = Enum.FillDirection.Horizontal
+hbLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 hbLayout.Padding = UDim.new(0, 5)
 hbLayout.SortOrder = Enum.SortOrder.LayoutOrder
 hbLayout.Parent = hotbar
 
 local refreshMountButton: () -> ()
 local renderHotbar: () -> ()
+local openModal: (string?) -> ()
+
+local function findVehicleDefById(id: string): Types.VehicleDefinition
+	for _, v in ipairs(VehicleConfig) do
+		if v.id == id then return v end
+	end
+	return VehicleConfig[1]
+end
+
+local function findLassoDefById(id: string): Types.LassoDefinition
+	for _, l in ipairs(LassoConfig) do
+		if l.id == id then return l end
+	end
+	return LassoConfig[1]
+end
+
+local function syncHeldItemFromHotbar()
+	local hType = ""
+	local hId = ""
+	local hSpecies = ""
+	local hMutation = ""
+	local hBiome = ""
+	local hRarity = ""
+	local hScale = 1
+
+	if selectedCustomCrateUid and profile and type(profile.crateInventory) == "table" then
+		local invC = profile.crateInventory[selectedCustomCrateUid]
+		if invC then
+			hType = "Crate"
+			hId = invC.uid
+			hBiome = invC.biomeId
+			hRarity = invC.rarity
+			hScale = invC.sizeScale or 1
+		else
+			selectedCustomCrateUid = nil
+		end
+	elseif selectedHotbarSlot == 1 and profile then
+		hType = "Lasso"
+		hId = profile.equippedLasso
+	elseif selectedHotbarSlot == 2 and profile then
+		hType = "Vehicle"
+		hId = profile.equippedVehicle
+	elseif selectedHotbarSlot >= 4 and selectedHotbarSlot <= 9 and profile then
+		local entry = hotbarItems[selectedHotbarSlot]
+		if entry and entry.kind == "Crate" and type(profile.crateInventory) == "table" then
+			local crate = profile.crateInventory[entry.uid]
+			if crate then
+				hType = "Crate"
+				hId = crate.uid
+				hBiome = crate.biomeId
+				hRarity = crate.rarity
+				hScale = crate.sizeScale or 1
+			end
+		elseif entry and entry.kind == "Pet" then
+			local animal = profile.inventoryAnimals[entry.uid]
+			if animal then
+				hType = "Pet"
+				hId = entry.uid
+				hSpecies = animal.speciesId
+				hMutation = animal.mutation
+			end
+		end
+	end
+
+	localPlayer:SetAttribute("HeldItemType", hType)
+	localPlayer:SetAttribute("HeldItemId", hId)
+	localPlayer:SetAttribute("HeldItemSpecies", hSpecies)
+	localPlayer:SetAttribute("HeldItemMutation", hMutation)
+	localPlayer:SetAttribute("HeldItemBiome", hBiome)
+	localPlayer:SetAttribute("HeldItemRarity", hRarity)
+	localPlayer:SetAttribute("HeldItemScale", hScale)
+	Remotes.Get("SetHeldItem"):FireServer(hType, hId)
+end
 
 refreshMountButton = function()
 	local isVeh = localPlayer:GetAttribute("IsRidingVehicle") == true
 	local activeMountUid = tostring(localPlayer:GetAttribute("MountedAnimalUid") or "")
 	local show = false
-	local iconTxt = "🚙"
+	local thumbKey = ""
 	local labelTxt = "Ride"
 	local isDismount = false
 
 	if isVeh then
 		show = true
-		iconTxt = "🚙"
+		local vId = if profile then profile.equippedVehicle else "StarterATV"
+		thumbKey = "Veh:" .. vId
 		labelTxt = "Dismount"
 		isDismount = true
 	elseif activeMountUid ~= "" then
 		show = true
-		iconTxt = "🐾"
-		labelTxt = "Dismount"
+		local sId = tostring(localPlayer:GetAttribute("MountedAnimalId") or "RustyFox")
+		local mut = tostring(localPlayer:GetAttribute("MountedAnimalMutation") or "None")
+		thumbKey = "Pet:" .. sId .. ":" .. mut
+		labelTxt = "Get Off"
 		isDismount = true
 	elseif selectedHotbarSlot == 2 then
 		show = true
-		iconTxt = "🚙"
+		local vId = if profile then profile.equippedVehicle else "StarterATV"
+		thumbKey = "Veh:" .. vId
 		labelTxt = "Ride"
 	elseif selectedHotbarSlot >= 4 and selectedHotbarSlot <= 9 then
-		local petUid = hotbarPetUids[selectedHotbarSlot]
-		if petUid and profile and profile.inventoryAnimals[petUid] then
+		local entry = hotbarItems[selectedHotbarSlot]
+		local animal = if entry and entry.kind == "Pet" and profile then profile.inventoryAnimals[entry.uid] else nil
+		if entry and animal then
 			show = true
-			iconTxt = "🐾"
+			thumbKey = "Pet:" .. animal.speciesId .. ":" .. animal.mutation
 			labelTxt = "Mount"
 		end
 	end
 
+	local carryingCount = tonumber(localPlayer:GetAttribute("TowedCrateCount")) or 0
+	local showDrop = carryingCount > 0
+	dropCrateBtn.Visible = showDrop
+
 	mountActionBtn.Visible = show
-	mountIconLbl.Text = iconTxt
 	mountTextLbl.Text = labelTxt
+	if show and showDrop then
+		mountActionBtn.Size = UDim2.fromOffset(180, 42)
+		mountActionBtn.Position = UDim2.new(0.5, -96, 0, 1)
+		dropCrateBtn.Size = UDim2.fromOffset(156, 42)
+		dropCrateBtn.Position = UDim2.new(0.5, 92, 0, 1)
+	elseif show then
+		mountActionBtn.Size = UDim2.fromOffset(220, 44)
+		mountActionBtn.Position = UDim2.new(0.5, 0, 0, 0)
+	elseif showDrop then
+		dropCrateBtn.Size = UDim2.fromOffset(186, 42)
+		dropCrateBtn.Position = UDim2.new(0.5, 0, 0, 1)
+	end
+	if show and thumbKey ~= lastMountThumbKey then
+		lastMountThumbKey = thumbKey
+		mountIconLbl.Visible = false
+		if string.sub(thumbKey, 1, 4) == "Veh:" then
+			local vDef = findVehicleDefById(string.sub(thumbKey, 5))
+			setViewportThumbnail(mountIconHolder, function()
+				return AnimalVisualBuilder.BuildVehicleModel(vDef, 1.0)
+			end)
+		elseif string.sub(thumbKey, 1, 4) == "Pet:" then
+			local parts = string.split(thumbKey, ":")
+			local sId = parts[2] or "RustyFox"
+			local mut = (parts[3] or "None") :: Types.AnimalMutation
+			setViewportThumbnail(mountIconHolder, function()
+				return AnimalVisualBuilder.BuildAnimalModel(sId, 1.0, mut, true)
+			end)
+		end
+	end
 	if isDismount then
 		mountBtnGrad.Color = ColorSequence.new(Color3.fromRGB(255, 112, 68), Color3.fromRGB(204, 46, 34))
 	else
@@ -871,14 +1122,14 @@ mountActionBtn.MouseButton1Click:Connect(function()
 	elseif selectedHotbarSlot == 2 then
 		localPlayer:SetAttribute("ToggleVehicleRequest", not (localPlayer:GetAttribute("ToggleVehicleRequest") == true))
 	elseif selectedHotbarSlot >= 4 and selectedHotbarSlot <= 9 then
-		local petUid = hotbarPetUids[selectedHotbarSlot]
-		if petUid then
-			Remotes.Get("MountAnimal"):FireServer(petUid)
+		local entry = hotbarItems[selectedHotbarSlot]
+		if entry and entry.kind == "Pet" then
+			Remotes.Get("MountAnimal"):FireServer(entry.uid)
 		end
 	end
 end)
 
-local function createHotbarSlot(slotIndex: number, icon: string, label: string, isLocked: boolean, isSelected: boolean, borderCol: Color3?, onClick: () -> ()): TextButton
+local function createHotbarSlot(slotIndex: number, modelBuilder: (() -> Model?)?, fallbackIcon: string, label: string, isLocked: boolean, isSelected: boolean, borderCol: Color3?, onClick: () -> ()): TextButton
 	local slot = Instance.new("TextButton")
 	slot.Name = "Slot_" .. tostring(slotIndex)
 	slot.LayoutOrder = slotIndex
@@ -888,25 +1139,40 @@ local function createHotbarSlot(slotIndex: number, icon: string, label: string, 
 	slot.Text = ""
 	slot.Parent = hotbar
 	makeCorner(slot, 7)
-	makeStroke(slot, if isSelected then 3 else 2.2, if isSelected then Color3.fromRGB(128, 255, 68) else (borderCol or Color3.fromRGB(14, 16, 20)))
+	local slotStroke = makeStroke(slot, if isSelected then 3 else 2.2, if isSelected then Color3.fromRGB(128, 255, 68) else (borderCol or Color3.fromRGB(14, 16, 20)))
+	slotStroke.Name = "SlotStroke"
+	slot:SetAttribute("DefaultBorderCol", borderCol or Color3.fromRGB(14, 16, 20))
 
 	local k = makeOutlinedLabel(slot, tostring(slotIndex), UDim2.fromOffset(14, 14), UDim2.fromOffset(3, 2), Color3.new(1, 1, 1), 1.6)
 	k.TextXAlignment = Enum.TextXAlignment.Left
+	k.ZIndex = 3
 
 	if isLocked then
 		local lockLbl = makeOutlinedLabel(slot, "🔒", UDim2.fromOffset(13, 13), UDim2.new(1, -15, 0, 2), Color3.fromRGB(255, 224, 96), 1.2)
 		lockLbl.ZIndex = 3
 	end
 
-	local ic = Instance.new("TextLabel")
-	ic.Size = UDim2.fromOffset(26, 24)
-	ic.Position = UDim2.fromOffset(11, 8)
-	ic.BackgroundTransparency = 1
-	ic.Text = icon
-	ic.TextScaled = true
-	ic.Parent = slot
+	local thumbBox = Instance.new("Frame")
+	thumbBox.Size = UDim2.fromOffset(34, 30)
+	thumbBox.Position = UDim2.fromOffset(7, 5)
+	thumbBox.BackgroundTransparency = 1
+	thumbBox.ZIndex = 2
+	thumbBox.Parent = slot
 
-	makeOutlinedLabel(slot, label, UDim2.new(1, -4, 0, 14), UDim2.new(0, 2, 1, -15), Color3.new(1, 1, 1), 1.6)
+	if modelBuilder then
+		setViewportThumbnail(thumbBox, modelBuilder)
+	elseif fallbackIcon ~= "" then
+		local ic = Instance.new("TextLabel")
+		ic.Size = UDim2.fromScale(1, 1)
+		ic.BackgroundTransparency = 1
+		ic.Text = fallbackIcon
+		ic.TextScaled = true
+		ic.ZIndex = 2
+		ic.Parent = thumbBox
+	end
+
+	local nmLbl = makeOutlinedLabel(slot, label, UDim2.new(1, -4, 0, 14), UDim2.new(0, 2, 1, -15), Color3.new(1, 1, 1), 1.6)
+	nmLbl.ZIndex = 3
 
 	slot.MouseButton1Click:Connect(function()
 		playClickSFX()
@@ -915,18 +1181,37 @@ local function createHotbarSlot(slotIndex: number, icon: string, label: string, 
 	return slot
 end
 
+local function refreshHotbarSelectionVisuals()
+	for _, ch in ipairs(hotbar:GetChildren()) do
+		if ch:IsA("TextButton") then
+			local idx = ch.LayoutOrder
+			local isSel = (idx == selectedHotbarSlot)
+			ch.BackgroundColor3 = if isSel then Color3.fromRGB(58, 72, 92) else Color3.fromRGB(34, 38, 46)
+			local st = ch:FindFirstChild("SlotStroke")
+			if st and st:IsA("UIStroke") then
+				st.Thickness = if isSel then 3 else 2.2
+				local defCol = ch:GetAttribute("DefaultBorderCol")
+				st.Color = if isSel then Color3.fromRGB(128, 255, 68) elseif typeof(defCol) == "Color3" then defCol else Color3.fromRGB(14, 16, 20)
+			end
+		end
+	end
+end
+
 local function selectHotbarSlot(idx: number)
-	selectedHotbarSlot = idx
-	if idx == 1 then
-		shopSubTab = "Lassos"
-		openModal("Shop")
-	elseif idx == 3 then
+	if idx == 3 then
 		invLeftTab = "Pets"
 		openModal("Inventory")
+		return
 	end
-	if renderHotbar then
-		renderHotbar()
+	selectedCustomCrateUid = nil
+	-- Clicking the already-held slot puts the item away; otherwise select & hold it in hand
+	if selectedHotbarSlot == idx then
+		selectedHotbarSlot = 0
+	else
+		selectedHotbarSlot = idx
 	end
+	refreshHotbarSelectionVisuals()
+	syncHeldItemFromHotbar()
 	refreshMountButton()
 end
 
@@ -936,48 +1221,71 @@ renderHotbar = function()
 			ch:Destroy()
 		end
 	end
-	table.clear(hotbarPetUids)
+	table.clear(hotbarItems)
 
-	-- Slot 1 (LOCKED): Equipped Lasso
-	local lassoName = "Lasso"
-	if profile then
-		for _, l in ipairs(LassoConfig) do
-			if l.id == profile.equippedLasso then
-				lassoName = string.gsub(l.name, " Lasso", "")
-				break
-			end
-		end
-	end
-	createHotbarSlot(1, "🪢", lassoName, true, selectedHotbarSlot == 1, Color3.fromRGB(244, 168, 52), function()
+	-- Slot 1 (LOCKED): Equipped Lasso with 3D thumbnail
+	local lassoDef = findLassoDefById(if profile then profile.equippedLasso else "RopeLasso")
+	local lassoName = string.gsub(lassoDef.name, " Lasso", "")
+	createHotbarSlot(1, function()
+		return AnimalVisualBuilder.BuildLassoModel(lassoDef.beamColor, 1.15)
+	end, "🪢", lassoName, true, selectedHotbarSlot == 1, Color3.fromRGB(244, 168, 52), function()
 		selectHotbarSlot(1)
 	end)
 
-	-- Slot 2 (LOCKED): Equipped Vehicle (Select to show Ride/Mount CTA)
-	local vehName = "Vehicle"
-	if profile then
-		for _, v in ipairs(VehicleConfig) do
-			if v.id == profile.equippedVehicle then
-				vehName = string.gsub(v.name, "Starter ", "")
-				break
-			end
-		end
-	end
-	createHotbarSlot(2, "🚙", vehName, true, selectedHotbarSlot == 2, Color3.fromRGB(68, 224, 118), function()
+	-- Slot 2 (LOCKED): Equipped Vehicle with 3D thumbnail
+	local vehDef = findVehicleDefById(if profile then profile.equippedVehicle else "StarterATV")
+	local vehName = string.gsub(vehDef.name, "Starter ", "")
+	createHotbarSlot(2, function()
+		return AnimalVisualBuilder.BuildVehicleModel(vehDef, 1.0)
+	end, "🚙", vehName, true, selectedHotbarSlot == 2, Color3.fromRGB(68, 224, 118), function()
 		selectHotbarSlot(2)
 	end)
 
-	-- Slot 3 (LOCKED): Pets Bag (Quick Inventory)
-	createHotbarSlot(3, "🐾", "Pets", true, selectedHotbarSlot == 3, Color3.fromRGB(168, 132, 72), function()
+	-- Slot 3 (LOCKED): Backpack & Pets Bag (Quick Inventory toggle)
+	createHotbarSlot(3, nil, "🎒", "Bag", true, false, Color3.fromRGB(168, 132, 72), function()
 		selectHotbarSlot(3)
 	end)
 
-	-- Slots 4..9 (6 Slots = Max 9 Total Hotbar Items): Top Owned Animals for Quick Mount
-	local petList: { { uid: string, name: string, color: Color3, income: number } } = {}
+	-- Slots 4..9 (6 Slots = Max 9 Total Hotbar Items): Backpack Crates first + Top Owned Pets!
+	local combinedList: { {
+		kind: "Crate" | "Pet",
+		uid: string,
+		label: string,
+		color: Color3,
+		crateBiome: string?,
+		crateRarity: Types.AnimalRarity?,
+		petSpecies: string?,
+		petMutation: Types.AnimalMutation?,
+	} } = {}
+
 	if profile then
+		if type(profile.crateInventory) == "table" then
+			local invCrates: { Types.InventoryCrate } = {}
+			for _, c in pairs(profile.crateInventory) do
+				table.insert(invCrates, c)
+			end
+			table.sort(invCrates, function(a, b)
+				return (a.acquiredAt or 0) > (b.acquiredAt or 0)
+			end)
+			for _, c in ipairs(invCrates) do
+				table.insert(combinedList, {
+					kind = "Crate",
+					uid = c.uid,
+					label = c.rarity .. " Box",
+					color = GameConfig.RARITY_COLORS[c.rarity] or Color3.fromRGB(255, 206, 72),
+					crateBiome = c.biomeId,
+					crateRarity = c.rarity,
+				})
+			end
+		end
+
+		local petList: { { uid: string, speciesId: string, mutation: Types.AnimalMutation, name: string, color: Color3, income: number } } = {}
 		for uid, a in pairs(profile.inventoryAnimals) do
 			local spec = AnimalConfig.GetById(a.speciesId)
 			table.insert(petList, {
 				uid = uid,
+				speciesId = a.speciesId,
+				mutation = a.mutation,
 				name = spec and spec.name or a.speciesId,
 				color = if spec then (GameConfig.RARITY_COLORS[spec.rarity] or Color3.fromRGB(92, 132, 198)) else Color3.fromRGB(92, 132, 198),
 				income = AnimalConfig.ComputeIncomePerSec(a),
@@ -986,379 +1294,944 @@ renderHotbar = function()
 		table.sort(petList, function(a, b)
 			return a.income > b.income
 		end)
+		for _, pItem in ipairs(petList) do
+			table.insert(combinedList, {
+				kind = "Pet",
+				uid = pItem.uid,
+				label = pItem.name,
+				color = pItem.color,
+				petSpecies = pItem.speciesId,
+				petMutation = pItem.mutation,
+			})
+		end
 	end
 
 	for slotIdx = 4, 9 do
-		local pItem = petList[slotIdx - 3]
-		if pItem then
-			hotbarPetUids[slotIdx] = pItem.uid
-			createHotbarSlot(slotIdx, "🐾", pItem.name, false, selectedHotbarSlot == slotIdx, pItem.color, function()
-				selectHotbarSlot(slotIdx)
-			end)
+		local entry = combinedList[slotIdx - 3]
+		if entry then
+			hotbarItems[slotIdx] = { kind = entry.kind, uid = entry.uid }
+			if entry.kind == "Crate" then
+				local cRarity = entry.crateRarity or "Common"
+				local cBiome = entry.crateBiome or "PineWoods"
+				createHotbarSlot(slotIdx, function()
+					return AnimalVisualBuilder.BuildCrateModel(cRarity, cBiome, 1.0, {
+						isBuried = false,
+						canCollide = false,
+						showBeacon = false,
+					})
+				end, "📦", entry.label, false, selectedHotbarSlot == slotIdx, entry.color, function()
+					selectHotbarSlot(slotIdx)
+				end)
+			else
+				local itemSpecies = entry.petSpecies or "RustyFox"
+				local itemMut = entry.petMutation or "None"
+				createHotbarSlot(slotIdx, function()
+					return AnimalVisualBuilder.BuildAnimalModel(itemSpecies, 1.0, itemMut, true)
+				end, "🐾", entry.label, false, selectedHotbarSlot == slotIdx, entry.color, function()
+					selectHotbarSlot(slotIdx)
+				end)
+			end
 		else
-			createHotbarSlot(slotIdx, "", "Empty", false, selectedHotbarSlot == slotIdx, nil, function()
+			createHotbarSlot(slotIdx, nil, "", "Empty", false, selectedHotbarSlot == slotIdx, nil, function()
 				selectHotbarSlot(slotIdx)
 			end)
 		end
 	end
+	syncHeldItemFromHotbar()
 end
 
 local eventTimerBox = Instance.new("Frame")
 eventTimerBox.Name = "BottomRightTimer"
-eventTimerBox.Size = UDim2.fromOffset(175, 44)
-eventTimerBox.Position = UDim2.new(1, -186, 1, -52)
+eventTimerBox.AnchorPoint = Vector2.new(1, 1)
+eventTimerBox.Size = UDim2.fromOffset(164, 40)
+eventTimerBox.Position = UDim2.new(1, -12, 1, -10)
 eventTimerBox.BackgroundTransparency = 1
 eventTimerBox.Parent = gui
-makeOutlinedLabel(eventTimerBox, "❄️", UDim2.fromOffset(40, 40), UDim2.fromOffset(0, 2), Color3.fromRGB(142, 234, 255), 2)
-local timerLbl = makeOutlinedLabel(eventTimerBox, "In: 10:00", UDim2.fromOffset(130, 36), UDim2.fromOffset(44, 4), Color3.new(1, 1, 1), 2.6)
+makeOutlinedLabel(eventTimerBox, "❄️", UDim2.fromOffset(36, 36), UDim2.fromOffset(0, 2), Color3.fromRGB(142, 234, 255), 2)
+local timerLbl = makeOutlinedLabel(eventTimerBox, "In: 10:00", UDim2.fromOffset(122, 34), UDim2.fromOffset(40, 3), Color3.new(1, 1, 1), 2.5)
 timerLbl.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ============================================================================
--- 6. MODAL WINDOWS: SHOP | INDEX | ALL PETS INVENTORY | SETTINGS
+-- 6. DEDICATED MODALS: SHOP | TRAILS | LASSOS | VEHICLES | FUSE | REBIRTH | INDEX | INVENTORY | SETTINGS
 -- ============================================================================
--- Forward declare renderers
 local renderActiveModal: () -> ()
+local lastAutoZoneModal: string? = nil
+local dismissedStandZoneModal: string? = nil
 
-local function openModal(name: string?)
-	currentModal = if currentModal == name then nil else name
+openModal = function(name: string?, fromStandZone: boolean?)
+	if name == nil and not fromStandZone and lastAutoZoneModal then
+		dismissedStandZoneModal = lastAutoZoneModal
+	end
+	if fromStandZone then
+		currentModal = name
+	else
+		currentModal = if currentModal == name then nil else name
+	end
+	if currentModal == "Fuse" then
+		fusePickerSlot = nil
+	end
 	renderActiveModal()
 end
 
--- A. SHOP MODAL (Screenshots 2 & 3)
-local shopWindow = Instance.new("Frame")
-shopWindow.Name = "ShopModal"
-shopWindow.Size = UDim2.fromOffset(670, 435)
-shopWindow.Position = UDim2.new(0.5, -335, 0.5, -220)
-shopWindow.BackgroundColor3 = Color3.fromRGB(28, 30, 36)
-shopWindow.Visible = false
-shopWindow.Parent = gui
-makeCorner(shopWindow, 12)
-makeStroke(shopWindow, 3)
+local function makeDedicatedModal(modalName: string, titleText: string, topCol: Color3, botCol: Color3, useGrid: boolean, cellW: number?, cellH: number?): (Frame, ScrollingFrame)
+	local win = Instance.new("Frame")
+	win.Name = modalName
+	win.AnchorPoint = Vector2.new(0.5, 0.5)
+	win.Size = UDim2.fromOffset(670, 435)
+	win.Position = UDim2.fromScale(0.5, 0.5)
+	win.BackgroundColor3 = Color3.fromRGB(28, 30, 36)
+	win.Visible = false
+	win.Parent = gui
+	makeCorner(win, 12)
+	makeStroke(win, 3)
 
-makeWindowHeader(shopWindow, "Shop", Color3.fromRGB(132, 255, 42), Color3.fromRGB(64, 198, 18), function()
-	openModal(nil)
-end)
+	makeWindowHeader(win, titleText, topCol, botCol, function()
+		openModal(nil)
+	end)
 
-local shopTabsBar = Instance.new("Frame")
-shopTabsBar.Size = UDim2.new(1, -24, 0, 34)
-shopTabsBar.Position = UDim2.fromOffset(12, 54)
-shopTabsBar.BackgroundTransparency = 1
-shopTabsBar.Parent = shopWindow
-local stLayout = Instance.new("UIListLayout")
-stLayout.FillDirection = Enum.FillDirection.Horizontal
-stLayout.Padding = UDim.new(0, 6)
-stLayout.Parent = shopTabsBar
+	local scroll = Instance.new("ScrollingFrame")
+	scroll.Size = UDim2.new(1, -24, 1, -64)
+	scroll.Position = UDim2.fromOffset(12, 54)
+	scroll.BackgroundColor3 = Color3.fromRGB(22, 24, 30)
+	scroll.ScrollBarThickness = 8
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	scroll.CanvasSize = UDim2.fromScale(0, 0)
+	scroll.Parent = win
+	makeCorner(scroll, 8)
 
-local shopScroll = Instance.new("ScrollingFrame")
-shopScroll.Size = UDim2.new(1, -24, 1, -102)
-shopScroll.Position = UDim2.fromOffset(12, 92)
-shopScroll.BackgroundColor3 = Color3.fromRGB(22, 24, 30)
-shopScroll.ScrollBarThickness = 8
-shopScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-shopScroll.CanvasSize = UDim2.fromScale(0, 0)
-shopScroll.Parent = shopWindow
-makeCorner(shopScroll, 8)
-local ssLayout = Instance.new("UIListLayout")
-ssLayout.Padding = UDim.new(0, 10)
-ssLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-ssLayout.Parent = shopScroll
-local ssPad = Instance.new("UIPadding")
-ssPad.PaddingTop = UDim.new(0, 8)
-ssPad.PaddingBottom = UDim.new(0, 8)
-ssPad.Parent = shopScroll
+	if useGrid then
+		local gl = Instance.new("UIGridLayout")
+		gl.CellSize = UDim2.fromOffset(cellW or 196, cellH or 220)
+		gl.CellPadding = UDim2.fromOffset(10, 10)
+		gl.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		gl.Parent = scroll
+	else
+		local ll = Instance.new("UIListLayout")
+		ll.Padding = UDim.new(0, 10)
+		ll.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		ll.Parent = scroll
+	end
+
+	local pad = Instance.new("UIPadding")
+	pad.PaddingTop = UDim.new(0, 10)
+	pad.PaddingBottom = UDim.new(0, 10)
+	pad.PaddingLeft = UDim.new(0, 8)
+	pad.PaddingRight = UDim.new(0, 8)
+	pad.Parent = scroll
+
+	return win, scroll
+end
+
+local function clearScrollItems(scroll: ScrollingFrame)
+	for _, ch in ipairs(scroll:GetChildren()) do
+		if not ch:IsA("UIListLayout") and not ch:IsA("UIGridLayout") and not ch:IsA("UIPadding") then
+			ch:Destroy()
+		end
+	end
+end
+
+local function addActionRow(scroll: ScrollingFrame, titleStr: string, subStr: string, btnStr: string, btnCol: Color3, cb: () -> ())
+	local r = Instance.new("Frame")
+	r.Size = UDim2.new(0.96, 0, 0, 58)
+	r.BackgroundColor3 = Color3.fromRGB(36, 40, 52)
+	r.Parent = scroll
+	makeCorner(r, 8)
+	makeStroke(r, 2)
+
+	makeOutlinedLabel(r, titleStr, UDim2.new(0.68, -12, 0, 26), UDim2.fromOffset(10, 4), Color3.new(1, 1, 1), 2).TextXAlignment = Enum.TextXAlignment.Left
+	makeOutlinedLabel(r, subStr, UDim2.new(0.68, -12, 0, 20), UDim2.fromOffset(10, 32), Color3.fromRGB(192, 212, 238), 1.6).TextXAlignment = Enum.TextXAlignment.Left
+
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(0.28, -10, 0, 40)
+	b.Position = UDim2.new(0.71, 0, 0, 9)
+	b.BackgroundColor3 = btnCol
+	b.Text = btnStr
+	b.TextColor3 = Color3.new(1, 1, 1)
+	b.Font = Enum.Font.FredokaOne
+	b.TextScaled = true
+	b.Parent = r
+	makeCorner(b, 8)
+	makeStroke(b, 2)
+	makeTextStroke(b, 1.8)
+	b.MouseButton1Click:Connect(function()
+		playClickSFX()
+		cb()
+	end)
+end
+
+local function addShopGridCard(
+	scroll: ScrollingFrame,
+	cardTitle: string,
+	statLine1: string,
+	statLine2: string,
+	accentCol: Color3,
+	btnText: string,
+	btnCol: Color3,
+	previewBuilder: ((Frame) -> ())?,
+	onBuyClick: () -> ()
+)
+	local card = Instance.new("Frame")
+	card.BackgroundColor3 = Color3.fromRGB(38, 42, 52)
+	card.Parent = scroll
+	makeCorner(card, 10)
+	makeStroke(card, 2.5, Color3.fromRGB(18, 20, 26))
+	makeGradient(card, Color3.fromRGB(54, 58, 70), Color3.fromRGB(30, 34, 42))
+
+	local tLbl = makeOutlinedLabel(card, cardTitle, UDim2.new(1, -12, 0, 28), UDim2.fromOffset(6, 6), Color3.new(1, 1, 1), 2.2)
+	tLbl.TextXAlignment = Enum.TextXAlignment.Center
+
+	local previewFrame = Instance.new("Frame")
+	previewFrame.Size = UDim2.new(1, -24, 0, 96)
+	previewFrame.Position = UDim2.fromOffset(12, 36)
+	previewFrame.BackgroundColor3 = Color3.fromRGB(24, 28, 36)
+	previewFrame.Parent = card
+	makeCorner(previewFrame, 8)
+	makeStroke(previewFrame, 2, accentCol)
+	if previewBuilder then
+		previewBuilder(previewFrame)
+	end
+
+	makeOutlinedLabel(card, statLine1, UDim2.new(1, -12, 0, 22), UDim2.fromOffset(6, 136), accentCol, 2)
+	makeOutlinedLabel(card, statLine2, UDim2.new(1, -12, 0, 18), UDim2.fromOffset(6, 158), Color3.fromRGB(220, 232, 248), 1.6)
+
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, -18, 0, 34)
+	btn.Position = UDim2.new(0, 9, 1, -41)
+	btn.BackgroundColor3 = btnCol
+	btn.Text = btnText
+	btn.TextColor3 = Color3.new(1, 1, 1)
+	btn.Font = Enum.Font.FredokaOne
+	btn.TextScaled = true
+	btn.Parent = card
+	makeCorner(btn, 8)
+	makeStroke(btn, 2)
+	makeTextStroke(btn, 1.8)
+	btn.MouseButton1Click:Connect(function()
+		playClickSFX()
+		onBuyClick()
+	end)
+end
+
+-- A1. FEATURED & ROBUX SHOP MODAL (Strictly Passes & Packs — not merged with Trails/Lassos/Vehicles!)
+local shopWindow, shopScroll = makeDedicatedModal("ShopModal", "Shop", Color3.fromRGB(132, 255, 42), Color3.fromRGB(64, 198, 18), false)
 
 local function renderShopModal()
-	for _, ch in ipairs(shopTabsBar:GetChildren()) do
-		if not ch:IsA("UIListLayout") then ch:Destroy() end
-	end
-	for _, ch in ipairs(shopScroll:GetChildren()) do
-		if not ch:IsA("UIListLayout") and not ch:IsA("UIPadding") then ch:Destroy() end
-	end
-
-	local subTabs = {
-		{ id = "Featured", label = "Featured & Passes" },
-		{ id = "Lassos", label = "Lassos (10)" },
-		{ id = "Trails", label = "Trails (10)" },
-		{ id = "Vehicles", label = "Vehicles (6)" },
-		{ id = "Fuse", label = "Fuse Machine" },
-		{ id = "Rebirth", label = "Rebirth/Daily" },
-	}
-	for _, st in ipairs(subTabs) do
-		local tb = Instance.new("TextButton")
-		tb.Size = UDim2.new(0.16, 0, 1, 0)
-		tb.BackgroundColor3 = if shopSubTab == st.id then Color3.fromRGB(84, 212, 54) else Color3.fromRGB(48, 52, 64)
-		tb.Text = st.label
-		tb.TextColor3 = Color3.new(1, 1, 1)
-		tb.Font = Enum.Font.FredokaOne
-		tb.TextScaled = true
-		tb.Parent = shopTabsBar
-		makeCorner(tb, 6)
-		makeStroke(tb, 2)
-		makeTextStroke(tb, 1.8)
-		tb.MouseButton1Click:Connect(function()
-			shopSubTab = st.id
-			renderShopModal()
-		end)
-	end
-
+	clearScrollItems(shopScroll)
 	if not profile then return end
 
-	if shopSubTab == "Featured" then
-		makeOutlinedLabel(shopScroll, "~ Featured ~", UDim2.new(0.95, 0, 0, 28), UDim2.new(), Color3.fromRGB(255, 224, 102), 2.5)
+	makeOutlinedLabel(shopScroll, "~ Featured ~", UDim2.new(0.95, 0, 0, 28), UDim2.new(), Color3.fromRGB(255, 224, 102), 2.5)
 
-		-- Ornate Gold Featured Banner (Screenshot 2)
-		local featCard = Instance.new("Frame")
-		featCard.Size = UDim2.new(0.96, 0, 0, 198)
-		featCard.BackgroundColor3 = Color3.fromRGB(64, 88, 178)
-		featCard.Parent = shopScroll
-		makeCorner(featCard, 10)
-		makeStroke(featCard, 3.5, Color3.fromRGB(255, 204, 52))
-		makeGradient(featCard, Color3.fromRGB(88, 126, 232), Color3.fromRGB(38, 48, 118))
+	local featCard = Instance.new("Frame")
+	featCard.Size = UDim2.new(0.96, 0, 0, 198)
+	featCard.BackgroundColor3 = Color3.fromRGB(64, 88, 178)
+	featCard.Parent = shopScroll
+	makeCorner(featCard, 10)
+	makeStroke(featCard, 3.5, Color3.fromRGB(255, 204, 52))
+	makeGradient(featCard, Color3.fromRGB(88, 126, 232), Color3.fromRGB(38, 48, 118))
 
-		local tagNew = makeOutlinedLabel(featCard, "NEW!", UDim2.fromOffset(64, 26), UDim2.fromOffset(10, 10), Color3.new(1, 1, 1), 2)
-		tagNew.BackgroundColor3 = Color3.fromRGB(218, 38, 38)
-		tagNew.BackgroundTransparency = 0
-		makeCorner(tagNew, 6)
-		makeStroke(tagNew, 2)
+	local tagNew = makeOutlinedLabel(featCard, "NEW!", UDim2.fromOffset(64, 26), UDim2.fromOffset(10, 10), Color3.new(1, 1, 1), 2)
+	tagNew.BackgroundColor3 = Color3.fromRGB(218, 38, 38)
+	tagNew.BackgroundTransparency = 0
+	makeCorner(tagNew, 6)
+	makeStroke(tagNew, 2)
 
-		local fTitle = makeOutlinedLabel(featCard, "FANTASY RESCUE PACK", UDim2.fromOffset(280, 36), UDim2.fromOffset(82, 6), Color3.fromRGB(255, 214, 62), 2.8)
-		fTitle.TextXAlignment = Enum.TextXAlignment.Left
-		makeOutlinedLabel(featCard, "Limited Time! Top Rare & Mythic Pets", UDim2.fromOffset(260, 20), UDim2.fromOffset(84, 40), Color3.fromRGB(240, 245, 255), 2).TextXAlignment = Enum.TextXAlignment.Left
+	local fTitle = makeOutlinedLabel(featCard, "FANTASY RESCUE PACK", UDim2.fromOffset(280, 36), UDim2.fromOffset(82, 6), Color3.fromRGB(255, 214, 62), 2.8)
+	fTitle.TextXAlignment = Enum.TextXAlignment.Left
+	makeOutlinedLabel(featCard, "Limited Time! Top Rare & Mythic Pets", UDim2.fromOffset(260, 20), UDim2.fromOffset(84, 40), Color3.fromRGB(240, 245, 255), 2).TextXAlignment = Enum.TextXAlignment.Left
 
-		-- 6 Featured Showcase Animal Cards
-		local featuredSpecies = {
-			{ id = "AntlerStag", chance = "48%" },
-			{ id = "AlbinoGator", chance = "30.9%" },
-			{ id = "SolarManeLion", chance = "15%" },
-			{ id = "GlacierMammoth", chance = "5%" },
-			{ id = "InfernoPhoenix", chance = "1%" },
-			{ id = "MythicWhiteTiger", chance = "0.1%" },
-		}
-		local row = Instance.new("Frame")
-		row.Size = UDim2.new(1, -20, 0, 82)
-		row.Position = UDim2.fromOffset(10, 68)
-		row.BackgroundTransparency = 1
-		row.Parent = featCard
-		local rLay = Instance.new("UIListLayout")
-		rLay.FillDirection = Enum.FillDirection.Horizontal
-		rLay.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		rLay.Padding = UDim.new(0, 6)
-		rLay.Parent = row
+	local featuredSpecies = {
+		{ id = "AntlerStag", chance = "48%" },
+		{ id = "AlbinoGator", chance = "30.9%" },
+		{ id = "SolarManeLion", chance = "15%" },
+		{ id = "GlacierMammoth", chance = "5%" },
+		{ id = "InfernoPhoenix", chance = "1%" },
+		{ id = "MythicWhiteTiger", chance = "0.1%" },
+	}
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, -20, 0, 82)
+	row.Position = UDim2.fromOffset(10, 68)
+	row.BackgroundTransparency = 1
+	row.Parent = featCard
+	local rLay = Instance.new("UIListLayout")
+	rLay.FillDirection = Enum.FillDirection.Horizontal
+	rLay.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	rLay.Padding = UDim.new(0, 6)
+	rLay.Parent = row
 
-		for _, item in ipairs(featuredSpecies) do
-			local sc = Instance.new("Frame")
-			sc.Size = UDim2.fromOffset(92, 80)
-			sc.BackgroundTransparency = 1
-			sc.Parent = row
-			local box = makeAnimalIconFrame(sc, item.id, "None", false)
-			local chLbl = makeOutlinedLabel(box, item.chance, UDim2.new(1, -6, 0, 20), UDim2.new(0, 3, 1, -22), Color3.new(1, 1, 1), 2)
-			chLbl.TextXAlignment = Enum.TextXAlignment.Right
-		end
+	for _, item in ipairs(featuredSpecies) do
+		local sc = Instance.new("Frame")
+		sc.Size = UDim2.fromOffset(92, 80)
+		sc.BackgroundTransparency = 1
+		sc.Parent = row
+		local box = makeAnimalIconFrame(sc, item.id, "None", false)
+		local chLbl = makeOutlinedLabel(box, item.chance, UDim2.new(1, -6, 0, 20), UDim2.new(0, 3, 1, -22), Color3.new(1, 1, 1), 2)
+		chLbl.TextXAlignment = Enum.TextXAlignment.Right
+	end
 
-		local packBtn = Instance.new("TextButton")
-		packBtn.Size = UDim2.fromOffset(220, 34)
-		packBtn.Position = UDim2.new(0.5, -110, 1, -42)
-		packBtn.BackgroundColor3 = Color3.fromRGB(64, 214, 48)
-		packBtn.Text = "Starter Ranger Pack (99 R$)"
-		packBtn.TextColor3 = Color3.new(1, 1, 1)
-		packBtn.Font = Enum.Font.FredokaOne
-		packBtn.TextScaled = true
-		packBtn.Parent = featCard
-		makeCorner(packBtn, 8)
-		makeStroke(packBtn, 2.5)
-		makeTextStroke(packBtn, 2)
-		packBtn.MouseButton1Click:Connect(function()
-			Remotes.Get("PromptProduct"):FireServer("StarterPack")
+	local packBtn = Instance.new("TextButton")
+	packBtn.Size = UDim2.fromOffset(220, 34)
+	packBtn.Position = UDim2.new(0.5, -110, 1, -42)
+	packBtn.BackgroundColor3 = Color3.fromRGB(64, 214, 48)
+	packBtn.Text = "Starter Ranger Pack (99 R$)"
+	packBtn.TextColor3 = Color3.new(1, 1, 1)
+	packBtn.Font = Enum.Font.FredokaOne
+	packBtn.TextScaled = true
+	packBtn.Parent = featCard
+	makeCorner(packBtn, 8)
+	makeStroke(packBtn, 2.5)
+	makeTextStroke(packBtn, 2)
+	packBtn.MouseButton1Click:Connect(function()
+		Remotes.Get("PromptProduct"):FireServer("StarterPack")
+	end)
+
+	makeOutlinedLabel(shopScroll, "~ Game Passes ~", UDim2.new(0.95, 0, 0, 28), UDim2.new(), Color3.fromRGB(255, 224, 102), 2.5)
+
+	local gpGridHolder = Instance.new("Frame")
+	gpGridHolder.Size = UDim2.new(0.96, 0, 0, 390)
+	gpGridHolder.BackgroundTransparency = 1
+	gpGridHolder.Parent = shopScroll
+	local gpGrid = Instance.new("UIGridLayout")
+	gpGrid.CellSize = UDim2.fromOffset(298, 120)
+	gpGrid.CellPadding = UDim2.fromOffset(10, 10)
+	gpGrid.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	gpGrid.Parent = gpGridHolder
+
+	local gpConfigs = {
+		{ key = "DoublePull", icon = "🪢", topC = Color3.fromRGB(48, 224, 255), botC = Color3.fromRGB(24, 118, 232) },
+		{ key = "VIP", icon = "💵", topC = Color3.fromRGB(255, 224, 72), botC = Color3.fromRGB(244, 138, 28) },
+		{ key = "DoubleSpeed", icon = "👟", topC = Color3.fromRGB(238, 86, 255), botC = Color3.fromRGB(118, 48, 232) },
+		{ key = "AutoUnboxCollect", icon = "📦", topC = Color3.fromRGB(255, 168, 52), botC = Color3.fromRGB(224, 58, 48) },
+		{ key = "DualTowHook", icon = "🪝", topC = Color3.fromRGB(72, 238, 162), botC = Color3.fromRGB(28, 152, 108) },
+		{ key = "ExtraZooCapacity", icon = "🐾", topC = Color3.fromRGB(255, 112, 178), botC = Color3.fromRGB(182, 48, 118) },
+	}
+	for _, gpc in ipairs(gpConfigs) do
+		local def = (MonetizationConfig.GAME_PASSES :: any)[gpc.key]
+		local card = Instance.new("Frame")
+		card.BackgroundColor3 = Color3.new(1, 1, 1)
+		card.Parent = gpGridHolder
+		makeCorner(card, 10)
+		makeStroke(card, 2.8)
+		makeGradient(card, gpc.topC, gpc.botC)
+
+		local badge = Instance.new("TextLabel")
+		badge.Size = UDim2.fromOffset(64, 64)
+		badge.Position = UDim2.fromOffset(10, 10)
+		badge.BackgroundColor3 = Color3.fromRGB(28, 36, 52)
+		badge.BackgroundTransparency = 0.2
+		badge.Text = gpc.icon
+		badge.TextScaled = true
+		badge.Parent = card
+		makeCorner(badge, 32)
+		makeStroke(badge, 2.5)
+
+		makeOutlinedLabel(card, def.name, UDim2.new(1, -86, 0, 24), UDim2.fromOffset(80, 6), Color3.new(1, 1, 1), 2.2).TextXAlignment = Enum.TextXAlignment.Left
+		local desc = makeOutlinedLabel(card, def.description, UDim2.new(1, -86, 0, 38), UDim2.fromOffset(80, 32), Color3.fromRGB(224, 255, 224), 1.8)
+		desc.TextXAlignment = Enum.TextXAlignment.Left
+
+		local buyBtn = Instance.new("TextButton")
+		buyBtn.Size = UDim2.new(1, -92, 0, 32)
+		buyBtn.Position = UDim2.fromOffset(82, 78)
+		buyBtn.BackgroundColor3 = Color3.fromRGB(72, 224, 48)
+		buyBtn.Text = "R$ " .. tostring(def.priceRobux)
+		buyBtn.TextColor3 = Color3.new(1, 1, 1)
+		buyBtn.Font = Enum.Font.FredokaOne
+		buyBtn.TextScaled = true
+		buyBtn.Parent = card
+		makeCorner(buyBtn, 8)
+		makeStroke(buyBtn, 2.2)
+		makeTextStroke(buyBtn, 2)
+		buyBtn.MouseButton1Click:Connect(function()
+			Remotes.Get("PromptGamePass"):FireServer(gpc.key)
 		end)
+	end
+end
 
-		-- ~ Game Passes ~ 2-Column Gradient Grid (Screenshot 3)
-		makeOutlinedLabel(shopScroll, "~ Game Passes ~", UDim2.new(0.95, 0, 0, 28), UDim2.new(), Color3.fromRGB(255, 224, 102), 2.5)
+-- A2. DEDICATED TRAILS SHOP MODAL (Image 4 Style — Only Trails!)
+local trailsWindow, trailsScroll = makeDedicatedModal("TrailsModal", "Trails Shop", Color3.fromRGB(58, 224, 255), Color3.fromRGB(22, 138, 228), true, 196, 222)
 
-		local gpGridHolder = Instance.new("Frame")
-		gpGridHolder.Size = UDim2.new(0.96, 0, 0, 390)
-		gpGridHolder.BackgroundTransparency = 1
-		gpGridHolder.Parent = shopScroll
-		local gpGrid = Instance.new("UIGridLayout")
-		gpGrid.CellSize = UDim2.fromOffset(298, 120)
-		gpGrid.CellPadding = UDim2.fromOffset(10, 10)
-		gpGrid.HorizontalAlignment = Enum.HorizontalAlignment.Center
-		gpGrid.Parent = gpGridHolder
-
-		local gpConfigs = {
-			{ key = "DoublePull", icon = "🪢", topC = Color3.fromRGB(48, 224, 255), botC = Color3.fromRGB(24, 118, 232) },
-			{ key = "VIP", icon = "💵", topC = Color3.fromRGB(255, 224, 72), botC = Color3.fromRGB(244, 138, 28) },
-			{ key = "DoubleSpeed", icon = "👟", topC = Color3.fromRGB(238, 86, 255), botC = Color3.fromRGB(118, 48, 232) },
-			{ key = "AutoUnboxCollect", icon = "📦", topC = Color3.fromRGB(255, 168, 52), botC = Color3.fromRGB(224, 58, 48) },
-			{ key = "DualTowHook", icon = "🪝", topC = Color3.fromRGB(72, 238, 162), botC = Color3.fromRGB(28, 152, 108) },
-			{ key = "ExtraZooCapacity", icon = "🐾", topC = Color3.fromRGB(255, 112, 178), botC = Color3.fromRGB(182, 48, 118) },
-		}
-		for _, gpc in ipairs(gpConfigs) do
-			local def = (MonetizationConfig.GAME_PASSES :: any)[gpc.key]
-			local card = Instance.new("Frame")
-			card.BackgroundColor3 = Color3.new(1, 1, 1)
-			card.Parent = gpGridHolder
-			makeCorner(card, 10)
-			makeStroke(card, 2.8)
-			makeGradient(card, gpc.topC, gpc.botC)
-
-			local badge = Instance.new("TextLabel")
-			badge.Size = UDim2.fromOffset(64, 64)
-			badge.Position = UDim2.fromOffset(10, 10)
-			badge.BackgroundColor3 = Color3.fromRGB(28, 36, 52)
-			badge.BackgroundTransparency = 0.2
-			badge.Text = gpc.icon
-			badge.TextScaled = true
-			badge.Parent = card
-			makeCorner(badge, 32)
-			makeStroke(badge, 2.5)
-
-			makeOutlinedLabel(card, def.name, UDim2.new(1, -86, 0, 24), UDim2.fromOffset(80, 6), Color3.new(1, 1, 1), 2.2).TextXAlignment = Enum.TextXAlignment.Left
-			local desc = makeOutlinedLabel(card, def.description, UDim2.new(1, -86, 0, 38), UDim2.fromOffset(80, 32), Color3.fromRGB(224, 255, 224), 1.8)
-			desc.TextXAlignment = Enum.TextXAlignment.Left
-
-			local buyBtn = Instance.new("TextButton")
-			buyBtn.Size = UDim2.new(1, -92, 0, 32)
-			buyBtn.Position = UDim2.fromOffset(82, 78)
-			buyBtn.BackgroundColor3 = Color3.fromRGB(72, 224, 48)
-			buyBtn.Text = "R$ " .. tostring(def.priceRobux)
-			buyBtn.TextColor3 = Color3.new(1, 1, 1)
-			buyBtn.Font = Enum.Font.FredokaOne
-			buyBtn.TextScaled = true
-			buyBtn.Parent = card
-			makeCorner(buyBtn, 8)
-			makeStroke(buyBtn, 2.2)
-			makeTextStroke(buyBtn, 2)
-			buyBtn.MouseButton1Click:Connect(function()
-				Remotes.Get("PromptGamePass"):FireServer(gpc.key)
-			end)
-		end
-	else
-		local function addShopRow(titleStr: string, subStr: string, btnStr: string, btnCol: Color3, cb: () -> ())
-			local r = Instance.new("Frame")
-			r.Size = UDim2.new(0.95, 0, 0, 56)
-			r.BackgroundColor3 = Color3.fromRGB(36, 40, 52)
-			r.Parent = shopScroll
-			makeCorner(r, 8)
-			makeStroke(r, 2)
-
-			makeOutlinedLabel(r, titleStr, UDim2.new(0.68, -12, 0, 26), UDim2.fromOffset(10, 4), Color3.new(1, 1, 1), 2).TextXAlignment = Enum.TextXAlignment.Left
-			makeOutlinedLabel(r, subStr, UDim2.new(0.68, -12, 0, 18), UDim2.fromOffset(10, 32), Color3.fromRGB(192, 212, 238), 1.6).TextXAlignment = Enum.TextXAlignment.Left
-
-			local b = Instance.new("TextButton")
-			b.Size = UDim2.new(0.28, -10, 0, 40)
-			b.Position = UDim2.new(0.71, 0, 0, 8)
-			b.BackgroundColor3 = btnCol
-			b.Text = btnStr
-			b.TextColor3 = Color3.new(1, 1, 1)
-			b.Font = Enum.Font.FredokaOne
-			b.TextScaled = true
-			b.Parent = r
-			makeCorner(b, 8)
-			makeStroke(b, 2)
-			makeTextStroke(b, 1.8)
-			b.MouseButton1Click:Connect(cb)
-		end
-
-		if shopSubTab == "Lassos" then
-			for _, l in ipairs(LassoConfig) do
-				local owned = profile.ownedLassos[l.id] == true
-				local eq = profile.equippedLasso == l.id
-				addShopRow(
-					string.format("T%d: %s (%s Power)", l.tier, l.name, FormatUtil.Number(l.pullPower)),
-					l.description,
-					if eq then "EQUIPPED" elseif owned then "EQUIP" elseif l.cost == 0 then "FREE" else "$" .. FormatUtil.Number(l.cost),
-					if eq then Color3.fromRGB(82, 92, 112) elseif owned then Color3.fromRGB(58, 168, 232) else Color3.fromRGB(72, 214, 52),
-					function()
-						if owned then Remotes.Get("EquipLasso"):FireServer(l.id)
-						else Remotes.Get("BuyLasso"):FireServer(l.id) end
-					end
-				)
+local function renderTrailsModal()
+	clearScrollItems(trailsScroll)
+	if not profile then return end
+	for _, t in ipairs(TrailConfig) do
+		local owned = profile.ownedTrails[t.id] == true
+		local eq = profile.equippedTrail == t.id
+		addShopGridCard(
+			trailsScroll,
+			t.name,
+			"⚡ " .. FormatUtil.Multiplier(t.speedMultiplier) .. "x Speed",
+			if t.cashBonus > 0 then ("+" .. math.floor(t.cashBonus * 100) .. "% Cash Bonus") else "Starter Speed Trail",
+			t.colorPrimary,
+			if eq then "EQUIPPED" elseif owned then "EQUIP" else "$" .. FormatUtil.Number(t.cost),
+			if eq then Color3.fromRGB(82, 92, 112) elseif owned then Color3.fromRGB(58, 168, 232) else Color3.fromRGB(72, 214, 52),
+			function(previewFrame)
+				local ribbon = Instance.new("Frame")
+				ribbon.Size = UDim2.fromOffset(118, 42)
+				ribbon.Position = UDim2.new(0.5, -59, 0.5, -21)
+				ribbon.Rotation = -14
+				ribbon.BackgroundColor3 = Color3.new(1, 1, 1)
+				ribbon.Parent = previewFrame
+				makeCorner(ribbon, 14)
+				makeStroke(ribbon, 2.5, t.colorSecondary)
+				makeGradient(ribbon, t.colorPrimary, t.colorSecondary, 0)
+				makeOutlinedLabel(ribbon, "⚡ " .. FormatUtil.Multiplier(t.speedMultiplier) .. "x", UDim2.fromScale(0.9, 0.8), UDim2.fromScale(0.05, 0.1), Color3.new(1, 1, 1), 2)
+			end,
+			function()
+				if owned then Remotes.Get("EquipTrail"):FireServer(t.id)
+				else Remotes.Get("BuyTrail"):FireServer(t.id) end
 			end
-		elseif shopSubTab == "Trails" then
-			for _, t in ipairs(TrailConfig) do
-				local owned = profile.ownedTrails[t.id] == true
-				local eq = profile.equippedTrail == t.id
-				addShopRow(
-					string.format("T%d: %s (%gx Speed | +%d%% Cash)", t.tier, t.name, t.speedMultiplier, math.floor(t.cashBonus * 100)),
-					t.description,
-					if eq then "EQUIPPED" elseif owned then "EQUIP" else "$" .. FormatUtil.Number(t.cost),
-					if eq then Color3.fromRGB(82, 92, 112) elseif owned then Color3.fromRGB(58, 168, 232) else Color3.fromRGB(0, 198, 224),
-					function()
-						if owned then Remotes.Get("EquipTrail"):FireServer(t.id)
-						else Remotes.Get("BuyTrail"):FireServer(t.id) end
-					end
-				)
+		)
+	end
+end
+
+-- A3. DEDICATED LASSO SHOP MODAL (Only Lassos!)
+local lassosWindow, lassosScroll = makeDedicatedModal("LassosModal", "Lasso Shop", Color3.fromRGB(255, 198, 64), Color3.fromRGB(218, 118, 24), true, 196, 222)
+
+local function renderLassosModal()
+	clearScrollItems(lassosScroll)
+	if not profile then return end
+	for _, l in ipairs(LassoConfig) do
+		local owned = profile.ownedLassos[l.id] == true
+		local eq = profile.equippedLasso == l.id
+		local lassoRef = l
+		addShopGridCard(
+			lassosScroll,
+			string.format("T%d: %s", l.tier, l.name),
+			"🪢 Power: " .. FormatUtil.Number(l.pullPower),
+			"Range: " .. tostring(l.maxRange) .. " studs",
+			l.beamColor,
+			if eq then "EQUIPPED" elseif owned then "EQUIP" elseif l.cost == 0 then "FREE" else "$" .. FormatUtil.Number(l.cost),
+			if eq then Color3.fromRGB(82, 92, 112) elseif owned then Color3.fromRGB(58, 168, 232) else Color3.fromRGB(72, 214, 52),
+			function(previewFrame)
+				setViewportThumbnail(previewFrame, function()
+					return AnimalVisualBuilder.BuildLassoModel(lassoRef.beamColor, 1.35)
+				end)
+			end,
+			function()
+				if owned then Remotes.Get("EquipLasso"):FireServer(l.id)
+				else Remotes.Get("BuyLasso"):FireServer(l.id) end
 			end
-		elseif shopSubTab == "Vehicles" then
-			for _, v in ipairs(VehicleConfig) do
-				local owned = profile.ownedVehicles[v.id] == true
-				local eq = profile.equippedVehicle == v.id
-				addShopRow(
-					string.format("T%d: %s (+%d Speed | %d Tow)", v.tier, v.name, v.baseSpeedBonus, v.towCapacity),
-					v.description,
-					if eq then "EQUIPPED" elseif owned then "EQUIP" else "$" .. FormatUtil.Number(v.cost),
-					if eq then Color3.fromRGB(82, 92, 112) elseif owned then Color3.fromRGB(58, 168, 232) else Color3.fromRGB(64, 198, 98),
-					function()
-						if owned then Remotes.Get("EquipVehicle"):FireServer(v.id)
-						else Remotes.Get("BuyVehicle"):FireServer(v.id) end
-					end
-				)
+		)
+	end
+end
+
+-- A4. DEDICATED VEHICLE GARAGE MODAL (Only Vehicles!)
+local vehiclesWindow, vehiclesScroll = makeDedicatedModal("VehiclesModal", "Vehicle Garage", Color3.fromRGB(72, 238, 148), Color3.fromRGB(28, 156, 86), true, 196, 222)
+
+local function renderVehiclesModal()
+	clearScrollItems(vehiclesScroll)
+	if not profile then return end
+	for _, v in ipairs(VehicleConfig) do
+		local owned = profile.ownedVehicles[v.id] == true
+		local eq = profile.equippedVehicle == v.id
+		local vRef = v
+		addShopGridCard(
+			vehiclesScroll,
+			v.name,
+			string.format("🚙 x%s Speed | %d Tow", FormatUtil.Number(v.speedMultiplier), v.towCapacity),
+			if v.shieldHits > 0 then (tostring(v.shieldHits) .. " Tackle Shield(s)") elseif v.ignoresTerrainPenalty then "Ignores Mud/Ice" else "Starter Quadbike",
+			v.primaryColor,
+			if eq then "EQUIPPED" elseif owned then "EQUIP" elseif v.cost == 0 then "FREE" else "$" .. FormatUtil.Number(v.cost),
+			if eq then Color3.fromRGB(82, 92, 112) elseif owned then Color3.fromRGB(58, 168, 232) else Color3.fromRGB(64, 198, 98),
+			function(previewFrame)
+				setViewportThumbnail(previewFrame, function()
+					return AnimalVisualBuilder.BuildVehicleModel(vRef, 1.0)
+				end)
+			end,
+			function()
+				if owned then Remotes.Get("EquipVehicle"):FireServer(v.id)
+				else Remotes.Get("BuyVehicle"):FireServer(v.id) end
 			end
-		elseif shopSubTab == "Fuse" then
-			addShopRow("3-in-1 Mutation Merge (" .. #selectedFuseUids .. "/3 Selected)", "Combine 3 identical species & mutation to evolve!", "MERGE (3)", Color3.fromRGB(178, 86, 255), function()
-				if #selectedFuseUids == 3 then
-					Remotes.Get("RequestMergeAnimals"):FireServer(selectedFuseUids)
-					table.clear(selectedFuseUids)
-				end
-			end)
-			addShopRow("Cross-Fuse (" .. #selectedFuseUids .. "/3 Selected)", "Combine any 3 animals for high mutation luck!", "FUSE (3)", Color3.fromRGB(238, 86, 178), function()
-				if #selectedFuseUids == 3 then
-					Remotes.Get("RequestCrossFuse"):FireServer(selectedFuseUids)
-					table.clear(selectedFuseUids)
-				end
-			end)
-			for uid, a in pairs(profile.inventoryAnimals) do
-				local spec = AnimalConfig.GetById(a.speciesId)
-				local isSel = table.find(selectedFuseUids, uid) ~= nil
-				addShopRow(
-					string.format("[%s] %s (%.2fx)", a.mutation, spec and spec.name or a.speciesId, a.sizeRatio),
-					"Select 3 animals to Fuse or Merge",
-					if isSel then "SELECTED" else "SELECT",
-					if isSel then Color3.fromRGB(72, 214, 88) else Color3.fromRGB(68, 76, 98),
-					function()
-						local idx = table.find(selectedFuseUids, uid)
-						if idx then table.remove(selectedFuseUids, idx)
-						elseif #selectedFuseUids < 3 then table.insert(selectedFuseUids, uid) end
-						renderShopModal()
-					end
-				)
-			end
-		elseif shopSubTab == "Rebirth" then
-			local reqSpd = math.floor(GameConfig.ECONOMY.REBIRTH_BASE_SPEED * math.pow(2.1, profile.rebirths))
-			local reqCoins = math.floor(GameConfig.ECONOMY.REBIRTH_BASE_COINS * math.pow(GameConfig.ECONOMY.REBIRTH_GROWTH, profile.rebirths))
-			addShopRow(
-				string.format("REBIRTH #%d (+75%% Permanent Cash)", profile.rebirths + 1),
-				string.format("Needs %s Speed & $%s Coins", FormatUtil.Number(reqSpd), FormatUtil.Number(reqCoins)),
-				"REBIRTH",
-				Color3.fromRGB(238, 68, 122),
-				function() Remotes.Get("RequestRebirth"):FireServer() end
-			)
-			addShopRow(
-				string.format("Claim Daily Reward (Streak Day %d)", profile.dailyReward.streak),
-				"Free Coins & Speed every 24h!",
-				"CLAIM DAILY",
-				Color3.fromRGB(244, 178, 44),
-				function() Remotes.Get("ClaimDailyReward"):FireServer() end
-			)
+		)
+	end
+end
+
+-- A5. DEDICATED UNIFIED MERGE PETS MACHINE MODAL (2 Clean Views: 3-Slot Workbench <-> Auto-Filtered Pet Picker)
+local fuseWindow, fuseScroll = makeDedicatedModal("FuseModal", "Merge Pets", Color3.fromRGB(56, 174, 255), Color3.fromRGB(26, 108, 224), false)
+
+local MUTATION_SORT_RANK: { [string]: number } = {
+	Celestial = 7,
+	Rainbow = 6,
+	Neon = 5,
+	Diamond = 4,
+	Golden = 3,
+	Albino = 2,
+	None = 1,
+}
+
+local function renderFuseModal()
+	clearScrollItems(fuseScroll)
+	if not profile then return end
+
+	-- Prune stale UIDs & deduplicate across slots
+	local usedElsewhere: { [string]: boolean } = {}
+	for slotIdx = 1, 3 do
+		local u = fuseSlotUids[slotIdx]
+		if type(u) ~= "string" or not profile.inventoryAnimals[u] or usedElsewhere[u] then
+			fuseSlotUids[slotIdx] = nil
+		else
+			usedElsewhere[u] = true
 		end
 	end
+
+	-- Determine locked speciesId from any currently filled slot (excluding the slot currently being picked if replacing)
+	local targetSpeciesId: string? = nil
+	for slotIdx = 1, 3 do
+		if slotIdx ~= fusePickerSlot then
+			local u = fuseSlotUids[slotIdx]
+			local a = if u then profile.inventoryAnimals[u] else nil
+			if a then
+				targetSpeciesId = a.speciesId
+				break
+			end
+		end
+	end
+
+	-- Root clean container filling FuseModal interior
+	local container = Instance.new("Frame")
+	container.Name = "MergeContainer"
+	container.Size = UDim2.new(0.98, 0, 0, 348)
+	container.BackgroundColor3 = Color3.fromRGB(30, 34, 42)
+	container.Parent = fuseScroll
+	makeCorner(container, 10)
+	makeStroke(container, 2.5, Color3.fromRGB(52, 168, 255))
+
+	makeOutlinedLabel(container, "Merge 3 of the same pets!", UDim2.new(1, -16, 0, 24), UDim2.fromOffset(8, 5), Color3.new(1, 1, 1), 2.2)
+	makeOutlinedLabel(container, "More KG = Bigger EGG & Higher Cash/s", UDim2.new(1, -16, 0, 18), UDim2.fromOffset(8, 28), Color3.fromRGB(118, 212, 255), 1.6)
+
+	if fusePickerSlot ~= nil then
+		-- VIEW B: CLEAN "Select Pet to Merge" GRID PICKER (Auto-filtered & sorted to matching pet type!)
+		local pickSlot = fusePickerSlot :: number
+		local pickerPanel = Instance.new("Frame")
+		pickerPanel.Name = "SelectPetPanel"
+		pickerPanel.Size = UDim2.new(1, -18, 1, -56)
+		pickerPanel.Position = UDim2.fromOffset(9, 48)
+		pickerPanel.BackgroundColor3 = Color3.fromRGB(20, 22, 28)
+		pickerPanel.Parent = container
+		makeCorner(pickerPanel, 8)
+		makeStroke(pickerPanel, 2.2, Color3.fromRGB(14, 16, 20))
+
+		local specObj = if targetSpeciesId then AnimalConfig.GetById(targetSpeciesId) else nil
+		local headerText = if specObj then string.format("Select Pet to Merge (%s Only)", specObj.name) else "Select Pet to Merge"
+		makeOutlinedLabel(pickerPanel, headerText, UDim2.new(1, -110, 0, 26), UDim2.fromOffset(12, 6), Color3.new(1, 1, 1), 1.9).TextXAlignment = Enum.TextXAlignment.Left
+
+		local backBtn = Instance.new("TextButton")
+		backBtn.Name = "PickerBackButton"
+		backBtn.Size = UDim2.fromOffset(86, 26)
+		backBtn.Position = UDim2.new(1, -94, 0, 6)
+		backBtn.BackgroundColor3 = Color3.fromRGB(208, 62, 74)
+		backBtn.Text = "< Back"
+		backBtn.TextColor3 = Color3.new(1, 1, 1)
+		backBtn.Font = Enum.Font.FredokaOne
+		backBtn.TextScaled = true
+		backBtn.Parent = pickerPanel
+		makeCorner(backBtn, 6)
+		makeStroke(backBtn, 1.8)
+		makeTextStroke(backBtn, 1.5)
+		backBtn.MouseButton1Click:Connect(function()
+			playClickSFX()
+			fusePickerSlot = nil
+			renderFuseModal()
+		end)
+
+		local blockedUids: { [string]: boolean } = {}
+		for slotIdx = 1, 3 do
+			if slotIdx ~= pickSlot and type(fuseSlotUids[slotIdx]) == "string" then
+				blockedUids[fuseSlotUids[slotIdx] :: string] = true
+			end
+		end
+
+		local candidates: { { uid: string, animal: Types.AnimalInstance, earn: number, mutRank: number } } = {}
+		for uid, a in pairs(profile.inventoryAnimals) do
+			if not blockedUids[uid] and (targetSpeciesId == nil or a.speciesId == targetSpeciesId) then
+				table.insert(candidates, {
+					uid = uid,
+					animal = a,
+					earn = AnimalConfig.ComputeIncomePerSec(a),
+					mutRank = MUTATION_SORT_RANK[a.mutation] or 1,
+				})
+			end
+		end
+
+		-- Smart auto-sort: species grouped, best mutation & heaviest KG / Cash/s first!
+		table.sort(candidates, function(a, b)
+			if a.animal.speciesId == b.animal.speciesId then
+				if a.mutRank ~= b.mutRank then
+					return a.mutRank > b.mutRank
+				end
+				if math.abs(a.animal.weightKg - b.animal.weightKg) > 0.01 then
+					return a.animal.weightKg > b.animal.weightKg
+				end
+				return a.earn > b.earn
+			end
+			return a.earn > b.earn
+		end)
+
+		if #candidates == 0 then
+			local emptyLbl = makeOutlinedLabel(pickerPanel, "NO PETS", UDim2.new(1, -24, 0, 62), UDim2.new(0, 12, 0.5, -36), Color3.fromRGB(132, 138, 152), 2.4)
+			emptyLbl.TextXAlignment = Enum.TextXAlignment.Center
+			local subEmpty = makeOutlinedLabel(
+				pickerPanel,
+				if specObj then string.format("No other %s available in your backpack/pen", specObj.name) else "Rescue & hatch crates to collect pets!",
+				UDim2.new(1, -24, 0, 24),
+				UDim2.new(0, 12, 0.5, 28),
+				Color3.fromRGB(168, 178, 198),
+				1.5
+			)
+			subEmpty.TextXAlignment = Enum.TextXAlignment.Center
+			return
+		end
+
+		local gridScroll = Instance.new("ScrollingFrame")
+		gridScroll.Name = "PickerGridScroll"
+		gridScroll.Size = UDim2.new(1, -16, 1, -44)
+		gridScroll.Position = UDim2.fromOffset(8, 38)
+		gridScroll.BackgroundTransparency = 1
+		gridScroll.ScrollBarThickness = 6
+		gridScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		gridScroll.CanvasSize = UDim2.fromScale(0, 0)
+		gridScroll.Parent = pickerPanel
+
+		local gl = Instance.new("UIGridLayout")
+		gl.CellSize = UDim2.fromOffset(112, 112)
+		gl.CellPadding = UDim2.fromOffset(8, 8)
+		gl.HorizontalAlignment = Enum.HorizontalAlignment.Left
+		gl.Parent = gridScroll
+
+		for _, entry in ipairs(candidates) do
+			local a = entry.animal
+			local sp = AnimalConfig.GetById(a.speciesId)
+			local mutInfo = GameConfig.MUTATIONS[a.mutation] or GameConfig.MUTATIONS.None
+			local borderCol = if a.mutation ~= "None" then mutInfo.color else (sp and GameConfig.RARITY_COLORS[sp.rarity] or Color3.fromRGB(82, 88, 102))
+
+			local card = Instance.new("TextButton")
+			card.Name = "PetPick_" .. entry.uid
+			card.BackgroundColor3 = Color3.fromRGB(36, 40, 48)
+			card.Text = ""
+			card.Parent = gridScroll
+			makeCorner(card, 8)
+			makeStroke(card, 2.2, borderCol)
+
+			local thumb = Instance.new("Frame")
+			thumb.Size = UDim2.fromOffset(86, 66)
+			thumb.Position = UDim2.new(0.5, -43, 0, 6)
+			thumb.BackgroundTransparency = 1
+			thumb.Parent = card
+			setViewportThumbnail(thumb, function()
+				return AnimalVisualBuilder.BuildAnimalModel(a.speciesId, 1.0, a.mutation, true)
+			end)
+
+			if a.mutation ~= "None" then
+				makeOutlinedLabel(card, a.mutation, UDim2.new(1, -8, 0, 14), UDim2.fromOffset(4, 2), mutInfo.color, 1.4).TextXAlignment = Enum.TextXAlignment.Left
+			end
+			makeOutlinedLabel(card, string.format("%.1fkg", a.weightKg), UDim2.new(1, -8, 0, 14), UDim2.fromOffset(4, 2), Color3.fromRGB(255, 224, 96), 1.4).TextXAlignment = Enum.TextXAlignment.Right
+			makeOutlinedLabel(card, sp and sp.name or a.speciesId, UDim2.new(1, -8, 0, 26), UDim2.new(0, 4, 1, -28), Color3.new(1, 1, 1), 1.6)
+
+			card.MouseButton1Click:Connect(function()
+				playClickSFX()
+				fuseSlotUids[pickSlot] = entry.uid
+				fusePickerSlot = nil
+				renderFuseModal()
+			end)
+		end
+		return
+	end
+
+	-- VIEW A: CLEAN 3-SLOT MERGE WORKBENCH (No cluttered pet list below!)
+	local filledCount = 0
+	local orderedUids: { string } = {}
+	local selectedInputs: { { sizeRatio: number, mutation: string } } = {}
+	local activeSpecId: string? = nil
+
+	for slotNum = 1, 3 do
+		local uid = fuseSlotUids[slotNum]
+		local a = if uid then profile.inventoryAnimals[uid] else nil
+		if a then
+			filledCount += 1
+			table.insert(orderedUids, uid :: string)
+			table.insert(selectedInputs, { sizeRatio = a.sizeRatio, mutation = a.mutation })
+			activeSpecId = a.speciesId
+		end
+	end
+
+	-- Connecting Pipes (Light up bright cyan-blue when their slot is filled!)
+	local slotXs = { 0.19, 0.50, 0.81 }
+	for slotNum = 1, 3 do
+		local isLit = fuseSlotUids[slotNum] ~= nil
+		local pipeCol = if isLit then Color3.fromRGB(72, 206, 255) else Color3.fromRGB(22, 24, 30)
+
+		local vert = Instance.new("Frame")
+		vert.Name = "PipeVert_" .. slotNum
+		vert.Size = UDim2.fromOffset(14, if slotNum == 2 then 42 else 74)
+		vert.Position = UDim2.new(slotXs[slotNum], -7, 0, 134)
+		vert.BackgroundColor3 = pipeCol
+		vert.BorderSizePixel = 0
+		vert.ZIndex = 1
+		vert.Parent = container
+		makeStroke(vert, 1.8)
+
+		if slotNum ~= 2 then
+			local horiz = Instance.new("Frame")
+			horiz.Name = "PipeHoriz_" .. slotNum
+			horiz.Size = UDim2.new(0.31, 0, 0, 14)
+			horiz.Position = if slotNum == 1 then UDim2.new(0.19, -7, 0, 198) else UDim2.new(0.50, 7, 0, 198)
+			horiz.BackgroundColor3 = pipeCol
+			horiz.BorderSizePixel = 0
+			horiz.ZIndex = 1
+			horiz.Parent = container
+			makeStroke(horiz, 1.8)
+		end
+	end
+
+	-- Top 3 Input Pet Slots
+	for slotNum = 1, 3 do
+		local uid = fuseSlotUids[slotNum]
+		local a = if uid then profile.inventoryAnimals[uid] else nil
+		local slotX = if slotNum == 1 then 0.05 elseif slotNum == 2 then 0.36 else 0.67
+
+		local box = Instance.new("Frame")
+		box.Name = "MergeSlot_" .. slotNum
+		box.Size = UDim2.new(0.28, 0, 0, 86)
+		box.Position = UDim2.new(slotX, 0, 0, 52)
+		box.BackgroundColor3 = if a then Color3.fromRGB(46, 54, 70) else Color3.fromRGB(42, 44, 52)
+		box.ZIndex = 2
+		box.Parent = container
+		makeCorner(box, 8)
+		makeStroke(box, 2.4, if a then Color3.fromRGB(92, 232, 138) else Color3.fromRGB(16, 18, 22))
+
+		if a then
+			local sp = AnimalConfig.GetById(a.speciesId)
+			local mutText = if a.mutation ~= "None" then ("[" .. a.mutation .. "] ") else ""
+			local thumb = Instance.new("Frame")
+			thumb.Size = UDim2.fromOffset(50, 44)
+			thumb.Position = UDim2.new(1, -54, 0, 26)
+			thumb.BackgroundTransparency = 1
+			thumb.ZIndex = 3
+			thumb.Parent = box
+			setViewportThumbnail(thumb, function()
+				return AnimalVisualBuilder.BuildAnimalModel(a.speciesId, 1.0, a.mutation, true)
+			end)
+			makeOutlinedLabel(box, sp and sp.name or a.speciesId, UDim2.new(1, -10, 0, 20), UDim2.fromOffset(5, 4), Color3.new(1, 1, 1), 1.6).ZIndex = 3
+			makeOutlinedLabel(box, string.format("%s%.1fkg", mutText, a.weightKg), UDim2.new(1, -58, 0, 18), UDim2.fromOffset(6, 26), Color3.fromRGB(168, 224, 255), 1.4).ZIndex = 3
+
+			local rmBtn = Instance.new("TextButton")
+			rmBtn.Name = "RemoveBtn_" .. slotNum
+			rmBtn.Size = UDim2.new(0.56, 0, 0, 26)
+			rmBtn.Position = UDim2.new(0, 6, 1, -32)
+			rmBtn.BackgroundColor3 = Color3.fromRGB(224, 228, 238)
+			rmBtn.Text = "Remove"
+			rmBtn.TextColor3 = Color3.fromRGB(214, 48, 62)
+			rmBtn.Font = Enum.Font.FredokaOne
+			rmBtn.TextScaled = true
+			rmBtn.ZIndex = 4
+			rmBtn.Parent = box
+			makeCorner(rmBtn, 6)
+			makeStroke(rmBtn, 1.8, Color3.fromRGB(186, 46, 58))
+			rmBtn.MouseButton1Click:Connect(function()
+				playClickSFX()
+				fuseSlotUids[slotNum] = nil
+				renderFuseModal()
+			end)
+		else
+			makeOutlinedLabel(box, "(Pet Needed)", UDim2.new(1, -8, 0, 24), UDim2.fromOffset(4, 10), Color3.fromRGB(230, 234, 242), 1.7).ZIndex = 3
+
+			local addBtn = Instance.new("TextButton")
+			addBtn.Name = "AddBtn_" .. slotNum
+			addBtn.Size = UDim2.new(0.84, 0, 0, 32)
+			addBtn.Position = UDim2.new(0.08, 0, 1, -40)
+			addBtn.BackgroundColor3 = if activeSpecId then Color3.fromRGB(178, 238, 255) else Color3.fromRGB(108, 96, 142)
+			addBtn.Text = "Add"
+			addBtn.TextColor3 = Color3.new(1, 1, 1)
+			addBtn.Font = Enum.Font.FredokaOne
+			addBtn.TextScaled = true
+			addBtn.ZIndex = 4
+			addBtn.Parent = box
+			makeCorner(addBtn, 6)
+			makeStroke(addBtn, 2, if activeSpecId then Color3.fromRGB(84, 198, 238) else Color3.fromRGB(24, 26, 34))
+			makeTextStroke(addBtn, 1.8)
+			addBtn.MouseButton1Click:Connect(function()
+				playClickSFX()
+				fusePickerSlot = slotNum
+				renderFuseModal()
+			end)
+		end
+	end
+
+	-- Center Result Output Box (Vertical Fill Bar 0/3 -> 3/3 + Output Preview!)
+	local resultBox = Instance.new("Frame")
+	resultBox.Name = "OutputChamber"
+	resultBox.Size = UDim2.fromOffset(224, 114)
+	resultBox.AnchorPoint = Vector2.new(0.5, 0)
+	resultBox.Position = UDim2.new(0.5, 0, 0, 170)
+	resultBox.BackgroundColor3 = Color3.fromRGB(14, 16, 20)
+	resultBox.ClipsDescendants = true
+	resultBox.ZIndex = 3
+	resultBox.Parent = container
+	makeCorner(resultBox, 8)
+	makeStroke(resultBox, 2.5, if filledCount == 3 then Color3.fromRGB(92, 238, 255) else Color3.fromRGB(12, 14, 18))
+
+	-- Progress fill bar rising from bottom
+	local fillRatio = filledCount / 3
+	if fillRatio > 0 then
+		local fillBar = Instance.new("Frame")
+		fillBar.Name = "ChargeFill"
+		fillBar.Size = UDim2.fromScale(1, fillRatio)
+		fillBar.AnchorPoint = Vector2.new(0, 1)
+		fillBar.Position = UDim2.fromScale(0, 1)
+		fillBar.BackgroundColor3 = Color3.fromRGB(148, 226, 248)
+		fillBar.BorderSizePixel = 0
+		fillBar.ZIndex = 3
+		fillBar.Parent = resultBox
+	end
+
+	if activeSpecId then
+		local previewThumb = Instance.new("Frame")
+		previewThumb.Size = UDim2.fromOffset(92, 74)
+		previewThumb.AnchorPoint = Vector2.new(0.5, 0)
+		previewThumb.Position = UDim2.new(0.5, 0, 0, 4)
+		previewThumb.BackgroundTransparency = 1
+		previewThumb.ZIndex = 4
+		previewThumb.Parent = resultBox
+		local boostedSize, _, chances = GameConfig.ComputeMergeForecast(selectedInputs)
+		local topMut = (chances[1] and chances[1].mutation or "None") :: Types.AnimalMutation
+		setViewportThumbnail(previewThumb, function()
+			return AnimalVisualBuilder.BuildAnimalModel(activeSpecId, 1.0, if filledCount == 3 then topMut else "None", true)
+		end)
+
+		local chanceParts: { string } = {}
+		for i = 1, math.min(2, #chances) do
+			local c = chances[i]
+			table.insert(chanceParts, string.format("%d%% %s", c.chance, if c.mutation == "None" then "Normal" else c.mutation))
+		end
+		makeOutlinedLabel(
+			resultBox,
+			string.format("Crate %.2fx • %s", boostedSize, table.concat(chanceParts, " / ")),
+			UDim2.new(1, -12, 0, 24),
+			UDim2.new(0, 6, 1, -28),
+			Color3.fromRGB(255, 236, 128),
+			1.6
+		).ZIndex = 5
+	else
+		makeOutlinedLabel(resultBox, "Pick 3 Same Pets", UDim2.new(1, -16, 0, 28), UDim2.new(0, 8, 0.5, -14), Color3.fromRGB(118, 126, 144), 1.8).ZIndex = 4
+	end
+
+	-- Bottom Merge CTA Button ("3 Pets Left" / "2 Pets Left" / "1 Pet Left" -> "MERGE!")
+	local remaining = math.max(0, 3 - filledCount)
+	local mergeBtn = Instance.new("TextButton")
+	mergeBtn.Name = "MergeExecuteButton"
+	mergeBtn.Size = UDim2.fromOffset(238, 44)
+	mergeBtn.AnchorPoint = Vector2.new(0.5, 1)
+	mergeBtn.Position = UDim2.new(0.5, 0, 1, -10)
+	mergeBtn.BackgroundColor3 = if remaining == 0 then Color3.fromRGB(72, 224, 118) elseif filledCount == 2 then Color3.fromRGB(186, 242, 255) else Color3.fromRGB(98, 90, 128)
+	mergeBtn.Text = if remaining == 0 then "MERGE PETS!" else string.format("%d Pet%s Left", remaining, if remaining == 1 then "" else "s")
+	mergeBtn.TextColor3 = Color3.new(1, 1, 1)
+	mergeBtn.Font = Enum.Font.FredokaOne
+	mergeBtn.TextScaled = true
+	mergeBtn.ZIndex = 4
+	mergeBtn.Parent = container
+	makeCorner(mergeBtn, 8)
+	makeStroke(mergeBtn, 2.4, if remaining == 0 then Color3.fromRGB(118, 255, 152) else Color3.fromRGB(16, 18, 22))
+	makeTextStroke(mergeBtn, 2)
+	mergeBtn.MouseButton1Click:Connect(function()
+		playClickSFX()
+		if #orderedUids < 3 then
+			localPlayer:SetAttribute("ClientToastSeq", (tonumber(localPlayer:GetAttribute("ClientToastSeq")) or 0) + 1)
+			localPlayer:SetAttribute("ClientToastText", "Add 3 of the same pets first!")
+			return
+		end
+		Remotes.Get("RequestMergeAnimals"):FireServer(orderedUids)
+		table.clear(fuseSlotUids)
+		fusePickerSlot = nil
+		renderFuseModal()
+	end)
+end
+
+-- A6. DEDICATED REBIRTH & DAILY REWARDS MODAL (Dual Progress Bars: Speed & Coins!)
+local rebirthWindow, rebirthScroll = makeDedicatedModal("RebirthModal", "Rebirth & Daily Rewards", Color3.fromRGB(255, 92, 162), Color3.fromRGB(192, 34, 102), false)
+
+local function makeRebirthProgressBar(parent: Frame, labelText: string, curVal: number, reqVal: number, posY: number, fillCol1: Color3, fillCol2: Color3)
+	local ratio = math.clamp(curVal / math.max(1, reqVal), 0, 1)
+	local pct = math.floor(ratio * 100)
+	local check = if curVal >= reqVal then " ✅" else ""
+	makeOutlinedLabel(
+		parent,
+		string.format("%s: %s / %s (%d%%)%s", labelText, FormatUtil.Number(curVal), FormatUtil.Number(reqVal), pct, check),
+		UDim2.new(1, -24, 0, 22),
+		UDim2.fromOffset(12, posY),
+		if curVal >= reqVal then Color3.fromRGB(118, 255, 148) else Color3.new(1, 1, 1),
+		1.7
+	).TextXAlignment = Enum.TextXAlignment.Left
+
+	local track = Instance.new("Frame")
+	track.Size = UDim2.new(1, -24, 0, 18)
+	track.Position = UDim2.fromOffset(12, posY + 23)
+	track.BackgroundColor3 = Color3.fromRGB(20, 22, 28)
+	track.Parent = parent
+	makeCorner(track, 6)
+	makeStroke(track, 1.8)
+
+	local fill = Instance.new("Frame")
+	fill.Size = UDim2.fromScale(ratio, 1)
+	fill.BackgroundColor3 = fillCol1
+	fill.Parent = track
+	makeCorner(fill, 6)
+	makeGradient(fill, fillCol1, fillCol2)
+end
+
+local function renderRebirthModal()
+	clearScrollItems(rebirthScroll)
+	if not profile then return end
+	local reqSpd = math.floor(GameConfig.ECONOMY.REBIRTH_BASE_SPEED * math.pow(2.1, profile.rebirths))
+	local reqCoins = math.floor(GameConfig.ECONOMY.REBIRTH_BASE_COINS * math.pow(GameConfig.ECONOMY.REBIRTH_GROWTH, profile.rebirths))
+	local meetsSpd = profile.speedStat >= reqSpd
+	local meetsCoins = profile.coins >= reqCoins
+	local ready = meetsSpd and meetsCoins
+
+	local rCard = Instance.new("Frame")
+	rCard.Size = UDim2.new(0.96, 0, 0, 206)
+	rCard.BackgroundColor3 = Color3.fromRGB(38, 36, 48)
+	rCard.Parent = rebirthScroll
+	makeCorner(rCard, 10)
+	makeStroke(rCard, 2.5, Color3.fromRGB(255, 92, 162))
+
+	makeOutlinedLabel(rCard, string.format("REBIRTH #%d (+%d%% Permanent Cash!)", profile.rebirths + 1, (profile.rebirths + 1) * 75), UDim2.new(1, -20, 0, 28), UDim2.fromOffset(10, 6), Color3.fromRGB(255, 156, 212), 2.2)
+	makeOutlinedLabel(rCard, "Resets Coins ONLY — keeps Speed, Pets, Crates, Lassos & Upgrades!", UDim2.new(1, -20, 0, 18), UDim2.fromOffset(10, 34), Color3.fromRGB(210, 226, 245), 1.6)
+
+	makeRebirthProgressBar(rCard, "👟 Required Speed", profile.speedStat, reqSpd, 58, Color3.fromRGB(68, 198, 255), Color3.fromRGB(28, 118, 228))
+	makeRebirthProgressBar(rCard, "💵 Required Cash ($)", profile.coins, reqCoins, 106, Color3.fromRGB(88, 245, 128), Color3.fromRGB(36, 178, 72))
+
+	local rbBtn = Instance.new("TextButton")
+	rbBtn.Size = UDim2.new(0.62, 0, 0, 40)
+	rbBtn.Position = UDim2.new(0.19, 0, 1, -48)
+	rbBtn.BackgroundColor3 = if ready then Color3.fromRGB(238, 68, 138) else Color3.fromRGB(72, 74, 88)
+	rbBtn.Text = if ready then "REBIRTH NOW!" else "COMPLETE BOTH BARS TO REBIRTH"
+	rbBtn.TextColor3 = Color3.new(1, 1, 1)
+	rbBtn.Font = Enum.Font.FredokaOne
+	rbBtn.TextScaled = true
+	rbBtn.Parent = rCard
+	makeCorner(rbBtn, 8)
+	makeStroke(rbBtn, 2.4, if ready then Color3.fromRGB(255, 186, 224) else Color3.fromRGB(18, 20, 24))
+	makeTextStroke(rbBtn, 2)
+	rbBtn.MouseButton1Click:Connect(function()
+		playClickSFX()
+		Remotes.Get("RequestRebirth"):FireServer()
+	end)
+
+	addActionRow(
+		rebirthScroll,
+		string.format("Claim Daily Reward (Streak Day %d)", profile.dailyReward.streak),
+		"Free Coins & Speed every 24h!",
+		"CLAIM DAILY",
+		Color3.fromRGB(244, 178, 44),
+		function() Remotes.Get("ClaimDailyReward"):FireServer() end
+	)
 end
 
 -- B. INDEX MODAL (Screenshots 4 & 5)
 local indexWindow = Instance.new("Frame")
 indexWindow.Name = "IndexModal"
+indexWindow.AnchorPoint = Vector2.new(0.5, 0.5)
 indexWindow.Size = UDim2.fromOffset(690, 440)
-indexWindow.Position = UDim2.new(0.5, -345, 0.5, -220)
+indexWindow.Position = UDim2.fromScale(0.5, 0.5)
 indexWindow.BackgroundColor3 = Color3.fromRGB(26, 36, 18)
 indexWindow.Visible = false
 indexWindow.Parent = gui
@@ -1610,8 +2483,9 @@ end
 -- C. ALL PETS INVENTORY WINDOW (Screenshot 9 — Above Bottom Hotbar)
 local invWindow = Instance.new("Frame")
 invWindow.Name = "InventoryModal"
+invWindow.AnchorPoint = Vector2.new(0.5, 1)
 invWindow.Size = UDim2.fromOffset(650, 310)
-invWindow.Position = UDim2.new(0.5, -325, 1, -390)
+invWindow.Position = UDim2.new(0.5, 0, 1, -76)
 invWindow.BackgroundColor3 = Color3.fromRGB(78, 96, 36)
 invWindow.Visible = false
 invWindow.Parent = gui
@@ -1784,14 +2658,48 @@ local function renderInventoryModal()
 		invCountLbl.Text = string.format("Pets: %d/%d", count, GameConfig.PEN.MAX_INVENTORY_FREE)
 
 	elseif invLeftTab == "Crates" then
-		invTitleLbl.Text = "Pending Crates"
+		invTitleLbl.Text = "Backpack & Pen Crates"
 		local cnt = 0
+		if type(profile.crateInventory) == "table" then
+			for uid, crate in pairs(profile.crateInventory) do
+				cnt += 1
+				local btn = Instance.new("TextButton")
+				btn.BackgroundColor3 = GameConfig.RARITY_COLORS[crate.rarity] or Color3.fromRGB(120, 130, 140)
+				btn.Text = ""
+				btn.Parent = invScroll
+				makeCorner(btn, 8)
+				makeStroke(btn, 2.5, if selectedCustomCrateUid == uid then Color3.fromRGB(108, 255, 132) else Color3.fromRGB(14, 15, 18))
+
+				local vpBox = Instance.new("Frame")
+				vpBox.Size = UDim2.new(1, -12, 0, 50)
+				vpBox.Position = UDim2.fromOffset(6, 4)
+				vpBox.BackgroundTransparency = 1
+				vpBox.Parent = btn
+				local crRef = crate
+				setViewportThumbnail(vpBox, function()
+					return AnimalVisualBuilder.BuildCrateModel(crRef.rarity, crRef.biomeId, 1.0, {
+						isBuried = false, canCollide = false, showBeacon = false,
+					})
+				end)
+				makeOutlinedLabel(btn, crate.rarity .. "\nHOLD & PLACE", UDim2.new(1, -6, 0, 36), UDim2.new(0, 3, 1, -38), Color3.new(1, 1, 1), 1.8)
+				btn.MouseButton1Click:Connect(function()
+					playClickSFX()
+					selectedHotbarSlot = 0
+					selectedCustomCrateUid = uid
+					refreshHotbarSelectionVisuals()
+					syncHeldItemFromHotbar()
+					openModal(nil)
+					localPlayer:SetAttribute("ClientToastSeq", (tonumber(localPlayer:GetAttribute("ClientToastSeq")) or 0) + 1)
+					localPlayer:SetAttribute("ClientToastText", "Click an open spot inside your Pen to place Crate!")
+				end)
+			end
+		end
 		for uid, crate in pairs(profile.pendingCrates) do
 			cnt += 1
 			local rem = math.max(0, crate.unlockAt - os.time())
 			local btn = Instance.new("TextButton")
 			btn.BackgroundColor3 = GameConfig.RARITY_COLORS[crate.rarity] or Color3.fromRGB(120, 130, 140)
-			btn.Text = string.format("📦 %s\n%s", crate.rarity, if rem > 0 then FormatUtil.Time(rem) else "OPEN!")
+			btn.Text = string.format("⏳ %s (In Pen)\n%s", crate.rarity, if rem > 0 then FormatUtil.Time(rem) else "HATCH!")
 			btn.TextColor3 = Color3.new(1, 1, 1)
 			btn.Font = Enum.Font.FredokaOne
 			btn.TextScaled = true
@@ -1829,7 +2737,7 @@ local function renderInventoryModal()
 			local eq = profile.equippedVehicle == v.id
 			local btn = Instance.new("TextButton")
 			btn.BackgroundColor3 = if eq then Color3.fromRGB(72, 206, 88) elseif owned then Color3.fromRGB(64, 142, 212) else Color3.fromRGB(58, 62, 74)
-			btn.Text = string.format("🚙 %s\n%s", v.name, if eq then "EQUIPPED" elseif owned then "EQUIP" else "$" .. FormatUtil.Number(v.cost))
+			btn.Text = string.format("🚙 %s (x%s)\n%s", v.name, FormatUtil.Number(v.speedMultiplier), if eq then "EQUIPPED" elseif owned then "EQUIP" else "$" .. FormatUtil.Number(v.cost))
 			btn.TextColor3 = Color3.new(1, 1, 1)
 			btn.Font = Enum.Font.FredokaOne
 			btn.TextScaled = true
@@ -1897,8 +2805,9 @@ end)
 -- D. SETTINGS MODAL (Screenshot 10 — Silver Header + Sliders + Switches + Graphics Quality)
 local settingsWindow = Instance.new("Frame")
 settingsWindow.Name = "SettingsModal"
+settingsWindow.AnchorPoint = Vector2.new(0.5, 0.5)
 settingsWindow.Size = UDim2.fromOffset(540, 425)
-settingsWindow.Position = UDim2.new(0.5, -270, 0.5, -212)
+settingsWindow.Position = UDim2.fromScale(0.5, 0.5)
 settingsWindow.BackgroundColor3 = Color3.fromRGB(36, 38, 44)
 settingsWindow.Visible = false
 settingsWindow.Parent = gui
@@ -2065,17 +2974,31 @@ end
 -- Master Modal Switcher
 renderActiveModal = function()
 	shopWindow.Visible = (currentModal == "Shop")
+	trailsWindow.Visible = (currentModal == "Trails")
+	lassosWindow.Visible = (currentModal == "Lassos")
+	vehiclesWindow.Visible = (currentModal == "Vehicles")
+	fuseWindow.Visible = (currentModal == "Fuse")
+	rebirthWindow.Visible = (currentModal == "Rebirth")
 	indexWindow.Visible = (currentModal == "Index")
 	invWindow.Visible = (currentModal == "Inventory")
 	settingsWindow.Visible = (currentModal == "Settings")
 
 	if currentModal == "Shop" then renderShopModal()
+	elseif currentModal == "Trails" then renderTrailsModal()
+	elseif currentModal == "Lassos" then renderLassosModal()
+	elseif currentModal == "Vehicles" then renderVehiclesModal()
+	elseif currentModal == "Fuse" then renderFuseModal()
+	elseif currentModal == "Rebirth" then renderRebirthModal()
 	elseif currentModal == "Index" then renderIndexModal()
 	elseif currentModal == "Inventory" then renderInventoryModal()
 	elseif currentModal == "Settings" then renderSettingsModal() end
 end
 
 -- Bind Buttons & Hotbar Slots
+rebirthBtn.MouseButton1Click:Connect(function()
+	playClickSFX()
+	openModal("Rebirth")
+end)
 shopBtn.MouseButton1Click:Connect(function()
 	playClickSFX()
 	openModal("Shop")
@@ -2090,8 +3013,7 @@ settingsGearBtn.MouseButton1Click:Connect(function()
 end)
 speedIconBtn.MouseButton1Click:Connect(function()
 	playClickSFX()
-	shopSubTab = "Trails"
-	openModal("Shop")
+	openModal("Trails")
 end)
 
 renderHotbar()
@@ -2118,25 +3040,57 @@ UserInputService.InputBegan:Connect(function(inp, gp)
 	end
 end)
 
+local refreshSpeedAndCashDisplay: () -> ()
+
 localPlayer.AttributeChanged:Connect(function(attrName)
-	if attrName == "IsRidingVehicle" or attrName == "MountedAnimalUid" then
+	if attrName == "IsRidingVehicle" or attrName == "MountedAnimalUid" or attrName == "MountedAnimalId" or attrName == "MountedAnimalMutation" or attrName == "TowedCrateCount" then
 		refreshMountButton()
+		if refreshSpeedAndCashDisplay then
+			refreshSpeedAndCashDisplay()
+		end
+	elseif attrName == "ClearHeldSlotRequest" then
+		selectedHotbarSlot = 0
+		selectedCustomCrateUid = nil
+		refreshHotbarSelectionVisuals()
+		syncHeldItemFromHotbar()
+		refreshMountButton()
+	elseif attrName == "ClientToastSeq" then
+		local msg = tostring(localPlayer:GetAttribute("ClientToastText") or "")
+		if msg ~= "" then
+			toastLbl.Text = msg
+			toastLbl.TextColor3 = Color3.fromRGB(255, 196, 62)
+			toastLbl.Visible = true
+			task.delay(3.5, function()
+				if toastLbl.Text == msg then
+					toastLbl.Visible = false
+				end
+			end)
+		end
+	elseif attrName == "EffectiveSpeedStat" or attrName == "TotalSpeedMult" or attrName == "BaseSpeedMult" or attrName == "VehicleSpeedMult" then
+		if refreshSpeedAndCashDisplay then
+			refreshSpeedAndCashDisplay()
+		end
 	end
 end)
 
--- Open matching modal when Hub ProximityPrompts trigger
+Remotes.Get("PoacherAlertSync").OnClientEvent:Connect(function(active)
+	isPoacherChasing = (active == true)
+end)
+
+-- Open matching standalone modal when Hub ProximityPrompts trigger (NOT one merged universal shop)
 ProximityPromptService.PromptTriggered:Connect(function(prompt, player)
 	if player ~= localPlayer then return end
 	if prompt.Name == "LassoShopPrompt" then
-		shopSubTab = "Lassos"; currentModal = "Shop"; renderActiveModal()
+		currentModal = "Lassos"; renderActiveModal()
 	elseif prompt.Name == "TrailShopPrompt" then
-		shopSubTab = "Trails"; currentModal = "Shop"; renderActiveModal()
+		currentModal = "Trails"; renderActiveModal()
 	elseif prompt.Name == "VehicleShopPrompt" then
-		shopSubTab = "Vehicles"; currentModal = "Shop"; renderActiveModal()
+		currentModal = "Vehicles"; renderActiveModal()
 	elseif prompt.Name == "FusePrompt" then
-		shopSubTab = "Fuse"; currentModal = "Shop"; renderActiveModal()
+		fusePickerSlot = nil
+		currentModal = "Fuse"; renderActiveModal()
 	elseif prompt.Name == "RebirthPrompt" then
-		shopSubTab = "Rebirth"; currentModal = "Shop"; renderActiveModal()
+		currentModal = "Rebirth"; renderActiveModal()
 	elseif prompt.Name == "IndexPrompt" then
 		currentModal = "Index"; renderActiveModal()
 	end
@@ -2164,9 +3118,10 @@ local function spawnFloatingStepPop(gain: number, totalMult: number?, isTreadmil
 	local rz = (math.random(-12, 12)) / 10
 	bb.StudsOffsetWorldSpace = Vector3.new(rx, ry, rz)
 	bb.AlwaysOnTop = true
+	bb.Active = false
 	bb.Parent = root
 
-	local multTag = if totalMult and totalMult > 1.01 then string.format(" (x%s)", FormatUtil.Number(totalMult)) else ""
+	local multTag = if totalMult and totalMult > 1.005 then string.format(" (x%s)", FormatUtil.Multiplier(totalMult)) else ""
 	local lbl = Instance.new("TextLabel")
 	lbl.Size = UDim2.fromScale(1, 1)
 	lbl.BackgroundTransparency = 1
@@ -2200,9 +3155,11 @@ end
 local function spawnFloatingCashPop(amount: number)
 	if amount <= 0 then return end
 	local pop = Instance.new("TextLabel")
-	pop.Size = UDim2.fromOffset(160, 28)
-	local rx = math.random(-12, 24)
-	pop.Position = UDim2.new(0, 165 + rx, 1, -52)
+	pop.Name = "FloatingCashPop"
+	pop.Size = UDim2.fromOffset(145, 24)
+	local rx = math.random(-4, 14)
+	local baseX = 38 + rx
+	pop.Position = UDim2.fromOffset(baseX, -2)
 	pop.BackgroundTransparency = 1
 	pop.Text = "+$" .. FormatUtil.Number(amount)
 	pop.TextColor3 = Color3.fromRGB(118, 255, 112)
@@ -2210,17 +3167,17 @@ local function spawnFloatingCashPop(amount: number)
 	pop.TextScaled = true
 	pop.TextXAlignment = Enum.TextXAlignment.Left
 	pop.ZIndex = 12
-	pop.Parent = gui
+	pop.Parent = statsCorner
 	local st = makeTextStroke(pop, 2.2)
 
-	TweenService:Create(pop, TweenInfo.new(1.05, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		Position = UDim2.new(0, 165 + rx, 1, -92),
+	TweenService:Create(pop, TweenInfo.new(0.85, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Position = UDim2.fromOffset(baseX, -34),
 		TextTransparency = 1,
 	}):Play()
-	TweenService:Create(st, TweenInfo.new(1.05, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+	TweenService:Create(st, TweenInfo.new(0.85, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
 		Transparency = 1,
 	}):Play()
-	task.delay(1.1, function()
+	task.delay(0.9, function()
 		if pop.Parent then
 			pop:Destroy()
 		end
@@ -2241,6 +3198,7 @@ local yourBaseGui = Instance.new("BillboardGui")
 yourBaseGui.Name = "YourBaseBillboard"
 yourBaseGui.Size = UDim2.fromOffset(145, 95)
 yourBaseGui.AlwaysOnTop = true
+yourBaseGui.Active = false
 yourBaseGui.MaxDistance = 550
 yourBaseGui.Enabled = false
 yourBaseGui.Parent = yourBaseAnchor
@@ -2267,21 +3225,74 @@ ybStroke.Thickness = 2.8
 ybStroke.Color = Color3.fromRGB(12, 14, 18)
 ybStroke.Parent = ybText
 
+local lastDrawerSig = ""
+local lastHotbarSig = ""
+local lastModalContentSig = ""
+
+local function computeProfileUISignatures(p: Types.PlayerProfileSchema): (string, string, string)
+	local invCount = 0
+	for _ in pairs(p.inventoryAnimals) do invCount += 1 end
+	local crateCount = 0
+	for _ in pairs(p.pendingCrates) do crateCount += 1 end
+	local invCrateCount = 0
+	local invCrateUids = {}
+	if type(p.crateInventory) == "table" then
+		for uid in pairs(p.crateInventory) do
+			invCrateCount += 1
+			table.insert(invCrateUids, uid)
+		end
+		table.sort(invCrateUids)
+	end
+	local roamStr = table.concat(p.roamingAnimalUids, ",")
+	local crateSigStr = table.concat(invCrateUids, ",")
+	local drawerSig = string.format("%s|%d|%d|%d|%d", roamStr, p.penCapacity, crateCount, invCount, invCrateCount)
+	local hotbarSig = string.format("%s|%s|%d|%s|%s", p.equippedLasso, p.equippedVehicle, invCount, roamStr, crateSigStr)
+	local modalSig = string.format("%s|%s|%s|%d|%d|%d|%d|%s|%s",
+		p.equippedLasso, p.equippedTrail, p.equippedVehicle, invCount, crateCount, invCrateCount, p.rebirths,
+		tostring(p.settings and (p.settings :: any).graphicsQuality), tostring(p.settings and p.settings.lowVFX)
+	)
+	return drawerSig, hotbarSig, modalSig
+end
+
+refreshSpeedAndCashDisplay = function()
+	if not profile then return end
+	local trailMult = 1.0
+	for _, t in ipairs(TrailConfig) do
+		if t.id == profile.equippedTrail then trailMult = t.speedMultiplier break end
+	end
+	local isRidingVeh = localPlayer:GetAttribute("IsRidingVehicle") == true
+	local vehMult = findVehicleDefById(profile.equippedVehicle).speedMultiplier
+
+	local baseMultAttr = tonumber(localPlayer:GetAttribute("BaseSpeedMult"))
+	local baseMult = if baseMultAttr and baseMultAttr > 0 then baseMultAttr else trailMult
+	local effectiveMult = baseMult + (if isRidingVeh then vehMult else 0)
+	local displayedSpeed = profile.speedStat * (if isRidingVeh then vehMult else 1)
+
+	-- Prefer authoritative server EffectiveSpeedStat when vehicle state matches
+	local srvEffective = tonumber(localPlayer:GetAttribute("EffectiveSpeedStat"))
+	if srvEffective and math.abs(srvEffective - displayedSpeed) <= math.max(1, displayedSpeed * 0.01) then
+		displayedSpeed = srvEffective
+	end
+
+	currentSpeedMult = effectiveMult
+	speedValLbl.Text = FormatUtil.Number(displayedSpeed)
+	speedMultLbl.Text = "(x" .. FormatUtil.Multiplier(effectiveMult) .. ")"
+	cashValLbl.Text = "$" .. FormatUtil.Number(profile.coins)
+end
+
 Remotes.Get("ProfileSync").OnClientEvent:Connect(function(newProfile)
 	if type(newProfile) ~= "table" then return end
 	if profile and newProfile.speedStat > lastSpeedStat then
 		lastStepGain = newProfile.speedStat - lastSpeedStat
-		stepPopLbl.Text = string.format("👟 +%s/Step", FormatUtil.Number(lastStepGain))
+		if currentSpeedMult > 1.005 then
+			stepPopLbl.Text = string.format("👟 +%s (x%s)", FormatUtil.Number(lastStepGain), FormatUtil.Multiplier(currentSpeedMult))
+		else
+			stepPopLbl.Text = string.format("👟 +%s/Step", FormatUtil.Number(lastStepGain))
+		end
 	end
 	lastSpeedStat = newProfile.speedStat
 	profile = newProfile
 
-	-- Trail Speed Multiplier
-	local trailMult = 1.0
-	for _, t in ipairs(TrailConfig) do
-		if t.id == newProfile.equippedTrail then trailMult = t.speedMultiplier break end
-	end
-	currentSpeedMult = trailMult
 	local penIncome = 0
 	for _, uid in ipairs(newProfile.roamingAnimalUids) do
 		local a = newProfile.inventoryAnimals[uid]
@@ -2289,22 +3300,31 @@ Remotes.Get("ProfileSync").OnClientEvent:Connect(function(newProfile)
 	end
 	currentPenIncome = penIncome
 
-	speedValLbl.Text = FormatUtil.Number(newProfile.speedStat)
-	speedMultLbl.Text = "(x" .. FormatUtil.Number(trailMult) .. ")"
-	cashValLbl.Text = "$" .. FormatUtil.Number(newProfile.coins)
-	cashRateLbl.Text = "+$" .. FormatUtil.Number(penIncome)
+	refreshSpeedAndCashDisplay()
 
-	renderRightDrawer()
-	renderHotbar()
+	local dSig, hSig, mSig = computeProfileUISignatures(newProfile)
+	if dSig ~= lastDrawerSig then
+		lastDrawerSig = dSig
+		renderRightDrawer()
+	end
+	if hSig ~= lastHotbarSig then
+		lastHotbarSig = hSig
+		renderHotbar()
+	end
 	refreshMountButton()
-	if currentModal then renderActiveModal() end
+	if currentModal and mSig ~= lastModalContentSig then
+		lastModalContentSig = mSig
+		renderActiveModal()
+	elseif mSig ~= lastModalContentSig then
+		lastModalContentSig = mSig
+	end
 end)
 
 Remotes.Get("TrainingPulse").OnClientEvent:Connect(function(gain, totalMult, isTreadmill)
 	if type(gain) == "number" then
 		local multShown = if type(totalMult) == "number" then totalMult else currentSpeedMult
-		if multShown > 1.01 then
-			stepPopLbl.Text = string.format("👟 +%s (x%s)", FormatUtil.Number(gain), FormatUtil.Number(multShown))
+		if multShown > 1.005 then
+			stepPopLbl.Text = string.format("👟 +%s (x%s)", FormatUtil.Number(gain), FormatUtil.Multiplier(multShown))
 		else
 			stepPopLbl.Text = "👟 +" .. FormatUtil.Number(gain) .. "/Step"
 		end
@@ -2330,14 +3350,68 @@ Remotes.Get("GlobalEventBanner").OnClientEvent:Connect(function(msg, color, dura
 	end)
 end)
 
--- Biome Entry Detection + Event Countdown Ticker + Cash Pop + Your Base Marker
+-- Biome Entry Detection + Shop Green-Zone Auto Open/Close + RUN! Danger Vignette Pulse
 local checkAccum = 0
 local secAccum = 0
+
 RunService.Heartbeat:Connect(function(dt: number)
 	checkAccum += dt
 	secAccum += dt
-	if checkAccum < 0.35 then return end
+
+	local carryingCrates = (tonumber(localPlayer:GetAttribute("TowedCrateCount")) or 0) > 0
+	local inDanger = isPoacherChasing or carryingCrates
+	runVignette.Visible = inDanger
+	runAlertBanner.Visible = inDanger
+	if inDanger then
+		local pulse = 0.5 + 0.5 * math.sin(os.clock() * 7.5)
+		local edgeAlpha = 0.10 + pulse * 0.28
+		for _, strip in ipairs(runEdgeStrips) do
+			strip.bar.BackgroundTransparency = edgeAlpha
+		end
+		runAlertBanner.BackgroundColor3 = Color3.fromRGB(72 + math.round(pulse * 58), 42, 54)
+	end
+
+	-- Fast Shop StandZone auto-open & auto-close (direct scan handles StreamingEnabled instantly!)
+	if checkAccum < 0.14 then return end
 	checkAccum = 0
+
+	local char = localPlayer.Character
+	local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
+	if root and root:IsA("BasePart") then
+		local gw = Workspace:FindFirstChild("GameWorld")
+		local hub = if gw then gw:FindFirstChild("SanctuaryHub") else nil
+		local activeZoneModal: string? = nil
+		if hub then
+			for _, ch in ipairs(hub:GetChildren()) do
+				if ch:IsA("BasePart") then
+					local modalTag = ch:GetAttribute("ShopZoneModal")
+					if type(modalTag) == "string" then
+						local rad = tonumber(ch:GetAttribute("ShopZoneRadius")) or 5.5
+						local dx = root.Position.X - ch.Position.X
+						local dz = root.Position.Z - ch.Position.Z
+						if math.sqrt(dx * dx + dz * dz) <= rad and math.abs(root.Position.Y - ch.Position.Y) <= 10 then
+							activeZoneModal = modalTag
+							break
+						end
+					end
+				end
+			end
+		end
+		if activeZoneModal then
+			if dismissedStandZoneModal ~= activeZoneModal and currentModal ~= activeZoneModal then
+				lastAutoZoneModal = activeZoneModal
+				openModal(activeZoneModal, true)
+			elseif currentModal == activeZoneModal then
+				lastAutoZoneModal = activeZoneModal
+			end
+		else
+			if lastAutoZoneModal and currentModal == lastAutoZoneModal then
+				openModal(nil, true)
+			end
+			lastAutoZoneModal = nil
+			dismissedStandZoneModal = nil
+		end
+	end
 
 	if secAccum >= 1.0 then
 		secAccum = 0
@@ -2373,8 +3447,6 @@ RunService.Heartbeat:Connect(function(dt: number)
 	local secs = rem % 60
 	timerLbl.Text = string.format("In: %02d:%02d", mins, secs)
 
-	local char = localPlayer.Character
-	local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
 	if root and root:IsA("BasePart") then
 		local z = root.Position.Z
 		local foundBiome = nil
@@ -2386,7 +3458,7 @@ RunService.Heartbeat:Connect(function(dt: number)
 		end
 		if foundBiome then
 			biomeBanner.Visible = true
-			biomeTitleLbl.Text = foundBiome.name .. " 🌲"
+			biomeTitleLbl.Text = string.format("Zone %d: %s", foundBiome.order, foundBiome.name)
 			biomeTitleLbl.TextColor3 = foundBiome.accentColor:Lerp(Color3.new(1, 1, 1), 0.35)
 			biomeRecLbl.Text = "Recommended: 👟 " .. FormatUtil.Number(foundBiome.recommendedSpeed) .. " Speed"
 		else
@@ -2394,3 +3466,87 @@ RunService.Heartbeat:Connect(function(dt: number)
 		end
 	end
 end)
+
+-- ============================================================================
+-- 10. RESPONSIVE UI SCALING (Prevents Overlap & Oversized HUD Across Screens)
+-- ============================================================================
+local hudScaleTargets: { GuiObject } = {
+	topLeftRow,
+	biomeBanner,
+	eventBanner,
+	runAlertBanner,
+	toastLbl,
+	leftStack,
+	statsCorner,
+	rightEdgeBtns,
+	rightDrawerWrap,
+	bottomCenterHud,
+	eventTimerBox,
+}
+
+local modalScaleTargets: { GuiObject } = {
+	shopWindow,
+	trailsWindow,
+	lassosWindow,
+	vehiclesWindow,
+	fuseWindow,
+	rebirthWindow,
+	indexWindow,
+	invWindow,
+	settingsWindow,
+}
+
+local function ensureUiScale(target: GuiObject): UIScale
+	local existing = target:FindFirstChildOfClass("UIScale")
+	if existing then
+		return existing
+	end
+	local s = Instance.new("UIScale")
+	s.Name = "ResponsiveScale"
+	s.Parent = target
+	return s
+end
+
+local function updateResponsiveScales()
+	local cam = Workspace.CurrentCamera
+	local vp = gui.AbsoluteSize
+	if vp.X < 100 or vp.Y < 100 then
+		vp = if cam then cam.ViewportSize else Vector2.new(1280, 720)
+	end
+	if vp.X < 100 or vp.Y < 100 then
+		vp = Vector2.new(1280, 720)
+	end
+	local hudScale = math.clamp(math.min(vp.X / 1366, vp.Y / 768), 0.42, 1.15)
+	local modalScale = math.clamp(math.min((vp.X - 36) / 720, (vp.Y - 36) / 480), 0.42, 1.15)
+
+	for _, target in ipairs(hudScaleTargets) do
+		ensureUiScale(target).Scale = hudScale
+	end
+	for _, modal in ipairs(modalScaleTargets) do
+		ensureUiScale(modal).Scale = modalScale
+	end
+
+	-- Reposition stacked/sibling containers relative to the live HUD scale
+	eventBanner.Position = UDim2.new(0.5, 0, 0, math.round(8 + 62 * hudScale))
+	toastLbl.Position = UDim2.new(0.5, 0, 0, math.round(8 + 100 * hudScale))
+	rightDrawerWrap.Position = UDim2.new(1, -math.round(10 + 52 * hudScale), 0.45, 0)
+	invWindow.Position = UDim2.new(0.5, 0, 1, -math.round(16 + 52 * hudScale))
+end
+
+local activeViewportConn: RBXScriptConnection? = nil
+local function bindCameraViewportSignal()
+	if activeViewportConn then
+		activeViewportConn:Disconnect()
+		activeViewportConn = nil
+	end
+	local cam = Workspace.CurrentCamera
+	if cam then
+		activeViewportConn = cam:GetPropertyChangedSignal("ViewportSize"):Connect(updateResponsiveScales)
+	end
+	updateResponsiveScales()
+end
+
+gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateResponsiveScales)
+Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCameraViewportSignal)
+bindCameraViewportSignal()
+task.defer(updateResponsiveScales)

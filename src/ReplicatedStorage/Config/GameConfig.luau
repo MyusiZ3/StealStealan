@@ -11,6 +11,7 @@ local GameConfig = {
 		STARTING_CAPACITY = 8,
 		MAX_CAPACITY_FREE = 20,
 		MAX_CAPACITY_PASS_BONUS = 5,
+		MAX_PLACED_CRATES = 30,
 		UPGRADE_BASE_COST = 600,
 		UPGRADE_GROWTH = 3.2,
 		INCOME_BONUS_PER_LEVEL = 0.10, -- +10% pen income per upgrade level
@@ -53,13 +54,13 @@ local GameConfig = {
 		MAX_FRIEND_BOOST = 0.50,
 	},
 
-	-- Random Animal Size Ratios (Min 0.70x -> Max 3.50x)
+	-- Random Animal Size Ratios (Dramatic Micro 0.45x -> Colossal 4.80x KG/Size Variety)
 	SIZE_BRACKETS = {
-		{ name = "Tiny", minRatio = 0.70, maxRatio = 0.89, weight = 20.0 },
-		{ name = "Normal", minRatio = 0.90, maxRatio = 1.25, weight = 55.0 },
-		{ name = "Big", minRatio = 1.26, maxRatio = 1.75, weight = 18.0 },
-		{ name = "Giant", minRatio = 1.76, maxRatio = 2.40, weight = 5.5 },
-		{ name = "Titanic", minRatio = 2.41, maxRatio = 3.50, weight = 1.5 },
+		{ name = "Micro", minRatio = 0.45, maxRatio = 0.78, weight = 22.0 },
+		{ name = "Normal", minRatio = 0.85, maxRatio = 1.25, weight = 48.0 },
+		{ name = "Big", minRatio = 1.30, maxRatio = 1.95, weight = 19.0 },
+		{ name = "Giant", minRatio = 2.00, maxRatio = 3.10, weight = 8.5 },
+		{ name = "Colossal", minRatio = 3.15, maxRatio = 4.80, weight = 2.5 },
 	},
 
 	-- Rare Mutations & Income Multipliers
@@ -80,8 +81,25 @@ local GameConfig = {
 		Uncommon = 8,
 		Rare = 15,
 		Epic = 25,
-		Legendary = 40,
-		Mythic = 60,
+		Legendary = 45,
+		Mythic = 75,
+	},
+
+	BIOME_HATCH_MULTIPLIER = {
+		PineWoods = 1.0,
+		MangroveSwamp = 1.35,
+		SavannaCamp = 1.75,
+		AlpinePeaks = 2.25,
+		VolcanicJungle = 3.0,
+	},
+
+	CRATE_SIZE_BY_RARITY = {
+		Common = 0.78,
+		Uncommon = 0.90,
+		Rare = 1.05,
+		Epic = 1.22,
+		Legendary = 1.42,
+		Mythic = 1.65,
 	},
 
 	RARITY_COLORS = {
@@ -104,5 +122,101 @@ local GameConfig = {
 		graphicsQuality = "Medium",
 	},
 }
+
+function GameConfig.ComputeHatchSeconds(rarity: string, biomeId: string): number
+	local base = (GameConfig.UNBOX_SECONDS :: any)[rarity] or 5
+	local mult = (GameConfig.BIOME_HATCH_MULTIPLIER :: any)[biomeId] or 1.0
+	return math.max(2, math.round(base * mult))
+end
+
+function GameConfig.ComputeCrateScale(rarity: string): number
+	return (GameConfig.CRATE_SIZE_BY_RARITY :: any)[rarity] or 1.0
+end
+
+local function nextMutationTier(mut: string): string?
+	for i, m in ipairs(GameConfig.MUTATION_ORDER) do
+		if m == mut and i < #GameConfig.MUTATION_ORDER then
+			return GameConfig.MUTATION_ORDER[i + 1]
+		end
+	end
+	return nil
+end
+
+function GameConfig.ComputeMergeForecast(inputs: { { sizeRatio: number, mutation: string } }): (number, number, { { mutation: string, chance: number } })
+	if #inputs == 0 then
+		return 1.0, 0.9, { { mutation = "None", chance = 100 } }
+	end
+	local sumSize, maxSize = 0, 0
+	local mutCounts: { [string]: number } = {}
+	for _, inp in ipairs(inputs) do
+		local sz = inp.sizeRatio or 1.0
+		sumSize += sz
+		if sz > maxSize then maxSize = sz end
+		local m = inp.mutation or "None"
+		if m ~= "None" then
+			mutCounts[m] = (mutCounts[m] or 0) + 1
+		end
+	end
+	local avgSize = sumSize / #inputs
+	local boostedSize = math.floor(math.min(5.5, math.max(maxSize * 1.15, avgSize * 1.32)) * 100 + 0.5) / 100
+	local crateScale = math.clamp(0.72 + boostedSize * 0.28, 0.72, 2.25)
+
+	local weights: { [string]: number } = {}
+	for mut, cnt in pairs(mutCounts) do
+		local nxt = nextMutationTier(mut)
+		if cnt >= #inputs then
+			if nxt then
+				weights[nxt] = (weights[nxt] or 0) + 70
+				weights[mut] = (weights[mut] or 0) + 30
+			else
+				weights[mut] = (weights[mut] or 0) + 100
+			end
+		elseif cnt >= 2 then
+			weights[mut] = (weights[mut] or 0) + 50
+			if nxt then
+				weights[nxt] = (weights[nxt] or 0) + 15
+			else
+				weights[mut] += 15
+			end
+		else
+			weights[mut] = (weights[mut] or 0) + 22
+			if nxt then
+				weights[nxt] = (weights[nxt] or 0) + 6
+			else
+				weights[mut] += 6
+			end
+		end
+	end
+
+	local nonNoneSum = 0
+	for _, v in pairs(weights) do
+		nonNoneSum += v
+	end
+	if nonNoneSum == 0 then
+		weights["Albino"] = 14
+		weights["Golden"] = 4
+		nonNoneSum = 18
+	elseif nonNoneSum > 100 then
+		for k, v in pairs(weights) do
+			weights[k] = math.round((v / nonNoneSum) * 100)
+		end
+		nonNoneSum = 100
+	end
+
+	local list: { { mutation: string, chance: number } } = {}
+	for _, mutKey in ipairs(GameConfig.MUTATION_ORDER) do
+		if mutKey ~= "None" and weights[mutKey] and weights[mutKey] > 0 then
+			table.insert(list, { mutation = mutKey, chance = weights[mutKey] })
+		end
+	end
+	local normalPct = math.max(0, 100 - nonNoneSum)
+	if normalPct > 0 then
+		table.insert(list, { mutation = "None", chance = normalPct })
+	end
+	table.sort(list, function(a, b)
+		return a.chance > b.chance
+	end)
+	return boostedSize, crateScale, list
+end
 
 return GameConfig

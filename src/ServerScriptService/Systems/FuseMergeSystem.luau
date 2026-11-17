@@ -13,14 +13,14 @@ local PlotService = require(script.Parent.Parent.Services.PlotService)
 
 local FuseMergeSystem = {}
 
-local function getNextMutation(current: Types.AnimalMutation): Types.AnimalMutation?
-	for idx, m in ipairs(GameConfig.MUTATION_ORDER) do
-		if m == current and idx < #GameConfig.MUTATION_ORDER then
-			return GameConfig.MUTATION_ORDER[idx + 1] :: Types.AnimalMutation
-		end
-	end
-	return nil
-end
+local RARITY_RANK: { [string]: number } = {
+	Common = 1,
+	Uncommon = 2,
+	Rare = 3,
+	Epic = 4,
+	Legendary = 5,
+	Mythic = 6,
+}
 
 local function removeAnimalFromPenAndInventory(profile: Types.PlayerProfileSchema, uid: string)
 	profile.inventoryAnimals[uid] = nil
@@ -32,90 +32,121 @@ local function removeAnimalFromPenAndInventory(profile: Types.PlayerProfileSchem
 	end
 end
 
-function FuseMergeSystem.Init()
-	Remotes.Get("RequestMergeAnimals").OnServerEvent:Connect(function(player, uidList)
-		if type(uidList) ~= "table" or #uidList ~= 3 then return end
-		local profile = DataService.GetProfile(player)
-		if not profile then return end
-
-		local seen: { [string]: boolean } = {}
-		local animals: { Types.AnimalInstance } = {}
-		for _, uid in ipairs(uidList) do
-			if typeof(uid) ~= "string" or seen[uid] then return end
-			seen[uid] = true
-			local a = profile.inventoryAnimals[uid]
-			if not a then return end
-			table.insert(animals, a)
+local function rollForecastMutation(chances: { { mutation: string, chance: number } }): Types.AnimalMutation
+	local total = 0
+	for _, entry in ipairs(chances) do
+		total += math.max(0, entry.chance)
+	end
+	if total <= 0 then
+		return "None"
+	end
+	local roll = math.random() * total
+	local acc = 0
+	for _, entry in ipairs(chances) do
+		acc += math.max(0, entry.chance)
+		if roll <= acc then
+			return entry.mutation :: Types.AnimalMutation
 		end
+	end
+	return "None"
+end
 
-		local firstSpecies = animals[1].speciesId
-		local firstMut = animals[1].mutation
-		local bestSize = animals[1].sizeRatio
-		for i = 2, 3 do
-			if animals[i].speciesId ~= firstSpecies or animals[i].mutation ~= firstMut then
-				Remotes.Get("NotifyClient"):FireClient(player, "Merge requires 3 identical species with the same mutation!", Color3.fromRGB(255, 96, 96))
-				return
-			end
-			if animals[i].sizeRatio > bestSize then
-				bestSize = animals[i].sizeRatio
-			end
-		end
+local function handleUnifiedMerge(player: Player, uidList: any)
+	if type(uidList) ~= "table" or #uidList ~= 3 then
+		Remotes.Get("NotifyClient"):FireClient(player, "Select 3 of the same pets to Merge!", Color3.fromRGB(255, 196, 62))
+		return
+	end
+	local profile = DataService.GetProfile(player)
+	if not profile then return end
 
-		local nextMut = getNextMutation(firstMut)
-		if not nextMut then
-			Remotes.Get("NotifyClient"):FireClient(player, "Already at max Celestial mutation!", Color3.fromRGB(255, 206, 62))
+	local cleanUids: { string } = {}
+	for _, uid in ipairs(uidList) do
+		if typeof(uid) ~= "string" or uid == "" then
 			return
 		end
+		table.insert(cleanUids, uid)
+	end
 
-		for _, uid in ipairs(uidList) do
-			removeAnimalFromPenAndInventory(profile, uid)
+	-- Acquire per-player + per-UID transaction lock (blocks race-condition / duplicate UID spam)
+	if not DataService.AcquireTransactionLock(player.UserId, cleanUids) then
+		return
+	end
+
+	local animals: { Types.AnimalInstance } = {}
+	local forecastInputs: { { sizeRatio: number, mutation: string } } = {}
+	local candidateSpecs: { Types.AnimalSpeciesDefinition } = {}
+
+	for _, uid in ipairs(cleanUids) do
+		local a = profile.inventoryAnimals[uid]
+		if not a or DataService.IsUidConsumed(profile, uid) then
+			DataService.ReleaseTransactionLock(player.UserId, cleanUids)
+			return
 		end
+		table.insert(animals, a)
+		table.insert(forecastInputs, { sizeRatio = a.sizeRatio, mutation = a.mutation })
+		local spec = AnimalConfig.GetById(a.speciesId) or AnimalConfig.ALL[1]
+		table.insert(candidateSpecs, spec)
+	end
 
-		local merged = PlotService.GrantAnimalToPlayer(player, firstSpecies, math.min(3.8, bestSize * 1.08), nextMut)
-		if merged then
-			local spec = AnimalConfig.GetById(firstSpecies)
-			Remotes.Get("NotifyClient"):FireClient(
-				player,
-				string.format("MERGED! %s evolved to [%s] (%.2fx Size)!", spec and spec.name or firstSpecies, nextMut, merged.sizeRatio),
-				GameConfig.MUTATIONS[nextMut].color
-			)
+	local firstSpecies = animals[1].speciesId
+	for i = 2, #animals do
+		if animals[i].speciesId ~= firstSpecies then
+			DataService.ReleaseTransactionLock(player.UserId, cleanUids)
+			Remotes.Get("NotifyClient"):FireClient(player, "Merge requires 3 of the same pet species!", Color3.fromRGB(255, 96, 96))
+			return
 		end
-	end)
+	end
 
-	Remotes.Get("RequestCrossFuse").OnServerEvent:Connect(function(player, uidList)
-		if type(uidList) ~= "table" or #uidList ~= 3 then return end
-		local profile = DataService.GetProfile(player)
-		if not profile then return end
+	local boostedSize, crateScale, chances = GameConfig.ComputeMergeForecast(forecastInputs)
+	local rolledMut = rollForecastMutation(chances)
 
-		local seen: { [string]: boolean } = {}
-		local biomePool: { string } = {}
-		for _, uid in ipairs(uidList) do
-			if typeof(uid) ~= "string" or seen[uid] then return end
-			seen[uid] = true
-			local a = profile.inventoryAnimals[uid]
-			if not a then return end
-			local spec = AnimalConfig.GetById(a.speciesId)
-			table.insert(biomePool, spec and spec.biomeId or "PineWoods")
+	-- Pick species weighted slightly toward higher rarity inputs (or identical if all match)
+	local totalRank = 0
+	for _, sp in ipairs(candidateSpecs) do
+		totalRank += (RARITY_RANK[sp.rarity] or 1)
+	end
+	local spRoll = math.random() * math.max(1, totalRank)
+	local spAcc = 0
+	local chosenSpec = candidateSpecs[1]
+	for _, sp in ipairs(candidateSpecs) do
+		spAcc += (RARITY_RANK[sp.rarity] or 1)
+		if spRoll <= spAcc then
+			chosenSpec = sp
+			break
 		end
+	end
 
-		for _, uid in ipairs(uidList) do
-			removeAnimalFromPenAndInventory(profile, uid)
-		end
+	-- Consume all input pets & record their UIDs in consumedUids tombstone list FIRST!
+	for _, uid in ipairs(cleanUids) do
+		removeAnimalFromPenAndInventory(profile, uid)
+		DataService.MarkUidConsumed(profile, uid)
+	end
+	DataService.ReleaseTransactionLock(player.UserId, cleanUids)
 
-		local chosenBiome = biomePool[math.random(1, #biomePool)]
-		local rolledSpec = AnimalConfig.RollSpeciesForBiome(chosenBiome, 6.0)
-		local rolledMut = AnimalConfig.RollMutation(8.0)
-		local rolledSize = AnimalConfig.RollSizeRatio(4.0)
+	-- Merged result is delivered inside an oversized Crate in player's Backpack/Hotbar to hatch!
+	local crateUid = PlotService.AddCrateToInventory(player, chosenSpec.biomeId, chosenSpec.rarity, chosenSpec.id, crateScale, {
+		customSizeRatio = boostedSize,
+		customMutation = rolledMut,
+		originSource = "Merge",
+		parentUids = cleanUids,
+	})
+	PlotService.RefreshPlotBoardVisuals(player)
+	PlotService.BroadcastAllPlotsSync()
+	DataService.SyncProfile(player)
 
-		local created = PlotService.GrantAnimalToPlayer(player, rolledSpec.id, rolledSize, rolledMut)
-		if created then
-			Remotes.Get("NotifyClient"):FireClient(
-				player,
-				string.format("CROSS-FUSE SUCCESS! Got [%s] %s (%.2fx)!", rolledMut, rolledSpec.name, created.sizeRatio),
-				Color3.fromRGB(196, 92, 255)
-			)
-		end
-	end)
+	if crateUid then
+		local mutText = if rolledMut ~= "None" then ("[" .. rolledMut .. "] ") else ""
+		Remotes.Get("NotifyClient"):FireClient(
+			player,
+			string.format("MERGED! %s%s Crate (%.2fx Size) added to your Backpack — place in Pen to hatch!", mutText, chosenSpec.name, boostedSize),
+			GameConfig.MUTATIONS[rolledMut].color
+		)
+	end
+end
+
+function FuseMergeSystem.Init()
+	Remotes.Get("RequestMergeAnimals").OnServerEvent:Connect(handleUnifiedMerge)
+	Remotes.Get("RequestCrossFuse").OnServerEvent:Connect(handleUnifiedMerge)
 end
 
 return FuseMergeSystem

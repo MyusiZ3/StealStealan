@@ -201,7 +201,7 @@ function AnimalConfig.RollSizeRatio(giantBonusMult: number?): number
 	local brackets = {}
 	for _, b in ipairs(GameConfig.SIZE_BRACKETS) do
 		local w = b.weight
-		if b.minRatio >= 1.76 then
+		if b.minRatio >= 2.0 then
 			w = w * bonus
 		end
 		total += w
@@ -251,7 +251,7 @@ function AnimalConfig.ComputeIncomePerSec(animal: Types.AnimalInstance): number
 		return 1
 	end
 	local mutInfo = GameConfig.MUTATIONS[animal.mutation] or GameConfig.MUTATIONS.None
-	local sizeFactor = math.pow(math.max(0.5, animal.sizeRatio), 1.5)
+	local sizeFactor = math.pow(math.max(0.45, animal.sizeRatio), 1.5)
 	return spec.baseIncomePerSec * sizeFactor * mutInfo.multiplier
 end
 

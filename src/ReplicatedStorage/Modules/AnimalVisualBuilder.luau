@@ -47,7 +47,7 @@ end
 function AnimalVisualBuilder.BuildAnimalModel(speciesId: string, sizeRatio: number, mutation: Types.AnimalMutation, lowVFX: boolean?): Model
 	local spec = AnimalConfig.GetById(speciesId) or AnimalConfig.ALL[1]
 	local primaryCol, secondaryCol, mat, transparency = resolveMutationStyle(spec, mutation)
-	local s = math.clamp(sizeRatio, 0.5, 6.0)
+	local s = math.clamp(sizeRatio, 0.42, 6.0)
 
 	local model = Instance.new("Model")
 	model.Name = "Animal_" .. spec.id
@@ -128,55 +128,286 @@ function AnimalVisualBuilder.BuildAnimalModel(speciesId: string, sizeRatio: numb
 	return model
 end
 
-function AnimalVisualBuilder.BuildBuriedCrate(rarity: Types.AnimalRarity, biomeId: string): Model
+function AnimalVisualBuilder.BuildCrateModel(
+	rarity: Types.AnimalRarity,
+	biomeId: string,
+	sizeScale: number?,
+	opts: { isBuried: boolean?, canCollide: boolean?, showBeacon: boolean? }?
+): Model
+	local s = sizeScale or GameConfig.ComputeCrateScale(rarity)
 	local rarityColor = GameConfig.RARITY_COLORS[rarity] or Color3.fromRGB(168, 182, 172)
-	local ca = ReplicatedStorage:FindFirstChild("CuratedAssets")
-	local heroSrc = if ca then ca:FindFirstChild("Hero_PoacherCrate") else nil
+	local isBuried = if opts and opts.isBuried ~= nil then opts.isBuried else true
+	local canCollide = if opts and opts.canCollide ~= nil then opts.canCollide else false
+	local showBeacon = if opts and opts.showBeacon ~= nil then opts.showBeacon else isBuried
 
 	local crateModel = Instance.new("Model")
-	crateModel.Name = "BuriedCrate_" .. rarity
+	crateModel.Name = string.format("Crate_%s_%s", biomeId, rarity)
+	crateModel:SetAttribute("BiomeId", biomeId)
+	crateModel:SetAttribute("Rarity", rarity)
+	crateModel:SetAttribute("SizeScale", s)
 
-	local basePart: Part
-	if heroSrc and heroSrc:IsA("Model") then
-		local clone = heroSrc:Clone()
-		for _, d in ipairs(clone:GetDescendants()) do
-			if d:IsA("BasePart") then
-				d.Anchored = true
-				d.CanCollide = false
-				d.Color = d.Color:Lerp(rarityColor, 0.38)
-			elseif d:IsA("BaseScript") then
-				d:Destroy()
-			end
-		end
-		clone:PivotTo(CFrame.new(0, 1.5, 0) * CFrame.Angles(math.rad(18), math.rad(12), math.rad(-14)))
-		clone.Parent = crateModel
-		basePart = Instance.new("Part")
-		basePart.Name = "CrateRoot"
-		basePart.Size = Vector3.new(5.5, 5.5, 5.5)
-		basePart.Transparency = 1
-		basePart.Anchored = true
-		basePart.CanCollide = true
-		basePart.CFrame = CFrame.new(0, 1.8, 0)
-		basePart.Parent = crateModel
-		crateModel.PrimaryPart = basePart
-	else
-		basePart = makeBox("CrateRoot", Vector3.new(5, 5, 5), CFrame.new(0, 1.8, 0) * CFrame.Angles(math.rad(18), 0, math.rad(-12)), rarityColor, Enum.Material.Wood, crateModel)
-		basePart.CanCollide = true
-		basePart.CanQuery = true
-		crateModel.PrimaryPart = basePart
+	local tilt = if isBuried then CFrame.Angles(math.rad(14), math.rad(10), math.rad(-10)) else CFrame.new()
+	local baseY = (2.1 * s)
+
+	-- Biome-specific palette, silhouette, and structural theme
+	local frameCol = Color3.fromRGB(128, 86, 50)
+	local frameMat = Enum.Material.Wood
+	local accentCol = Color3.fromRGB(58, 132, 64)
+	local accentMat = Enum.Material.Grass
+	local barCol = Color3.fromRGB(54, 58, 66)
+	local barMat = Enum.Material.Metal
+	local outerTrans = 0
+	local boxDims = Vector3.new(4.2 * s, 3.6 * s, 4.2 * s)
+
+	if biomeId == "MangroveSwamp" then
+		frameCol = Color3.fromRGB(98, 78, 46)
+		frameMat = Enum.Material.WoodPlanks
+		accentCol = Color3.fromRGB(72, 224, 158)
+		accentMat = Enum.Material.Neon
+		barCol = Color3.fromRGB(142, 118, 66)
+		barMat = Enum.Material.Wood
+		boxDims = Vector3.new(4.6 * s, 3.1 * s, 3.8 * s) -- wider low bamboo cage
+	elseif biomeId == "SavannaCamp" then
+		frameCol = Color3.fromRGB(68, 72, 82)
+		frameMat = Enum.Material.DiamondPlate
+		accentCol = Color3.fromRGB(224, 158, 52)
+		accentMat = Enum.Material.Metal
+		barCol = Color3.fromRGB(38, 40, 46)
+		barMat = Enum.Material.Metal
+		boxDims = Vector3.new(4.0 * s, 4.1 * s, 4.6 * s) -- tall armored safari cage
+	elseif biomeId == "AlpinePeaks" then
+		frameCol = Color3.fromRGB(148, 222, 255)
+		frameMat = Enum.Material.Ice
+		accentCol = Color3.fromRGB(228, 246, 255)
+		accentMat = Enum.Material.Glass
+		barCol = Color3.fromRGB(92, 136, 186)
+		barMat = Enum.Material.Metal
+		outerTrans = 0.25
+		boxDims = Vector3.new(4.3 * s, 3.9 * s, 4.3 * s)
+	elseif biomeId == "VolcanicJungle" then
+		frameCol = Color3.fromRGB(42, 34, 46)
+		frameMat = Enum.Material.Basalt
+		accentCol = Color3.fromRGB(255, 86, 28)
+		accentMat = Enum.Material.Neon
+		barCol = Color3.fromRGB(28, 24, 30)
+		barMat = Enum.Material.Basalt
+		boxDims = Vector3.new(4.4 * s, 4.0 * s, 4.4 * s)
 	end
 
-	-- Top Iron Tow Ring (where Lasso Beam attaches)
-	local ring = makeBox("TowRing", Vector3.new(1.3, 1.3, 1.3), CFrame.new(0, 4.6, 0), rarityColor, Enum.Material.Neon, crateModel)
+	local root = makeBox("CrateRoot", boxDims, CFrame.new(0, baseY, 0) * tilt, frameCol, frameMat, crateModel)
+	root.Transparency = outerTrans
+	root.CanCollide = canCollide
+	root.CanQuery = true
+	crateModel.PrimaryPart = root
+
+	local rootCF = root.CFrame
+	local hx, hy, hz = boxDims.X * 0.5, boxDims.Y * 0.5, boxDims.Z * 0.5
+
+	-- Corner structural pillars / ribs tinted with biome material + rarity
+	for _, cx in { -1, 1 } do
+		for _, cz in { -1, 1 } do
+			local pillar = makeBox(
+				"CornerPillar",
+				Vector3.new(0.46 * s, boxDims.Y + 0.35 * s, 0.46 * s),
+				rootCF * CFrame.new(cx * hx, 0, cz * hz),
+				barCol,
+				barMat,
+				crateModel
+			)
+			pillar.TopSurface = Enum.SurfaceType.Studs
+
+			-- Top & bottom biome accents or spikes per zone
+			if biomeId == "AlpinePeaks" then
+				makeBox(
+					"IceCrystal",
+					Vector3.new(0.55 * s, 1.3 * s, 0.55 * s),
+					rootCF * CFrame.new(cx * hx, hy + 0.45 * s, cz * hz) * CFrame.Angles(math.rad(cx * 15), 0, math.rad(cz * -15)),
+					Color3.fromRGB(168, 238, 255),
+					Enum.Material.Neon,
+					crateModel
+				)
+			elseif biomeId == "VolcanicJungle" then
+				makeBox(
+					"ObsidianHorn",
+					Vector3.new(0.52 * s, 1.45 * s, 0.52 * s),
+					rootCF * CFrame.new(cx * (hx + 0.1 * s), hy + 0.48 * s, cz * (hz + 0.1 * s)) * CFrame.Angles(math.rad(cz * -18), 0, math.rad(cx * 18)),
+					accentCol,
+					Enum.Material.Neon,
+					crateModel
+				)
+			elseif rarity == "Rare" or rarity == "Epic" or rarity == "Legendary" or rarity == "Mythic" then
+				makeBox(
+					"RarityStud",
+					Vector3.new(0.56 * s, 0.38 * s, 0.56 * s),
+					rootCF * CFrame.new(cx * hx, hy + 0.25 * s, cz * hz),
+					rarityColor,
+					Enum.Material.Neon,
+					crateModel
+				)
+			end
+		end
+	end
+
+	-- Front & back cage bars + top/bottom frame rims
+	for _, bz in { -hz - 0.08 * s, hz + 0.08 * s } do
+		for bx = -1, 1 do
+			makeBox(
+				"CageBar",
+				Vector3.new(0.28 * s, boxDims.Y - 0.4 * s, 0.28 * s),
+				rootCF * CFrame.new(bx * 0.9 * s, 0, bz),
+				if biomeId == "VolcanicJungle" then accentCol else barCol,
+				if biomeId == "VolcanicJungle" then Enum.Material.Neon else barMat,
+				crateModel
+			)
+		end
+	end
+
+	-- Biome side/top trim detail + glowing rarity band
+	makeBox(
+		"RarityBand",
+		Vector3.new(boxDims.X + 0.24 * s, 0.36 * s, boxDims.Z + 0.24 * s),
+		rootCF * CFrame.new(0, 0, 0),
+		rarityColor,
+		Enum.Material.Neon,
+		crateModel
+	)
+	makeBox(
+		"BiomeRoofTrim",
+		Vector3.new(boxDims.X * 0.72, 0.34 * s, boxDims.Z * 0.72),
+		rootCF * CFrame.new(0, hy + 0.16 * s, 0),
+		accentCol,
+		accentMat,
+		crateModel
+	)
+
+	-- Padlock & Keyhole on front face
+	makeBox(
+		"Padlock",
+		Vector3.new(0.85 * s, 0.95 * s, 0.42 * s),
+		rootCF * CFrame.new(0, -0.25 * s, -hz - 0.22 * s),
+		rarityColor,
+		Enum.Material.Metal,
+		crateModel
+	)
+
+	-- Epic/Legendary/Mythic crest + top tow ring
+	if rarity == "Epic" or rarity == "Legendary" or rarity == "Mythic" then
+		makeBox(
+			"CrestRing",
+			Vector3.new(boxDims.X * 0.46, 0.42 * s, boxDims.Z * 0.46),
+			rootCF * CFrame.new(0, hy + 0.48 * s, 0) * CFrame.Angles(0, math.rad(45), 0),
+			rarityColor,
+			Enum.Material.Neon,
+			crateModel
+		)
+	end
+
+	local ring = makeBox("TowRing", Vector3.new(1.05 * s, 1.05 * s, 1.05 * s), rootCF * CFrame.new(0, hy + 0.95 * s, 0), rarityColor, Enum.Material.Neon, crateModel)
 	ring.Shape = Enum.PartType.Ball
 
-	-- Beacon Light Beam for Rare / Epic / Legendary / Mythic
-	if rarity == "Rare" or rarity == "Epic" or rarity == "Legendary" or rarity == "Mythic" then
-		local beacon = makeBox("RarityBeacon", Vector3.new(1.4, 34, 1.4), CFrame.new(0, 19, 0), rarityColor, Enum.Material.Neon, crateModel)
+	if showBeacon and (rarity == "Rare" or rarity == "Epic" or rarity == "Legendary" or rarity == "Mythic") then
+		local beacon = makeBox("RarityBeacon", Vector3.new(1.1 * s, 32, 1.1 * s), rootCF * CFrame.new(0, 16 + hy, 0), rarityColor, Enum.Material.Neon, crateModel)
 		beacon.Transparency = 0.72
 	end
 
 	return crateModel
+end
+
+function AnimalVisualBuilder.BuildBuriedCrate(rarity: Types.AnimalRarity, biomeId: string, sizeScale: number?): Model
+	return AnimalVisualBuilder.BuildCrateModel(rarity, biomeId, sizeScale, {
+		isBuried = true,
+		canCollide = true,
+		showBeacon = true,
+	})
+end
+
+function AnimalVisualBuilder.BuildVehicleModel(def: Types.VehicleDefinition, scaleFactor: number?): Model
+	local sc = scaleFactor or 1.0
+	local ca = ReplicatedStorage:FindFirstChild("CuratedAssets")
+	local tpl = if ca then ca:FindFirstChild("Hero_SafariATV") else nil
+	if tpl and tpl:IsA("Model") then
+		local m = tpl:Clone()
+		m.Name = "VehicleVisual_" .. def.id
+		if sc ~= 1.0 then
+			pcall(function()
+				m:ScaleTo(m:GetScale() * sc)
+			end)
+		end
+		for _, d in ipairs(m:GetDescendants()) do
+			if d:IsA("BasePart") then
+				d.Anchored = true
+				d.CanCollide = false
+				d.CanQuery = false
+				d.CanTouch = false
+				if def.tier > 1 then
+					if d.Name == "frame_geom" then
+						if d:IsA("MeshPart") then
+							d.TextureID = ""
+						end
+						d.Color = def.primaryColor
+					elseif d.Name == "front fork_geom" or d.Name == "handlebars_geom" then
+						d.Color = def.accentColor
+					end
+				end
+			elseif d:IsA("BaseScript") then
+				d:Destroy()
+			end
+		end
+		if not m.PrimaryPart then
+			local firstPart = m:FindFirstChildWhichIsA("BasePart", true)
+			if firstPart then
+				m.PrimaryPart = firstPart
+			end
+		end
+		return m
+	end
+
+	local m = Instance.new("Model")
+	m.Name = "VehicleVisual_" .. def.id
+	local body = makeBox("Body", Vector3.new(3.6 * sc, 1.4 * sc, 5.2 * sc), CFrame.new(), def.primaryColor, Enum.Material.SmoothPlastic, m)
+	m.PrimaryPart = body
+	makeBox("Accent", Vector3.new(2.8 * sc, 0.8 * sc, 2.2 * sc), CFrame.new(0, 1.0 * sc, 0.4 * sc), def.accentColor, Enum.Material.Neon, m)
+	return m
+end
+
+function AnimalVisualBuilder.GetModelVerticalBounds(model: Model): (number, number)
+	local pivY = model:GetPivot().Position.Y
+	local minY = math.huge
+	local maxY = -math.huge
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") and d.Transparency < 1 then
+			local b = d.Position.Y - d.Size.Y * 0.5
+			local t = d.Position.Y + d.Size.Y * 0.5
+			if b < minY then minY = b end
+			if t > maxY then maxY = t end
+		end
+	end
+	if minY == math.huge then
+		local cf, sz = model:GetBoundingBox()
+		return (cf.Position.Y - sz.Y * 0.5) - pivY, (cf.Position.Y + sz.Y * 0.5) - pivY
+	end
+	return minY - pivY, maxY - pivY
+end
+
+function AnimalVisualBuilder.BuildLassoModel(beamColor: Color3, scaleFactor: number?): Model
+	local sc = scaleFactor or 1.0
+	local m = Instance.new("Model")
+	m.Name = "LassoVisual"
+	local handle = makeBox("Handle", Vector3.new(0.26 * sc, 0.26 * sc, 1.25 * sc), CFrame.new(0, 0, 0), Color3.fromRGB(132, 84, 44), Enum.Material.Wood, m)
+	m.PrimaryPart = handle
+	for i = 0, 5 do
+		local a = (i / 6) * math.pi * 2
+		local seg = makeBox(
+			"Coil_" .. i,
+			Vector3.new(0.24 * sc, 0.24 * sc, 0.68 * sc),
+			CFrame.new(math.cos(a) * 0.58 * sc, 0.1 * sc, -0.75 * sc + math.sin(a) * 0.58 * sc) * CFrame.Angles(0, -a, 0),
+			beamColor,
+			Enum.Material.Neon,
+			m
+		)
+		seg.Shape = Enum.PartType.Cylinder
+	end
+	return m
 end
 
 return AnimalVisualBuilder
