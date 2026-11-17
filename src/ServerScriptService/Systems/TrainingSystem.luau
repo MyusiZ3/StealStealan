@@ -56,6 +56,11 @@ function TrainingSystem.ComputeSpeedMetrics(player: Player, profile: any): (numb
 	local baseMult, totalMult, vehMult = computeBaseAndTotalMultiplier(player, profile)
 	local riding = player:GetAttribute("IsRidingVehicle") == true
 	local displayedSpeed = profile.speedStat * (if riding then vehMult else 1)
+	local stepGain = math.max(
+		1,
+		math.floor(GameConfig.TREADMILL.BASE_SPEED_PER_PULSE * math.pow(GameConfig.TREADMILL.GROWTH_PER_LEVEL, profile.treadmillLevel - 1) * totalMult)
+	)
+	player:SetAttribute("StepGainPerPulse", stepGain)
 	return displayedSpeed, baseMult, totalMult, vehMult
 end
 

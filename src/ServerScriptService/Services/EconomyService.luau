@@ -90,7 +90,12 @@ function EconomyService.Init()
 	Remotes.Get("EquipTrail").OnServerEvent:Connect(function(player, trailId)
 		if typeof(trailId) ~= "string" then return end
 		local profile = DataService.GetProfile(player)
-		if profile and profile.ownedTrails[trailId] then
+		if not profile then return end
+		if trailId == "" then
+			profile.equippedTrail = ""
+			PlotService.RefreshPlotBoardVisuals(player)
+			DataService.SyncProfile(player)
+		elseif profile.ownedTrails[trailId] then
 			profile.equippedTrail = trailId
 			PlotService.RefreshPlotBoardVisuals(player)
 			DataService.SyncProfile(player)

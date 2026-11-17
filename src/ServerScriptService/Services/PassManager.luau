@@ -117,6 +117,18 @@ function PassManager.Init()
 		if typeof(prodKey) ~= "string" then
 			return
 		end
+		local trailDef = (MonetizationConfig.TRAIL_PRODUCTS :: any)[prodKey]
+		if trailDef then
+			if (trailDef.passId or 0) ~= 0 then
+				MarketplaceService:PromptGamePassPurchase(player, trailDef.passId)
+				return
+			elseif (trailDef.id or 0) ~= 0 then
+				MarketplaceService:PromptProductPurchase(player, trailDef.id)
+				return
+			end
+			Remotes.Get("NotifyClient"):FireClient(player, "Trail Robux ID not published yet (set passId/id in MonetizationConfig).", Color3.fromRGB(255, 196, 62))
+			return
+		end
 		local def = (MonetizationConfig.DEVELOPER_PRODUCTS :: any)[prodKey]
 		if not def or def.id == 0 then
 			Remotes.Get("NotifyClient"):FireClient(player, "Developer Product ID not published yet (Studio Preview).", Color3.fromRGB(255, 196, 62))
@@ -133,6 +145,16 @@ function PassManager.Init()
 		for key, def in pairs(MonetizationConfig.GAME_PASSES) do
 			if def.id == passId then
 				ownershipCache[player.UserId][key] = true
+			end
+		end
+		local prof = DataService.GetProfile(player)
+		if prof and MonetizationConfig.TRAIL_PRODUCTS then
+			for _, tDef in pairs(MonetizationConfig.TRAIL_PRODUCTS :: any) do
+				if tDef.passId and tDef.passId == passId then
+					prof.ownedTrails[tDef.trailId] = true
+					prof.equippedTrail = tDef.trailId
+					Remotes.Get("NotifyClient"):FireClient(player, "Unlocked Trail: " .. tDef.trailId .. "!", Color3.fromRGB(0, 224, 255))
+				end
 			end
 		end
 		DataService.SyncProfile(player)
@@ -161,10 +183,24 @@ function PassManager.Init()
 			profile.equippedTrail = "SparkTrail"
 			profile.coins += 100000
 		else
-			for _, def in pairs(MonetizationConfig.DEVELOPER_PRODUCTS) do
-				if def.id == prodId and (def :: any).baseCoins then
-					local mult = 1 + profile.rebirths * GameConfig.ECONOMY.REBIRTH_INCOME_BONUS
-					profile.coins += math.floor((def :: any).baseCoins * mult)
+			local granted = false
+			if MonetizationConfig.TRAIL_PRODUCTS then
+				for _, tDef in pairs(MonetizationConfig.TRAIL_PRODUCTS :: any) do
+					if tDef.id == prodId and prodId ~= 0 then
+						profile.ownedTrails[tDef.trailId] = true
+						profile.equippedTrail = tDef.trailId
+						granted = true
+						Remotes.Get("NotifyClient"):FireClient(player, "Unlocked Trail: " .. tDef.trailId .. "!", Color3.fromRGB(0, 224, 255))
+						break
+					end
+				end
+			end
+			if not granted then
+				for _, def in pairs(MonetizationConfig.DEVELOPER_PRODUCTS) do
+					if def.id == prodId and (def :: any).baseCoins then
+						local mult = 1 + profile.rebirths * GameConfig.ECONOMY.REBIRTH_INCOME_BONUS
+						profile.coins += math.floor((def :: any).baseCoins * mult)
+					end
 				end
 			end
 		end

@@ -67,6 +67,19 @@ local MonetizationConfig = {
 		CoinsMedium = { id = 0, name = "Ranger Crate of Coins", priceRobux = 149, baseCoins = 500000 },
 		CoinsLarge = { id = 0, name = "Sanctuary Vault of Coins", priceRobux = 399, baseCoins = 5000000 },
 	},
+
+	-- Plug in your published Developer Product / GamePass IDs for direct Robux Trail purchases!
+	TRAIL_PRODUCTS = {
+		LeafTrail = { id = 0, priceRobux = 19, trailId = "LeafTrail" },
+		SparkTrail = { id = 0, priceRobux = 39, trailId = "SparkTrail" },
+		HydroTrail = { id = 0, priceRobux = 59, trailId = "HydroTrail" },
+		VoltTrail = { id = 0, priceRobux = 89, trailId = "VoltTrail" },
+		PlasmaTrail = { id = 0, priceRobux = 129, trailId = "PlasmaTrail" },
+		CrimsonTrail = { id = 0, priceRobux = 179, trailId = "CrimsonTrail" },
+		FrostTrail = { id = 0, priceRobux = 229, trailId = "FrostTrail" },
+		StarlightTrail = { id = 0, priceRobux = 270, trailId = "StarlightTrail" },
+		RainbowTrail = { id = 0, priceRobux = 399, trailId = "RainbowTrail" },
+	},
 }
 
 return MonetizationConfig
