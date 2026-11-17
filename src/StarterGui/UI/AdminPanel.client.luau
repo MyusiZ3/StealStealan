@@ -26,9 +26,13 @@ gui.Name = "AdminControlPanel"
 gui.ResetOnSpawn = false
 gui.Parent = playerGui
 
+local WorkspaceService = game:GetService("Workspace")
+
 local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size = UDim2.fromOffset(118, 36)
-toggleBtn.Position = UDim2.new(1, -132, 0, 14)
+toggleBtn.Name = "AdminToggleButton"
+toggleBtn.AnchorPoint = Vector2.new(1, 0)
+toggleBtn.Size = UDim2.fromOffset(108, 32)
+toggleBtn.Position = UDim2.new(1, -12, 0, 10)
 toggleBtn.BackgroundColor3 = Color3.fromRGB(196, 48, 86)
 toggleBtn.Text = "ADMIN (F2)"
 toggleBtn.TextColor3 = Color3.new(1, 1, 1)
@@ -37,13 +41,52 @@ toggleBtn.TextScaled = true
 toggleBtn.Visible = false
 toggleBtn.Parent = gui
 Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 8)
+local toggleScale = Instance.new("UIScale")
+toggleScale.Name = "ResponsiveScale"
+toggleScale.Parent = toggleBtn
 
 local frame = Instance.new("Frame")
+frame.Name = "AdminModalFrame"
+frame.AnchorPoint = Vector2.new(0.5, 0.5)
 frame.Size = UDim2.fromOffset(640, 440)
-frame.Position = UDim2.new(0.5, -320, 0.5, -220)
+frame.Position = UDim2.fromScale(0.5, 0.5)
 frame.BackgroundColor3 = Color3.fromRGB(18, 20, 30)
 frame.Visible = false
 frame.Parent = gui
+local frameScale = Instance.new("UIScale")
+frameScale.Name = "ResponsiveScale"
+frameScale.Parent = frame
+
+do
+	local vpConn: RBXScriptConnection? = nil
+	local function updateAdminScale()
+		local cam = WorkspaceService.CurrentCamera
+		local vp = gui.AbsoluteSize
+		if vp.X < 100 or vp.Y < 100 then
+			vp = if cam then cam.ViewportSize else Vector2.new(1280, 720)
+		end
+		if vp.X < 100 or vp.Y < 100 then
+			vp = Vector2.new(1280, 720)
+		end
+		toggleScale.Scale = math.clamp(math.min(vp.X / 1366, vp.Y / 768), 0.42, 1.15)
+		frameScale.Scale = math.clamp(math.min((vp.X - 36) / 720, (vp.Y - 36) / 480), 0.42, 1.15)
+	end
+	local function bindAdminCamera()
+		if vpConn then
+			vpConn:Disconnect()
+			vpConn = nil
+		end
+		local cam = WorkspaceService.CurrentCamera
+		if cam then
+			vpConn = cam:GetPropertyChangedSignal("ViewportSize"):Connect(updateAdminScale)
+		end
+		updateAdminScale()
+	end
+	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateAdminScale)
+	WorkspaceService:GetPropertyChangedSignal("CurrentCamera"):Connect(bindAdminCamera)
+	bindAdminCamera()
+	task.defer(updateAdminScale)
+end
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 14)
 local fStroke = Instance.new("UIStroke")
 fStroke.Color = Color3.fromRGB(224, 62, 108)

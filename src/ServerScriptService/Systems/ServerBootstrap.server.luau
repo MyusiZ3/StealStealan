@@ -60,14 +60,32 @@ Players.PlayerAdded:Connect(function(player)
 	end)
 
 	player.CharacterAdded:Connect(function(character)
-		task.wait(0.2)
 		PoacherAISystem.ResetShieldsForPlayer(player)
 		local prof = DataService.GetProfile(player)
 		if prof then
 			player:SetAttribute("EquippedTrail", prof.equippedTrail)
 		end
-		-- Ensure HumanoidRootPart exists cleanly
-		character:WaitForChild("HumanoidRootPart", 5)
+		-- Remove any accidental ForceField immediately so character never shimmers/flickers at spawn
+		for _, ch in ipairs(character:GetChildren()) do
+			if ch:IsA("ForceField") then
+				ch:Destroy()
+			end
+		end
+		character.ChildAdded:Connect(function(ch)
+			if ch:IsA("ForceField") then
+				ch:Destroy()
+			end
+		end)
+		-- Ensure HumanoidRootPart exists cleanly and place at player's Base without delayed Hub flicker
+		if not character:FindFirstChild("HumanoidRootPart") then
+			character:WaitForChild("HumanoidRootPart", 5)
+		end
+		PlotService.TeleportPlayerToPlot(player)
+		task.defer(function()
+			if character.Parent then
+				PlotService.TeleportPlayerToPlot(player)
+			end
+		end)
 	end)
 end)
 
@@ -88,6 +106,64 @@ Remotes.Get("UpdateSettings").OnServerEvent:Connect(function(player, newSettings
 	DataService.SyncProfile(player)
 end)
 
+Remotes.Get("SetHeldItem").OnServerEvent:Connect(function(player, itemType, itemId)
+	if typeof(itemType) ~= "string" then return end
+	local profile = DataService.GetProfile(player)
+	if not profile then return end
+
+	if itemType == "Pet" and typeof(itemId) == "string" then
+		local animal = profile.inventoryAnimals[itemId]
+		if animal then
+			player:SetAttribute("HeldItemType", "Pet")
+			player:SetAttribute("HeldItemId", itemId)
+			player:SetAttribute("HeldItemSpecies", animal.speciesId)
+			player:SetAttribute("HeldItemMutation", animal.mutation)
+			player:SetAttribute("HeldItemBiome", "")
+			player:SetAttribute("HeldItemRarity", "")
+			player:SetAttribute("HeldItemScale", 1)
+			return
+		end
+	elseif itemType == "Crate" and typeof(itemId) == "string" then
+		local crate = if type(profile.crateInventory) == "table" then profile.crateInventory[itemId] else nil
+		if crate then
+			player:SetAttribute("HeldItemType", "Crate")
+			player:SetAttribute("HeldItemId", itemId)
+			player:SetAttribute("HeldItemSpecies", "")
+			player:SetAttribute("HeldItemMutation", "")
+			player:SetAttribute("HeldItemBiome", crate.biomeId)
+			player:SetAttribute("HeldItemRarity", crate.rarity)
+			player:SetAttribute("HeldItemScale", crate.sizeScale or 1)
+			return
+		end
+	elseif itemType == "Vehicle" then
+		player:SetAttribute("HeldItemType", "Vehicle")
+		player:SetAttribute("HeldItemId", profile.equippedVehicle)
+		player:SetAttribute("HeldItemSpecies", "")
+		player:SetAttribute("HeldItemMutation", "")
+		player:SetAttribute("HeldItemBiome", "")
+		player:SetAttribute("HeldItemRarity", "")
+		player:SetAttribute("HeldItemScale", 1)
+		return
+	elseif itemType == "Lasso" then
+		player:SetAttribute("HeldItemType", "Lasso")
+		player:SetAttribute("HeldItemId", profile.equippedLasso)
+		player:SetAttribute("HeldItemSpecies", "")
+		player:SetAttribute("HeldItemMutation", "")
+		player:SetAttribute("HeldItemBiome", "")
+		player:SetAttribute("HeldItemRarity", "")
+		player:SetAttribute("HeldItemScale", 1)
+		return
+	end
+
+	player:SetAttribute("HeldItemType", "")
+	player:SetAttribute("HeldItemId", "")
+	player:SetAttribute("HeldItemSpecies", "")
+	player:SetAttribute("HeldItemMutation", "")
+	player:SetAttribute("HeldItemBiome", "")
+	player:SetAttribute("HeldItemRarity", "")
+	player:SetAttribute("HeldItemScale", 1)
+end)
+
 Players.PlayerRemoving:Connect(function(player)
 	local started = sessionStartTimes[player.UserId]
 	if started then
@@ -100,6 +176,6 @@ end)
 
 game:BindToClose(function()
 	for _, player in ipairs(Players:GetPlayers()) do
-		DataService.SaveProfile(player)
+		DataService.SaveProfile(player, true)
 	end
 end)

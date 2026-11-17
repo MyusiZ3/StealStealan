@@ -275,7 +275,9 @@ function AdminService.Init()
 				local speciesId = tostring(payload.speciesId or "MythicWhiteTiger")
 				local mutation = tostring(payload.mutation or "Rainbow") :: Types.AnimalMutation
 				local sizeRatio = math.clamp(tonumber(payload.sizeRatio) or 2.5, 0.5, 10.0)
-				local animal = PlotService.GrantAnimalToPlayer(target, speciesId, sizeRatio, mutation)
+				local animal = PlotService.GrantAnimalToPlayer(target, speciesId, sizeRatio, mutation, {
+					originSource = "Admin",
+				})
 				if animal then
 					Remotes.Get("NotifyClient"):FireClient(adminPlayer, string.format("Spawned %s (%s, %.1fx) for %s!", speciesId, mutation, sizeRatio, target.Name), Color3.fromRGB(224, 92, 255))
 				end
@@ -284,6 +286,9 @@ function AdminService.Init()
 				local val = math.clamp(tonumber(payload.value) or 1.0, 0.05, 10000)
 				if (liveTuners :: any)[key] ~= nil then
 					(liveTuners :: any)[key] = val
+					for _, p in ipairs(Players:GetPlayers()) do
+						DataService.SyncProfile(p)
+					end
 					Remotes.Get("NotifyClient"):FireClient(adminPlayer, string.format("Live %s set to %.2fx", key, val), Color3.fromRGB(0, 245, 212))
 				end
 			elseif action == "TriggerEvent" then
@@ -292,6 +297,9 @@ function AdminService.Init()
 				if def then
 					activeEvents[eventId] = os.time() + def.durationSeconds
 					Remotes.Get("GlobalEventBanner"):FireAllClients(def.title .. " — " .. def.description, def.color, 9)
+					for _, p in ipairs(Players:GetPlayers()) do
+						DataService.SyncProfile(p)
+					end
 					if eventId == "CrateRain" and crateRainCallback then
 						crateRainCallback()
 					elseif eventId == "TitanicZoo" then
@@ -313,6 +321,9 @@ function AdminService.Init()
 				liveTuners.speedMult = 1.0
 				liveTuners.poacherSpeedMult = 1.0
 				liveTuners.resistanceMult = 1.0
+				for _, p in ipairs(Players:GetPlayers()) do
+					DataService.SyncProfile(p)
+				end
 				Remotes.Get("GlobalEventBanner"):FireAllClients("Admin ended active server events.", Color3.fromRGB(180, 190, 210), 4)
 			elseif action == "Broadcast" then
 				local msg = string.sub(tostring(payload.message or "Hello Rangers!"), 1, 160)

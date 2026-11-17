@@ -10,7 +10,9 @@ local Types = require(game.ReplicatedStorage.Shared.Types)
 local GameConfig = require(game.ReplicatedStorage.Config.GameConfig)
 local AnimalConfig = require(game.ReplicatedStorage.Config.AnimalConfig)
 local TrailConfig = require(game.ReplicatedStorage.Config.TrailConfig)
+local VehicleConfig = require(game.ReplicatedStorage.Config.VehicleConfig)
 local FormatUtil = require(game.ReplicatedStorage.Modules.FormatUtil)
+local PlotVisualBuilder = require(game.ReplicatedStorage.Modules.PlotVisualBuilder)
 local Remotes = require(game.ReplicatedStorage.Shared.Remotes)
 
 local DataService = require(script.Parent.DataService)
@@ -30,8 +32,14 @@ local liveGetters = {
 	isInstantUnbox = function(_player: Player): boolean return false end,
 }
 
+local penDropHandler: ((Player) -> ())? = nil
+
 function PlotService.RegisterLiveGetters(getters: typeof(liveGetters))
 	liveGetters = getters
+end
+
+function PlotService.RegisterPenDropHandler(fn: (Player) -> ())
+	penDropHandler = fn
 end
 
 local function getPlotsFolder(): Folder?
@@ -52,6 +60,33 @@ end
 
 function PlotService.GetPlayerPlotIndex(player: Player): number?
 	return playerPlots[player.UserId]
+end
+
+function PlotService.GetPlotSpawnCFrame(plotIndex: number): CFrame?
+	local model = PlotService.GetPlotModel(plotIndex)
+	if not model then
+		return nil
+	end
+	local base = model.PrimaryPart or model:FindFirstChild("PlotBase")
+	if not base or not base:IsA("BasePart") then
+		return nil
+	end
+	local plotCF = base.CFrame
+	local spawnPos = (plotCF * CFrame.new(0, 4.5, -24)).Position
+	local lookAtPos = (plotCF * CFrame.new(0, 4.5, -48)).Position
+	return CFrame.lookAt(spawnPos, lookAtPos)
+end
+
+function PlotService.TeleportPlayerToPlot(player: Player)
+	local idx = playerPlots[player.UserId]
+	if not idx then
+		return
+	end
+	local cf = PlotService.GetPlotSpawnCFrame(idx)
+	local char = player.Character
+	if cf and char then
+		char:PivotTo(cf)
+	end
 end
 
 function PlotService.GetMaxPenCapacity(player: Player, profile: Types.PlayerProfileSchema): number
@@ -165,7 +200,22 @@ function PlotService.RefreshPlotBoardVisuals(player: Player)
 		sv.Parent = ls
 		speedStat = sv
 	end
-	(speedStat :: StringValue).Value = FormatUtil.Number(profile.speedStat)
+	local speedMult = 1
+	if player:GetAttribute("IsRidingVehicle") == true then
+		for _, v in ipairs(VehicleConfig) do
+			if v.id == profile.equippedVehicle then
+				speedMult = v.speedMultiplier
+				break
+			end
+		end
+	end
+	local attrEffective = tonumber(player:GetAttribute("EffectiveSpeedStat"))
+	local effectiveSpeedVal = if attrEffective ~= nil then attrEffective else (profile.speedStat * speedMult)
+	local speedValObj = speedStat :: StringValue
+	speedValObj.Value = FormatUtil.Number(effectiveSpeedVal)
+
+	-- Evolve physical Pen Fence & Treadmill tiers dynamically
+	PlotVisualBuilder.ApplyPlotEvolution(model, profile.penUpgradeLevel, profile.treadmillLevel)
 
 	local signBoard = model:FindFirstChild("OwnerSignBoard")
 	updateSignGui(signBoard, player.DisplayName .. "'s ZOO", string.format("Open-Pen (%d/%d Animals)", #profile.roamingAnimalUids, profile.penCapacity))
@@ -173,24 +223,35 @@ function PlotService.RefreshPlotBoardVisuals(player: Player)
 	local cashPad = model:FindFirstChild("CashCollectorPad")
 	updateSignGui(cashPad, "COLLECT: $" .. FormatUtil.Number(profile.unclaimedPenCoins), "$" .. FormatUtil.Number(incomePerSec) .. "/sec")
 
-	local upgradePad = model:FindFirstChild("PenUpgradePad")
+	local upgradeBoard = model:FindFirstChild("PenUpgradeBoard")
 	if profile.penCapacity >= maxCap then
-		updateSignGui(upgradePad, "PEN MAXED (" .. profile.penCapacity .. ")", "+" .. math.floor((profile.penUpgradeLevel - 1) * 10) .. "% Bonus")
+		PlotVisualBuilder.UpdateUpgradeBoardGui(
+			upgradeBoard,
+			"Upgrade Pen",
+			string.format("Lv. %d (MAX %d/%d)", profile.penUpgradeLevel, profile.penCapacity, maxCap),
+			"MAX",
+			true
+		)
 	else
 		local cost = PlotService.GetPenUpgradeCost(profile)
-		updateSignGui(upgradePad, string.format("UPGRADE PEN (%d/%d)", profile.penCapacity, maxCap), "Next: $" .. FormatUtil.Number(cost))
+		PlotVisualBuilder.UpdateUpgradeBoardGui(
+			upgradeBoard,
+			"Upgrade Pen",
+			string.format("Lv. %d > Lv. %d (%d > %d)", profile.penUpgradeLevel, profile.penUpgradeLevel + 1, profile.penCapacity, profile.penCapacity + 1),
+			"$" .. FormatUtil.Number(cost),
+			false
+		)
 	end
 
-	local treadmillPad = model:FindFirstChild("TreadmillPad")
+	local treadBoard = model:FindFirstChild("TreadmillUpgradeBoard")
 	local treadCost = math.floor(GameConfig.TREADMILL.UPGRADE_BASE_COST * math.pow(GameConfig.TREADMILL.UPGRADE_GROWTH, profile.treadmillLevel - 1))
-	updateSignGui(treadmillPad, "TREADMILL LV." .. profile.treadmillLevel, "Upgrade: $" .. FormatUtil.Number(treadCost))
-
-	local unboxPad = model:FindFirstChild("CrateUnboxPad")
-	local pendingCount = 0
-	for _ in pairs(profile.pendingCrates) do
-		pendingCount += 1
-	end
-	updateSignGui(unboxPad, "CRATES READY: " .. pendingCount, "Press E to Drop / Open!")
+	PlotVisualBuilder.UpdateUpgradeBoardGui(
+		treadBoard,
+		"Upgrade Treadmill",
+		string.format("Lv. %d > Lv. %d", profile.treadmillLevel, profile.treadmillLevel + 1),
+		"$" .. FormatUtil.Number(treadCost),
+		false
+	)
 end
 
 function PlotService.BroadcastAllPlotsSync()
@@ -199,11 +260,13 @@ function PlotService.BroadcastAllPlotsSync()
 		ownerUserId: number,
 		ownerName: string,
 		roamingAnimals: { Types.AnimalInstance },
+		pendingCrates: { Types.CrateInstance },
 	} } = {}
 
 	for i = 1, GameConfig.PLOT_COUNT do
 		local owner = plotOwners[i]
 		local list: { Types.AnimalInstance } = {}
+		local crates: { Types.CrateInstance } = {}
 		if owner then
 			local prof = DataService.GetProfile(owner)
 			if prof then
@@ -213,6 +276,9 @@ function PlotService.BroadcastAllPlotsSync()
 						table.insert(list, a)
 					end
 				end
+				for _, c in pairs(prof.pendingCrates) do
+					table.insert(crates, c)
+				end
 			end
 		end
 		payload[tostring(i)] = {
@@ -220,6 +286,7 @@ function PlotService.BroadcastAllPlotsSync()
 			ownerUserId = if owner then owner.UserId else 0,
 			ownerName = if owner then owner.DisplayName else "Vacant",
 			roamingAnimals = list,
+			pendingCrates = crates,
 		}
 	end
 	Remotes.Get("AllPlotsSync"):FireAllClients(payload)
@@ -247,7 +314,8 @@ function PlotService.GrantAnimalToPlayer(
 	player: Player,
 	speciesId: string,
 	forcedSizeRatio: number?,
-	forcedMutation: Types.AnimalMutation?
+	forcedMutation: Types.AnimalMutation?,
+	originMeta: { originSource: Types.ItemOriginSource?, parentUids: { string }? }?
 ): Types.AnimalInstance?
 	local profile = DataService.GetProfile(player)
 	if not profile then
@@ -259,7 +327,8 @@ function PlotService.GrantAnimalToPlayer(
 	local mutation = forcedMutation or AnimalConfig.RollMutation(luckMult)
 	local weightKg = math.floor(spec.baseWeightKg * math.pow(sizeRatio, 2.2) * 10 + 0.5) / 10
 
-	local uid = DataService.NewGuid()
+	local uid, serialNonce = DataService.MintUniqueId(profile)
+	DataService.RegisterUidOwner(uid, player.UserId, "PetInv")
 	local animal: Types.AnimalInstance = {
 		uid = uid,
 		speciesId = spec.id,
@@ -268,13 +337,17 @@ function PlotService.GrantAnimalToPlayer(
 		mutation = mutation,
 		locked = (mutation ~= "None" or spec.rarity == "Legendary" or spec.rarity == "Mythic"),
 		acquiredAt = os.time(),
+		serialNonce = serialNonce,
+		mintedByUserId = player.UserId,
+		originSource = if originMeta and originMeta.originSource then originMeta.originSource else "Hatch",
+		parentUids = if originMeta then originMeta.parentUids else nil,
 	}
 
 	profile.inventoryAnimals[uid] = animal
 	PlotService.RegisterAnimalDiscovery(profile, spec.id, sizeRatio, mutation)
 
 	-- Automatically place into Open Pen if there is room!
-	if #profile.roamingAnimalUids < profile.penCapacity then
+	if #profile.roamingAnimalUids < profile.penCapacity and not table.find(profile.roamingAnimalUids, uid) then
 		table.insert(profile.roamingAnimalUids, uid)
 	end
 
@@ -284,26 +357,218 @@ function PlotService.GrantAnimalToPlayer(
 	return animal
 end
 
-function PlotService.AddPendingCrate(player: Player, biomeId: string, rarity: Types.AnimalRarity, speciesId: string)
+local function resolveCrateLocalXZ(crate: Types.CrateInstance, fallbackIdx: number): (number, number)
+	if type(crate.localX) == "number" and type(crate.localZ) == "number" then
+		return crate.localX, crate.localZ
+	end
+	local slotIdx = tonumber(crate.placedSlot) or fallbackIdx
+	local idx0 = math.clamp(slotIdx - 1, 0, GameConfig.PEN.MAX_PLACED_CRATES - 1)
+	local col = idx0 % 6
+	local row = math.floor(idx0 / 6)
+	return -20 + col * 8.0, -10 + row * 6.0
+end
+
+function PlotService.AddCrateToInventory(
+	player: Player,
+	biomeId: string,
+	rarity: Types.AnimalRarity,
+	speciesId: string,
+	sizeScale: number?,
+	customStats: {
+		customSizeRatio: number?,
+		customMutation: Types.AnimalMutation?,
+		originSource: Types.ItemOriginSource?,
+		parentUids: { string }?,
+	}?
+): string?
 	local profile = DataService.GetProfile(player)
 	if not profile then
-		return
+		return nil
 	end
-	local dur = GameConfig.UNBOX_SECONDS[rarity] or 5
+	if type(profile.crateInventory) ~= "table" then
+		profile.crateInventory = {}
+	end
+	local crateUid, serialNonce = DataService.MintUniqueId(profile)
+	DataService.RegisterUidOwner(crateUid, player.UserId, "CrateInv")
+	local dur = GameConfig.ComputeHatchSeconds(rarity, biomeId)
 	if liveGetters.isInstantUnbox(player) then
 		dur = 0
 	end
-	local crateUid = DataService.NewGuid()
+	local rec: Types.InventoryCrate = {
+		uid = crateUid,
+		biomeId = biomeId,
+		rarity = rarity,
+		speciesId = speciesId,
+		sizeScale = sizeScale or GameConfig.ComputeCrateScale(rarity),
+		hatchDuration = dur,
+		acquiredAt = os.time(),
+		customSizeRatio = if customStats then customStats.customSizeRatio else nil,
+		customMutation = if customStats then customStats.customMutation else nil,
+		serialNonce = serialNonce,
+		mintedByUserId = player.UserId,
+		originSource = if customStats and customStats.originSource then customStats.originSource else "Wild",
+		parentUids = if customStats then customStats.parentUids else nil,
+	}
+	profile.crateInventory[crateUid] = rec
+	DataService.SyncProfile(player)
+	return crateUid
+end
+
+function PlotService.PlaceCrateInPen(player: Player, crateUid: string, targetLocalX: number, targetLocalZ: number): boolean
+	local profile = DataService.GetProfile(player)
+	if not profile or type(profile.crateInventory) ~= "table" then
+		return false
+	end
+	if DataService.IsUidConsumed(profile, crateUid) or profile.pendingCrates[crateUid] ~= nil then
+		profile.crateInventory[crateUid] = nil
+		return false
+	end
+	if not DataService.AcquireTransactionLock(player.UserId, { crateUid }) then
+		return false
+	end
+	local invCrate = profile.crateInventory[crateUid]
+	if not invCrate then
+		DataService.ReleaseTransactionLock(player.UserId, { crateUid })
+		return false
+	end
+
+	local usedSlots: { [number]: boolean } = {}
+	local count = 0
+	local lx = math.clamp(targetLocalX, -22.5, 22.5)
+	local lz = math.clamp(targetLocalZ, -14.5, 14.5)
+	local newScale = tonumber(invCrate.sizeScale) or GameConfig.ComputeCrateScale(invCrate.rarity)
+
+	local idxCounter = 0
+	for _, existing in pairs(profile.pendingCrates) do
+		count += 1
+		idxCounter += 1
+		if type(existing.placedSlot) == "number" then
+			usedSlots[existing.placedSlot] = true
+		end
+		local ex, ez = resolveCrateLocalXZ(existing, idxCounter)
+		local exScale = tonumber(existing.sizeScale) or GameConfig.ComputeCrateScale(existing.rarity)
+		local reqDist = 2.8 + (newScale + exScale) * 2.1
+		local dx = lx - ex
+		local dz = lz - ez
+		if math.sqrt(dx * dx + dz * dz) < reqDist then
+			DataService.ReleaseTransactionLock(player.UserId, { crateUid })
+			Remotes.Get("NotifyClient"):FireClient(player, "Too close to another crate! Pick an open spot in your Pen.", Color3.fromRGB(255, 196, 62))
+			return false
+		end
+	end
+
+	if count >= GameConfig.PEN.MAX_PLACED_CRATES then
+		DataService.ReleaseTransactionLock(player.UserId, { crateUid })
+		Remotes.Get("NotifyClient"):FireClient(
+			player,
+			string.format("Pen crate slots full (%d/%d)! Hatch crates first.", count, GameConfig.PEN.MAX_PLACED_CRATES),
+			Color3.fromRGB(255, 196, 62)
+		)
+		return false
+	end
+
+	local freeSlot = 1
+	for s = 1, GameConfig.PEN.MAX_PLACED_CRATES do
+		if not usedSlots[s] then
+			freeSlot = s
+			break
+		end
+	end
+
+	local dur = GameConfig.ComputeHatchSeconds(invCrate.rarity, invCrate.biomeId)
+	if liveGetters.isInstantUnbox(player) then
+		dur = 0
+	end
+
+	-- Atomic handover: remove from crateInventory FIRST, then insert into pendingCrates
+	profile.crateInventory[crateUid] = nil
+	DataService.RegisterUidOwner(crateUid, player.UserId, "PendingCrate")
+	profile.pendingCrates[crateUid] = {
+		uid = crateUid,
+		biomeId = invCrate.biomeId,
+		rarity = invCrate.rarity,
+		speciesId = invCrate.speciesId,
+		unlockAt = os.time() + dur,
+		hatchDuration = dur,
+		placedSlot = freeSlot,
+		sizeScale = newScale,
+		localX = lx,
+		localZ = lz,
+		customSizeRatio = invCrate.customSizeRatio,
+		customMutation = invCrate.customMutation,
+		serialNonce = invCrate.serialNonce,
+		mintedByUserId = invCrate.mintedByUserId,
+		originSource = invCrate.originSource,
+		parentUids = invCrate.parentUids,
+	}
+	DataService.ReleaseTransactionLock(player.UserId, { crateUid })
+
+	PlotService.RefreshPlotBoardVisuals(player)
+	PlotService.BroadcastAllPlotsSync()
+	DataService.SyncProfile(player)
+	Remotes.Get("NotifyClient"):FireClient(
+		player,
+		string.format("Placed [%s] Crate in Pen! Hatches in %ds.", invCrate.rarity, dur),
+		GameConfig.RARITY_COLORS[invCrate.rarity] or Color3.fromRGB(84, 245, 148)
+	)
+	return true
+end
+
+function PlotService.AddPendingCrate(player: Player, biomeId: string, rarity: Types.AnimalRarity, speciesId: string, sizeScale: number?): boolean
+	local profile = DataService.GetProfile(player)
+	if not profile then
+		return false
+	end
+
+	local usedSlots: { [number]: boolean } = {}
+	local count = 0
+	for _, existing in pairs(profile.pendingCrates) do
+		count += 1
+		if type(existing.placedSlot) == "number" then
+			usedSlots[existing.placedSlot] = true
+		end
+	end
+	if count >= GameConfig.PEN.MAX_PLACED_CRATES then
+		Remotes.Get("NotifyClient"):FireClient(
+			player,
+			string.format("Pen crate slots full (%d/%d)! Hatch crates inside your pen first.", count, GameConfig.PEN.MAX_PLACED_CRATES),
+			Color3.fromRGB(255, 196, 62)
+		)
+		return false
+	end
+
+	local freeSlot = 1
+	for s = 1, GameConfig.PEN.MAX_PLACED_CRATES do
+		if not usedSlots[s] then
+			freeSlot = s
+			break
+		end
+	end
+
+	local dur = GameConfig.ComputeHatchSeconds(rarity, biomeId)
+	if liveGetters.isInstantUnbox(player) then
+		dur = 0
+	end
+	local crateUid, serialNonce = DataService.MintUniqueId(profile)
+	DataService.RegisterUidOwner(crateUid, player.UserId, "PendingCrate")
 	local crate: Types.CrateInstance = {
 		uid = crateUid,
 		biomeId = biomeId,
 		rarity = rarity,
 		speciesId = speciesId,
 		unlockAt = os.time() + dur,
+		hatchDuration = dur,
+		placedSlot = freeSlot,
+		sizeScale = sizeScale or GameConfig.ComputeCrateScale(rarity),
+		serialNonce = serialNonce,
+		mintedByUserId = player.UserId,
+		originSource = "Wild",
 	}
 	profile.pendingCrates[crateUid] = crate
 	PlotService.RefreshPlotBoardVisuals(player)
+	PlotService.BroadcastAllPlotsSync()
 	DataService.SyncProfile(player)
+	return true
 end
 
 function PlotService.OpenCrate(player: Player, crateUid: string)
@@ -311,25 +576,70 @@ function PlotService.OpenCrate(player: Player, crateUid: string)
 	if not profile then
 		return
 	end
+	if DataService.IsUidConsumed(profile, crateUid) then
+		profile.pendingCrates[crateUid] = nil
+		return
+	end
+	if not DataService.AcquireTransactionLock(player.UserId, { crateUid }) then
+		return
+	end
 	local crate = profile.pendingCrates[crateUid]
 	if not crate then
+		DataService.ReleaseTransactionLock(player.UserId, { crateUid })
 		return
 	end
 	if os.time() < crate.unlockAt and not liveGetters.isInstantUnbox(player) then
+		DataService.ReleaseTransactionLock(player.UserId, { crateUid })
 		local rem = crate.unlockAt - os.time()
 		Remotes.Get("NotifyClient"):FireClient(player, "Crate unlocks in " .. rem .. "s!", Color3.fromRGB(255, 206, 62))
 		return
 	end
+	local revealPayload = {
+		crateUid = crateUid,
+		plotIndex = playerPlots[player.UserId] or 1,
+		biomeId = crate.biomeId,
+		rarity = crate.rarity,
+		sizeScale = crate.sizeScale or GameConfig.ComputeCrateScale(crate.rarity),
+		placedSlot = crate.placedSlot,
+		localX = crate.localX,
+		localZ = crate.localZ,
+	}
+	-- Consume crate & record tombstone FIRST before minting hatched pet!
 	profile.pendingCrates[crateUid] = nil
-	local animal = PlotService.GrantAnimalToPlayer(player, crate.speciesId, nil, nil)
+	profile.crateInventory[crateUid] = nil
+	DataService.MarkUidConsumed(profile, crateUid)
+	DataService.ReleaseTransactionLock(player.UserId, { crateUid })
+
+	local animal = PlotService.GrantAnimalToPlayer(player, crate.speciesId, crate.customSizeRatio, crate.customMutation, {
+		originSource = "Hatch",
+		parentUids = { crateUid },
+	})
 	if animal then
 		local spec = AnimalConfig.GetById(animal.speciesId)
 		local mutText = if animal.mutation ~= "None" then ("[" .. animal.mutation .. "] ") else ""
+		Remotes.Get("CrateHatchReveal"):FireClient(player, {
+			crateUid = revealPayload.crateUid,
+			plotIndex = revealPayload.plotIndex,
+			biomeId = revealPayload.biomeId,
+			rarity = revealPayload.rarity,
+			sizeScale = revealPayload.sizeScale,
+			placedSlot = revealPayload.placedSlot,
+			localX = revealPayload.localX,
+			localZ = revealPayload.localZ,
+			animalUid = animal.uid,
+			speciesId = animal.speciesId,
+			mutation = animal.mutation,
+			sizeRatio = animal.sizeRatio,
+			weightKg = animal.weightKg,
+		})
 		Remotes.Get("NotifyClient"):FireClient(
 			player,
-			string.format("Rescued %s%s (%.2fx Size | %.1fkg)!", mutText, spec and spec.name or animal.speciesId, animal.sizeRatio, animal.weightKg),
+			string.format("Hatched %s%s (%.2fx Size | %.1fkg)!", mutText, spec and spec.name or animal.speciesId, animal.sizeRatio, animal.weightKg),
 			GameConfig.RARITY_COLORS[crate.rarity] or Color3.fromRGB(84, 245, 148)
 		)
+	else
+		PlotService.BroadcastAllPlotsSync()
+		DataService.SyncProfile(player)
 	end
 end
 
@@ -344,6 +654,7 @@ function PlotService.AssignPlot(player: Player)
 			end
 			PlotService.RefreshPlotBoardVisuals(player)
 			PlotService.BroadcastAllPlotsSync()
+			PlotService.TeleportPlayerToPlot(player)
 			return
 		end
 	end
@@ -357,10 +668,46 @@ function PlotService.ReleasePlot(player: Player)
 		local model = PlotService.GetPlotModel(idx)
 		if model then
 			model:SetAttribute("OwnerUserId", 0)
+			PlotVisualBuilder.ApplyPlotEvolution(model, 1, 1)
 			updateSignGui(model:FindFirstChild("OwnerSignBoard"), "ZOO SANCTUARY #" .. idx, "Vacant Plot")
-			updateSignGui(model:FindFirstChild("CashCollectorPad"), "COLLECT CASH: $0", "0/s Pen Income")
+			updateSignGui(model:FindFirstChild("CashCollectorPad"), "COLLECT: $0", "$0/s Pen Income")
+			PlotVisualBuilder.UpdateUpgradeBoardGui(model:FindFirstChild("PenUpgradeBoard"), "Upgrade Pen", "Lv. 1 > Lv. 2 (8 > 9)", "$600", false)
+			PlotVisualBuilder.UpdateUpgradeBoardGui(model:FindFirstChild("TreadmillUpgradeBoard"), "Upgrade Treadmill", "Lv. 1 > Lv. 2", "$250", false)
 		end
 		PlotService.BroadcastAllPlotsSync()
+	end
+end
+
+function PlotService.UpgradeTreadmill(player: Player)
+	local prof = DataService.GetProfile(player)
+	if not prof then return end
+	local cost = math.floor(GameConfig.TREADMILL.UPGRADE_BASE_COST * math.pow(GameConfig.TREADMILL.UPGRADE_GROWTH, prof.treadmillLevel - 1))
+	if prof.coins < cost then
+		Remotes.Get("NotifyClient"):FireClient(player, "Need $" .. FormatUtil.Number(cost) .. " to upgrade Treadmill!", Color3.fromRGB(255, 96, 96))
+		return
+	end
+	prof.coins -= cost
+	prof.treadmillLevel += 1
+	PlotService.RefreshPlotBoardVisuals(player)
+	DataService.SyncProfile(player)
+	Remotes.Get("NotifyClient"):FireClient(player, "Treadmill upgraded to Lv." .. prof.treadmillLevel .. "!", Color3.fromRGB(58, 188, 255))
+end
+
+local function bindBoardTrigger(board: Instance?, promptName: string, pIdx: number, cb: (Player) -> ())
+	if not board then return end
+	local prompt = board:FindFirstChild(promptName)
+	if prompt and prompt:IsA("ProximityPrompt") then
+		prompt.Triggered:Connect(function(player)
+			if playerPlots[player.UserId] ~= pIdx then return end
+			cb(player)
+		end)
+	end
+	local cd = board:FindFirstChild(promptName .. "_Click")
+	if cd and cd:IsA("ClickDetector") then
+		cd.MouseClick:Connect(function(player)
+			if playerPlots[player.UserId] ~= pIdx then return end
+			cb(player)
+		end)
 	end
 end
 
@@ -383,60 +730,21 @@ local function bindPlotPrompts()
 				end)
 			end
 
-			local upgradePad = plotModel:FindFirstChild("PenUpgradePad")
-			local upgPrompt = if upgradePad then upgradePad:FindFirstChild("UpgradePenPrompt") else nil
-			if upgPrompt and upgPrompt:IsA("ProximityPrompt") then
-				upgPrompt.Triggered:Connect(function(player)
+			local paddock = plotModel:FindFirstChild("OpenPaddockFloor")
+			local dropPrompt = if paddock then paddock:FindFirstChild("PenDropPrompt") else nil
+			if dropPrompt and dropPrompt:IsA("ProximityPrompt") then
+				dropPrompt.Triggered:Connect(function(player)
 					if playerPlots[player.UserId] ~= pIdx then
 						return
 					end
-					PlotService.UpgradePen(player)
+					if penDropHandler then
+						penDropHandler(player)
+					end
 				end)
 			end
 
-			local unboxPad = plotModel:FindFirstChild("CrateUnboxPad")
-			local unboxPrompt = if unboxPad then unboxPad:FindFirstChild("UnboxPadPrompt") else nil
-			if unboxPrompt and unboxPrompt:IsA("ProximityPrompt") then
-				unboxPrompt.Triggered:Connect(function(player)
-					if playerPlots[player.UserId] ~= pIdx then
-						return
-					end
-					local profile = DataService.GetProfile(player)
-					if not profile then
-						return
-					end
-					-- Open any unlocked pending crate
-					for uid, crate in pairs(profile.pendingCrates) do
-						if os.time() >= crate.unlockAt or liveGetters.isInstantUnbox(player) then
-							PlotService.OpenCrate(player, uid)
-							return
-						end
-					end
-					Remotes.Get("NotifyClient"):FireClient(player, "Bring a crate from the forest or wait for timer!", Color3.fromRGB(255, 206, 62))
-				end)
-			end
-
-			local treadPad = plotModel:FindFirstChild("TreadmillPad")
-			local treadPrompt = if treadPad then treadPad:FindFirstChild("UpgradeTreadmillPrompt") else nil
-			if treadPrompt and treadPrompt:IsA("ProximityPrompt") then
-				treadPrompt.Triggered:Connect(function(player)
-					if playerPlots[player.UserId] ~= pIdx then
-						return
-					end
-					local prof = DataService.GetProfile(player)
-					if not prof then return end
-					local cost = math.floor(GameConfig.TREADMILL.UPGRADE_BASE_COST * math.pow(GameConfig.TREADMILL.UPGRADE_GROWTH, prof.treadmillLevel - 1))
-					if prof.coins < cost then
-						Remotes.Get("NotifyClient"):FireClient(player, "Need $" .. FormatUtil.Number(cost) .. " to upgrade Treadmill!", Color3.fromRGB(255, 96, 96))
-						return
-					end
-					prof.coins -= cost
-					prof.treadmillLevel += 1
-					PlotService.RefreshPlotBoardVisuals(player)
-					DataService.SyncProfile(player)
-					Remotes.Get("NotifyClient"):FireClient(player, "Treadmill upgraded to Lv." .. prof.treadmillLevel .. "!", Color3.fromRGB(58, 188, 255))
-				end)
-			end
+			bindBoardTrigger(plotModel:FindFirstChild("PenUpgradeBoard"), "UpgradePenPrompt", pIdx, PlotService.UpgradePen)
+			bindBoardTrigger(plotModel:FindFirstChild("TreadmillUpgradeBoard"), "UpgradeTreadmillPrompt", pIdx, PlotService.UpgradeTreadmill)
 		end
 	end
 end
@@ -497,6 +805,31 @@ function PlotService.Init()
 			PlotService.OpenCrate(player, crateUid)
 		end
 	end)
+	Remotes.Get("PlaceCrateInPen").OnServerEvent:Connect(function(player, crateUid, localX, localZ)
+		if typeof(crateUid) == "string" and typeof(localX) == "number" and typeof(localZ) == "number" then
+			PlotService.PlaceCrateInPen(player, crateUid, localX, localZ)
+		end
+	end)
+	Remotes.Get("PlacePetInPen").OnServerEvent:Connect(function(player, animalUid, _localX, _localZ)
+		if typeof(animalUid) ~= "string" then return end
+		local profile = DataService.GetProfile(player)
+		if not profile or not profile.inventoryAnimals[animalUid] then return end
+		for _, uid in ipairs(profile.roamingAnimalUids) do
+			if uid == animalUid then
+				Remotes.Get("NotifyClient"):FireClient(player, "Pet is already roaming inside your Pen!", Color3.fromRGB(118, 224, 255))
+				return
+			end
+		end
+		if #profile.roamingAnimalUids >= profile.penCapacity then
+			Remotes.Get("NotifyClient"):FireClient(player, "Pen full! Upgrade capacity or swap an animal.", Color3.fromRGB(255, 196, 62))
+			return
+		end
+		table.insert(profile.roamingAnimalUids, animalUid)
+		PlotService.RefreshPlotBoardVisuals(player)
+		PlotService.BroadcastAllPlotsSync()
+		DataService.SyncProfile(player)
+		Remotes.Get("NotifyClient"):FireClient(player, "Placed pet into your Sanctuary Pen!", Color3.fromRGB(84, 245, 148))
+	end)
 
 	Remotes.Get("EquipAnimalToPen").OnServerEvent:Connect(function(player, animalUid)
 		if typeof(animalUid) ~= "string" then return end
@@ -540,11 +873,29 @@ function PlotService.Init()
 		table.sort(list, function(a, b)
 			return a.income > b.income
 		end)
-		table.clear(profile.roamingAnimalUids)
 		local limit = math.min(#list, profile.penCapacity)
+		local wantedSet: { [string]: boolean } = {}
 		for i = 1, limit do
-			table.insert(profile.roamingAnimalUids, list[i].uid)
+			wantedSet[list[i].uid] = true
 		end
+
+		-- Preserve currently roaming pets that stay in top N so their pen positions never reset!
+		local keptSet: { [string]: boolean } = {}
+		local nextRoaming: { string } = {}
+		for _, existingUid in ipairs(profile.roamingAnimalUids) do
+			if wantedSet[existingUid] and not keptSet[existingUid] then
+				table.insert(nextRoaming, existingUid)
+				keptSet[existingUid] = true
+			end
+		end
+		for i = 1, limit do
+			local uid = list[i].uid
+			if not keptSet[uid] then
+				table.insert(nextRoaming, uid)
+				keptSet[uid] = true
+			end
+		end
+		profile.roamingAnimalUids = nextRoaming
 		PlotService.RefreshPlotBoardVisuals(player)
 		PlotService.BroadcastAllPlotsSync()
 		DataService.SyncProfile(player)

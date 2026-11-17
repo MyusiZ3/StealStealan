@@ -6,6 +6,8 @@ export type AnimalRarity = "Common" | "Uncommon" | "Rare" | "Epic" | "Legendary"
 export type AnimalMutation = "None" | "Albino" | "Golden" | "Diamond" | "Neon" | "Rainbow" | "Celestial"
 export type GraphicsQuality = "Low" | "Medium" | "High"
 
+export type ItemOriginSource = "Wild" | "Hatch" | "Merge" | "Admin"
+
 export type AnimalInstance = {
 	uid: string,
 	speciesId: string,
@@ -14,6 +16,10 @@ export type AnimalInstance = {
 	mutation: AnimalMutation,
 	locked: boolean,
 	acquiredAt: number,
+	serialNonce: number?,
+	mintedByUserId: number?,
+	originSource: ItemOriginSource?,
+	parentUids: { string }?,
 }
 
 export type CrateInstance = {
@@ -22,6 +28,33 @@ export type CrateInstance = {
 	rarity: AnimalRarity,
 	speciesId: string,
 	unlockAt: number,
+	hatchDuration: number?,
+	placedSlot: number?,
+	sizeScale: number?,
+	localX: number?,
+	localZ: number?,
+	customSizeRatio: number?,
+	customMutation: AnimalMutation?,
+	serialNonce: number?,
+	mintedByUserId: number?,
+	originSource: ItemOriginSource?,
+	parentUids: { string }?,
+}
+
+export type InventoryCrate = {
+	uid: string,
+	biomeId: string,
+	rarity: AnimalRarity,
+	speciesId: string,
+	sizeScale: number,
+	hatchDuration: number,
+	acquiredAt: number,
+	customSizeRatio: number?,
+	customMutation: AnimalMutation?,
+	serialNonce: number?,
+	mintedByUserId: number?,
+	originSource: ItemOriginSource?,
+	parentUids: { string }?,
 }
 
 export type IndexEntry = {
@@ -63,6 +96,7 @@ export type PlayerProfileSchema = {
 
 	roamingAnimalUids: { string },
 	inventoryAnimals: { [string]: AnimalInstance },
+	crateInventory: { [string]: InventoryCrate },
 	pendingCrates: { [string]: CrateInstance },
 	discoveredIndex: { [string]: IndexEntry },
 	zoneIndexBonusesClaimed: { [string]: boolean },
@@ -77,6 +111,13 @@ export type PlayerProfileSchema = {
 		totalPlaytimeSeconds: number,
 		onboardingStep: number,
 	},
+	saveVersion: number?,
+	itemSerialCounter: number?,
+	consumedUids: { string }?,
+	sessionLock: {
+		jobId: string,
+		timestamp: number,
+	}?,
 }
 
 export type BiomeDefinition = {
@@ -130,6 +171,7 @@ export type VehicleDefinition = {
 	name: string,
 	cost: number,
 	baseSpeedBonus: number,
+	speedMultiplier: number,
 	towCapacity: number,
 	ignoresTerrainPenalty: boolean,
 	shieldHits: number,
