@@ -7,6 +7,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(ReplicatedStorage.Shared.Types)
 local AnimalConfig = require(ReplicatedStorage.Config.AnimalConfig)
+local BiomeConfig = require(ReplicatedStorage.Config.BiomeConfig)
+local GameConfig = require(ReplicatedStorage.Config.GameConfig)
 
 local RigCore = require(script.RigCore)
 local AnimArchetypes = require(script.AnimArchetypes)
@@ -25,11 +27,10 @@ type MotorCacheEntry = {
 	baseC0: CFrame,
 }
 
-local PREFERRED_ORDER = {
-	"SylphPlumeDrake",
-	"FaeLaceDragon",
-	"CelestiaStarCat",
-}
+local BIOME_ORDER_MAP: { [string]: number } = {}
+for _, b in ipairs(BiomeConfig) do
+	BIOME_ORDER_MAP[b.id] = b.order or 99
+end
 
 local registry: { [string]: SpeciesModule } = {}
 local orderedIds: { string } = {}
@@ -40,41 +41,106 @@ local function loadSpeciesRegistry()
 		return
 	end
 
-	for _, child in ipairs(speciesFolder:GetChildren()) do
-		if child:IsA("ModuleScript") and string.sub(child.Name, 1, 1) ~= "_" then
-			local ok, mod = pcall(require, child)
+	for _, desc in ipairs(speciesFolder:GetDescendants()) do
+		if desc:IsA("ModuleScript") and string.sub(desc.Name, 1, 1) ~= "_" then
+			local ok, mod = pcall(require, desc)
 			if ok and type(mod) == "table" and type(mod.Id) == "string" and type(mod.Build) == "function" then
 				registry[mod.Id] = mod :: SpeciesModule
 			else
-				warn("[VoxelPets] Failed to load species module:", child.Name, mod)
+				warn("[VoxelPets] Failed to load species module:", desc.Name, mod)
 			end
 		end
 	end
 
-	local seen: { [string]: boolean } = {}
-	for _, id in ipairs(PREFERRED_ORDER) do
-		if registry[id] then
-			table.insert(orderedIds, id)
-			seen[id] = true
-		end
-	end
-
-	local extras: { string } = {}
 	for id in pairs(registry) do
-		if not seen[id] then
-			table.insert(extras, id)
-		end
-	end
-	table.sort(extras)
-	for _, id in ipairs(extras) do
 		table.insert(orderedIds, id)
 	end
+
+	table.sort(orderedIds, function(a, b)
+		local ma = registry[a]
+		local mb = registry[b]
+		local stA = if ma and ma.StagingSlot then ma.StagingSlot else 0
+		local stB = if mb and mb.StagingSlot then mb.StagingSlot else 0
+		if (stA > 0) ~= (stB > 0) then
+			return stA == 0 -- Assigned biome species first, staging candidates after
+		end
+		if stA > 0 and stB > 0 then
+			if stA ~= stB then
+				return stA < stB
+			end
+			local styA = if ma and ma.VisualStyle == "Realistic" then 2 else 1
+			local styB = if mb and mb.VisualStyle == "Realistic" then 2 else 1
+			if styA ~= styB then
+				return styA < styB
+			end
+			return a < b
+		end
+
+		local sa = AnimalConfig.GetById(a)
+		local sb = AnimalConfig.GetById(b)
+		local ba = if sa then (BIOME_ORDER_MAP[sa.biomeId] or 99) else 99
+		local bb = if sb then (BIOME_ORDER_MAP[sb.biomeId] or 99) else 99
+		if ba ~= bb then
+			return ba < bb
+		end
+		local ra = if sa then GameConfig.GetRarityTier(sa.rarity) else 99
+		local rb = if sb then GameConfig.GetRarityTier(sb.rarity) else 99
+		if ra ~= rb then
+			return ra < rb
+		end
+		local ia = if sa then sa.indexNumber else 999
+		local ib = if sb then sb.indexNumber else 999
+		if ia ~= ib then
+			return ia < ib
+		end
+		return a < b
+	end)
 end
 
 loadSpeciesRegistry()
 
+export type StagingPair = {
+	slot: number,
+	baseId: string,
+	voxelId: string?,
+	realisticId: string?,
+}
+
 function VoxelPets.GetSpeciesIds(): { string }
 	return table.clone(orderedIds)
+end
+
+function VoxelPets.GetStagingPairs(): { StagingPair }
+	local bySlot: { [number]: StagingPair } = {}
+	local slots: { number } = {}
+	for _, id in ipairs(orderedIds) do
+		local m = registry[id]
+		if m and m.StagingSlot and m.StagingSlot > 0 then
+			local sl = m.StagingSlot
+			local entry = bySlot[sl]
+			if not entry then
+				entry = {
+					slot = sl,
+					baseId = m.BaseConceptId or id,
+					voxelId = nil,
+					realisticId = nil,
+				}
+				bySlot[sl] = entry
+				table.insert(slots, sl)
+			end
+			if m.VisualStyle == "Realistic" then
+				entry.realisticId = id
+			else
+				entry.voxelId = id
+			end
+		end
+	end
+	table.sort(slots)
+	local out: { StagingPair } = {}
+	for _, sl in ipairs(slots) do
+		table.insert(out, bySlot[sl])
+	end
+	return out
 end
 
 function VoxelPets.GetSpeciesModule(speciesId: string): SpeciesModule?
@@ -87,6 +153,15 @@ end
 
 function VoxelPets.IsFantasyVoxelSpecies(speciesId: string): boolean
 	return registry[speciesId] ~= nil
+end
+
+function VoxelPets.EnsureMeshTemplatesLoaded()
+	for _, id in ipairs(orderedIds) do
+		local mod = registry[id]
+		if mod and mod.MeshParts and #mod.MeshParts > 0 then
+			RigCore.EnsureSpeciesMeshTemplates(mod)
+		end
+	end
 end
 
 function VoxelPets.Build(speciesId: string, sizeRatio: number, mutation: Types.AnimalMutation?, lowVFX: boolean?): Model
@@ -106,6 +181,7 @@ function VoxelPets.Build(speciesId: string, sizeRatio: number, mutation: Types.A
 	model:SetAttribute("SizeRatio", s)
 	model:SetAttribute("VoxelRig", true)
 	model:SetAttribute("Archetype", mod.Archetype)
+	model:SetAttribute("VisualStyle", mod.VisualStyle or "Voxel")
 	if spec then
 		model:SetAttribute("Rarity", spec.rarity)
 	end
@@ -171,7 +247,14 @@ function VoxelPets.StepRig(model: Model, mode: AnimMode, now: number, phase: num
 	local s = tonumber(model:GetAttribute("SizeRatio")) or 1.0
 	local archAttr = model:GetAttribute("Archetype")
 	local archetype: ArchetypeId
-	if archAttr == "WingedDrake" or archAttr == "QuadrupedFeline" or archAttr == "QuadrupedBeast" then
+	if
+		archAttr == "WingedDrake"
+		or archAttr == "QuadrupedFeline"
+		or archAttr == "QuadrupedBeast"
+		or archAttr == "EasternSerpent"
+		or archAttr == "ArachnidScorpion"
+		or archAttr == "AquaticPlesiosaur"
+	then
 		archetype = archAttr :: ArchetypeId
 	else
 		local spId = tostring(model:GetAttribute("SpeciesId") or "")

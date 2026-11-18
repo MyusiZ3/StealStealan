@@ -2,8 +2,9 @@
 -- SylphPlumeDrake.luau
 -- Reference 1: Teal-crested Purple/Pink Striped Dragon with Ivory Throat & Plume Tail.
 
-local RigCore = require(script.Parent.Parent.RigCore)
-local VFXPresets = require(script.Parent.Parent.VFXPresets)
+local VoxelPetsRoot = game:GetService("ReplicatedStorage").Modules.VoxelPets
+local RigCore = require(VoxelPetsRoot.RigCore)
+local VFXPresets = require(VoxelPetsRoot.VFXPresets)
 
 type VoxelSpec = RigCore.VoxelSpec
 

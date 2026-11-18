@@ -3,8 +3,9 @@
 -- Starter template for adding a new Voxel Pet (1 file = 1 pet).
 -- Files starting with '_' are ignored by VoxelPets loader until duplicated & renamed to a SpeciesId.
 
-local RigCore = require(script.Parent.Parent.RigCore)
-local VFXPresets = require(script.Parent.Parent.VFXPresets)
+local VoxelPetsRoot = game:GetService("ReplicatedStorage").Modules.VoxelPets
+local RigCore = require(VoxelPetsRoot.RigCore)
+local VFXPresets = require(VoxelPetsRoot.VFXPresets)
 
 type VoxelSpec = RigCore.VoxelSpec
 

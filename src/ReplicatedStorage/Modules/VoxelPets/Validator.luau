@@ -35,6 +35,19 @@ local function computeWorldAABB(part: BasePart): (Vector3, Vector3)
 	return pos - ext, pos + ext
 end
 
+local function isFlatBlock(part: BasePart): boolean
+	if not part:IsA("Part") then
+		return false
+	end
+	if part.Shape ~= Enum.PartType.Block then
+		return false
+	end
+	if part:FindFirstChildOfClass("SpecialMesh") ~= nil then
+		return false
+	end
+	return true
+end
+
 local function isAxisAligned(cf: CFrame): boolean
 	local _, _, _, r00, r01, r02, r10, r11, r12, r20, r21, r22 = cf:GetComponents()
 	local cols = {
@@ -149,10 +162,10 @@ function Validator.InspectModel(model: Model): InspectResult
 	for _, list in pairs(boxesByCluster) do
 		for i = 1, #list - 1 do
 			local a = list[i]
-			if isAxisAligned(a.part.CFrame) then
+			if isFlatBlock(a.part) and isAxisAligned(a.part.CFrame) then
 				for j = i + 1, #list do
 					local b = list[j]
-					if isAxisAligned(b.part.CFrame) and not colorsNearlyEqual(a.part.Color, b.part.Color) then
+					if isFlatBlock(b.part) and isAxisAligned(b.part.CFrame) and not colorsNearlyEqual(a.part.Color, b.part.Color) then
 						local ox = overlap1D(a.minV.X, a.maxV.X, b.minV.X, b.maxV.X)
 						local oy = overlap1D(a.minV.Y, a.maxV.Y, b.minV.Y, b.maxV.Y)
 						local oz = overlap1D(a.minV.Z, a.maxV.Z, b.minV.Z, b.maxV.Z)
