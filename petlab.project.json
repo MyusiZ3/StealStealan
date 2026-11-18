@@ -1,6 +1,9 @@
 {
   "name": "StealStealan_PetLab",
   "servePort": 34873,
+  "servePlaceIds": [
+    94473949969543
+  ],
   "tree": {
     "$className": "DataModel",
     "ReplicatedStorage": {
@@ -40,9 +43,9 @@
         "$properties": {
           "Anchored": true,
           "Locked": true,
-          "Position": [0, -1, 0],
-          "Size": [180, 2, 180],
-          "Color": [0.165, 0.188, 0.235],
+          "Position": [64, -1, -60],
+          "Size": [440, 2, 320],
+          "Color": [0.118, 0.141, 0.184],
           "Material": "SmoothPlastic",
           "TopSurface": "Smooth"
         }
@@ -51,11 +54,13 @@
         "$className": "SpawnLocation",
         "$properties": {
           "Anchored": true,
+          "CanCollide": false,
           "Neutral": true,
           "Duration": 0,
-          "Position": [0, 0.25, 18],
-          "Size": [8, 0.5, 8],
-          "Color": [0.22, 0.52, 0.88],
+          "Position": [128, 0.05, 14],
+          "Size": [6, 0.1, 6],
+          "Transparency": 1,
+          "Color": [0.16, 0.20, 0.27],
           "Material": "SmoothPlastic",
           "TopSurface": "Smooth"
         }
@@ -64,7 +69,7 @@
     "Lighting": {
       "$className": "Lighting",
       "$properties": {
-        "Brightness": 2,
+        "Brightness": 1.85,
         "ClockTime": 13.5,
         "GlobalShadows": true
       }

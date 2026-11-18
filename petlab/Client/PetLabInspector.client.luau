@@ -4,12 +4,15 @@
 -- Rainbow Hue Cycling, and Live Geometry Validator for VoxelPets.
 
 local Players = game:GetService("Players")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Types = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Types"))
+local AnimalConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("AnimalConfig"))
 local GameConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("GameConfig"))
 local VoxelPets = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("VoxelPets"))
 local AnimalVisualBuilder = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("AnimalVisualBuilder"))
@@ -21,12 +24,19 @@ local playerGui = localPlayer:WaitForChild("PlayerGui") :: PlayerGui
 local camera = Workspace.CurrentCamera
 
 local STAGE_TOP_Y = PetLabStageBuilder.STAGE_TOP_Y
+local TURNTABLE_POS = PetLabStageBuilder.TURNTABLE_POS or Vector3.new(0, STAGE_TOP_Y, 42)
+local STAGING_CENTER_X = PetLabStageBuilder.STAGING_CENTER_X or 128
+local STAGING_SPAWN_POS = PetLabStageBuilder.STAGING_SPAWN_POS or Vector3.new(STAGING_CENTER_X, 0.05, 14)
+local WALK_SPEED = 32
+local SPRINT_SPEED = 60
+local POSE_CYCLE = { "Sync", "Idle", "Walk", "Fly", "Ride", "StressTest", "BaseC0" }
 
 type InspectorMode = VoxelPets.AnimMode | "BaseC0" | "Pause"
-type CameraPreset = "Orbit34" | "Head" | "Side" | "Top" | "Player"
+type CameraPreset = "Lineup" | "Orbit34" | "Head" | "Side" | "Top" | "Player"
 
 local speciesList = VoxelPets.GetSpeciesIds()
-local selectedSpecies = speciesList[1] or "FaeLaceDragon"
+local stagingPairs = VoxelPets.GetStagingPairs()
+local selectedSpecies = (if stagingPairs[1] and stagingPairs[1].voxelId then stagingPairs[1].voxelId else speciesList[1]) or "AbyssTideLeviathan"
 local selectedScale = 1.35
 local selectedMutation: Types.AnimalMutation = "None"
 local selectedMode: InspectorMode = "Idle"
@@ -39,9 +49,13 @@ local SPIN_RATES = { 0, 0.45, 1.35 }
 
 local showPivots = false
 local showScaleDummy = true
-local cameraPreset: CameraPreset = "Orbit34"
-local camYaw = math.rad(38)
-local camPitch = math.rad(16)
+local showPlaceholders = true
+local focusedBiomeOrder = 0
+local uiVisible = true
+local isSprinting = false
+local cameraPreset: CameraPreset = "Player"
+local camYaw = math.rad(18)
+local camPitch = math.rad(14)
 local camZoom = 1.0
 local isDraggingCam = false
 local spinAngle = 0
@@ -55,6 +69,11 @@ local pivotFolder: Folder? = nil
 -- UI References
 local diagBanner: TextLabel
 local diagFrame: Frame
+local biomeBar: Frame
+local leftPanel: Frame
+local bottomBar: Frame
+local hudToggleBtn: TextButton
+local biomeButtons: { [number]: TextButton } = {}
 local speciesButtons: { [string]: TextButton } = {}
 local scaleButtons: { [number]: TextButton } = {}
 local mutButtons: { [string]: TextButton } = {}
@@ -64,6 +83,7 @@ local crateToggleBtn: TextButton
 local spinBtn: TextButton
 local pivotsBtn: TextButton
 local dummyBtn: TextButton
+local placeholdersBtn: TextButton
 
 local function styleBtn(btn: TextButton, active: boolean, activeCol: Color3?)
 	btn.BackgroundColor3 = if active then (activeCol or Color3.fromRGB(48, 138, 232)) else Color3.fromRGB(36, 42, 54)
@@ -155,6 +175,30 @@ local function applyDummyVisibility()
 	end
 end
 
+local function applyPlaceholderVisibility()
+	local stage = Workspace:FindFirstChild("PetLabStage")
+	local gallery = if stage then stage:FindFirstChild("LineupGallery") else nil
+	if not gallery then
+		return
+	end
+	local trMod = if showPlaceholders then 0 else 1
+	for _, slot in ipairs(gallery:GetChildren()) do
+		if slot:IsA("Model") and slot:GetAttribute("IsPlaceholder") == true then
+			for _, d in ipairs(slot:GetDescendants()) do
+				if d:IsA("BasePart") then
+					if d.Name ~= "FootStrip" and d.Name ~= "TagAnchor" then
+						d.LocalTransparencyModifier = trMod
+					end
+				elseif d:IsA("BillboardGui") and d.Name == "GalleryTag" then
+					d.Enabled = showPlaceholders
+				elseif d:IsA("ProximityPrompt") and d.Name == "PetPosePrompt" then
+					d.Enabled = showPlaceholders
+				end
+			end
+		end
+	end
+end
+
 local function updateDiagnosticBanner()
 	if not activeModel then
 		diagBanner.Text = "No active model"
@@ -166,15 +210,36 @@ local function updateDiagnosticBanner()
 		diagFrame.BackgroundColor3 = Color3.fromRGB(38, 62, 102)
 		return
 	end
+	if not VoxelPets.IsVoxelRigSpecies(selectedSpecies) then
+		local spec = AnimalConfig.GetById(selectedSpecies)
+		if spec then
+			diagBanner.Text = string.format(
+				"TODO PLACEHOLDER  |  #%02d %s  |  %s  |  Shape: %s  |  [V] Free Walk",
+				spec.indexNumber,
+				spec.name,
+				spec.rarity,
+				spec.shapeStyle
+			)
+		else
+			diagBanner.Text = "TODO PLACEHOLDER  |  " .. selectedSpecies
+		end
+		diagFrame.BackgroundColor3 = Color3.fromRGB(118, 78, 34)
+		return
+	end
 	local res = VoxelPets.InspectModel(activeModel)
+	local mod = VoxelPets.GetSpeciesModule(selectedSpecies)
+	local styleTag = if mod and mod.VisualStyle == "Realistic" then "AI 3D MESH OK" else "VOXEL 3D OK"
 	if res.ok then
 		diagBanner.Text = string.format(
-			"OK  |  %d Parts  |  %d Motors  |  Ground %.2f st  |  0 Warnings",
+			"%s  |  %d Parts  |  %d Motors  |  Ground %.2f st  |  0 Warnings",
+			styleTag,
 			res.partCount,
 			res.motorCount,
 			res.groundOffset
 		)
-		diagFrame.BackgroundColor3 = Color3.fromRGB(26, 98, 58)
+		diagFrame.BackgroundColor3 = if mod and mod.VisualStyle == "Realistic"
+			then Color3.fromRGB(22, 108, 84)
+			else Color3.fromRGB(26, 98, 58)
 	else
 		diagBanner.Text = string.format(
 			"WARN (%d)  |  %s",
@@ -190,6 +255,17 @@ local function refreshButtonHighlights()
 		styleBtn(btn, (not previewCrateMode) and (id == selectedSpecies), Color3.fromRGB(46, 134, 228))
 	end
 	styleBtn(crateToggleBtn, previewCrateMode, Color3.fromRGB(168, 92, 232))
+
+	for order, btn in pairs(biomeButtons) do
+		local col: Color3
+		if order == 0 then
+			col = Color3.fromRGB(72, 228, 255)
+		else
+			local zone = PetLabStageBuilder.BIOME_ZONES[order]
+			col = if zone then zone.accent else Color3.fromRGB(78, 178, 255)
+		end
+		styleBtn(btn, order == focusedBiomeOrder, col:Lerp(Color3.fromRGB(22, 28, 40), 0.35))
+	end
 
 	for sc, btn in pairs(scaleButtons) do
 		styleBtn(btn, math.abs(sc - selectedScale) < 0.01, Color3.fromRGB(42, 168, 118))
@@ -213,6 +289,10 @@ local function refreshButtonHighlights()
 	styleBtn(spinBtn, spinSpeedIndex > 1, Color3.fromRGB(68, 152, 228))
 	styleBtn(pivotsBtn, showPivots, Color3.fromRGB(36, 178, 188))
 	styleBtn(dummyBtn, showScaleDummy, Color3.fromRGB(78, 142, 206))
+	if placeholdersBtn then
+		placeholdersBtn.Text = if showPlaceholders then "TODO Models: ON [P]" else "TODO Models: OFF [P]"
+		styleBtn(placeholdersBtn, showPlaceholders, Color3.fromRGB(196, 134, 48))
+	end
 end
 
 local function rebuildActiveModel()
@@ -230,12 +310,14 @@ local function rebuildActiveModel()
 			canCollide = false,
 			showBeacon = false,
 		})
-	else
+	elseif VoxelPets.IsVoxelRigSpecies(selectedSpecies) then
 		m = VoxelPets.Build(selectedSpecies, selectedScale, selectedMutation, false)
+	else
+		m = AnimalVisualBuilder.BuildAnimalModel(selectedSpecies, selectedScale, selectedMutation, false)
 	end
 
-	m:PivotTo(CFrame.new(0, STAGE_TOP_Y, 0) * CFrame.Angles(0, spinAngle, 0))
-	m.Parent = Workspace
+	m:PivotTo(CFrame.new(TURNTABLE_POS) * CFrame.Angles(0, spinAngle, 0))
+	m.Parent = if cameraPreset == "Lineup" then nil else Workspace
 	activeModel = m
 
 	for _, desc in ipairs(m:GetDescendants()) do
@@ -244,7 +326,7 @@ local function rebuildActiveModel()
 		end
 	end
 
-	if not previewCrateMode then
+	if not previewCrateMode and m:GetAttribute("VoxelRig") == true then
 		if selectedMode == "BaseC0" then
 			VoxelPets.ResetRig(m)
 		elseif selectedMode ~= "Pause" then
@@ -259,7 +341,14 @@ end
 
 local function applyCameraPreset(preset: CameraPreset)
 	cameraPreset = preset
-	if preset == "Orbit34" then
+	if activeModel then
+		activeModel.Parent = if preset == "Lineup" then nil else Workspace
+	end
+	if preset == "Lineup" then
+		camYaw = math.rad(0)
+		camPitch = math.rad(14)
+		camZoom = 1.0
+	elseif preset == "Orbit34" then
 		camYaw = math.rad(38)
 		camPitch = math.rad(16)
 		camZoom = 1.0
@@ -289,13 +378,84 @@ local function applyCameraPreset(preset: CameraPreset)
 	refreshButtonHighlights()
 end
 
+local function jumpToBiome(biomeOrder: number, forceWalkMode: boolean)
+	if biomeOrder == 0 then
+		focusedBiomeOrder = 0
+		if forceWalkMode or cameraPreset ~= "Lineup" then
+			applyCameraPreset("Player")
+			local ch = localPlayer.Character
+			local hrp = if ch then ch:FindFirstChild("HumanoidRootPart") else nil
+			if hrp and hrp:IsA("BasePart") then
+				local dest = STAGING_SPAWN_POS + Vector3.new(0, 3.0, 0)
+				hrp.CFrame = CFrame.lookAt(dest, Vector3.new(STAGING_CENTER_X, dest.Y, -12))
+			end
+		else
+			refreshButtonHighlights()
+		end
+		return
+	end
+
+	local zone = PetLabStageBuilder.BIOME_ZONES[biomeOrder]
+	if not zone then
+		return
+	end
+	focusedBiomeOrder = biomeOrder
+	if forceWalkMode or cameraPreset ~= "Lineup" then
+		applyCameraPreset("Player")
+		local ch = localPlayer.Character
+		local hrp = if ch then ch:FindFirstChild("HumanoidRootPart") else nil
+		if hrp and hrp:IsA("BasePart") then
+			local dest = zone.teleportPos + Vector3.new(0, 3.0, 0)
+			hrp.CFrame = CFrame.lookAt(dest, Vector3.new(0, dest.Y, zone.courtZ - 6))
+		end
+	else
+		refreshButtonHighlights()
+	end
+end
+
+local function jumpToTurntable(useOrbitCam: boolean)
+	if useOrbitCam then
+		applyCameraPreset("Orbit34")
+		return
+	end
+	applyCameraPreset("Player")
+	local ch = localPlayer.Character
+	local hrp = if ch then ch:FindFirstChild("HumanoidRootPart") else nil
+	if hrp and hrp:IsA("BasePart") then
+		local dest = Vector3.new(TURNTABLE_POS.X, 3.2, TURNTABLE_POS.Z - 12)
+		hrp.CFrame = CFrame.lookAt(dest, Vector3.new(TURNTABLE_POS.X, 3.2, TURNTABLE_POS.Z))
+	end
+end
+
 -- Build Clean Studio Inspector ScreenGui
+pcall(function()
+	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
+end)
+
 local gui = Instance.new("ScreenGui")
 gui.Name = "PetLabInspectorGui"
 gui.ResetOnSpawn = false
 gui.DisplayOrder = 50
 gui.IgnoreGuiInset = true
 gui.Parent = playerGui
+
+-- Persistent Top-Right UI Toggle Button (never hidden by Tab)
+hudToggleBtn = makeButton(gui, "Hide UI [Tab]", UDim2.fromOffset(146, 34), UDim2.new(1, -160, 0, 12), 12)
+styleBtn(hudToggleBtn, true, Color3.fromRGB(44, 56, 78))
+
+local function setUiVisible(visible: boolean)
+	uiVisible = visible
+	diagFrame.Visible = visible
+	biomeBar.Visible = visible
+	leftPanel.Visible = visible
+	bottomBar.Visible = visible
+	hudToggleBtn.Text = if visible then "Hide UI [Tab]" else "Show UI [Tab]"
+	styleBtn(hudToggleBtn, visible, Color3.fromRGB(44, 56, 78))
+end
+
+hudToggleBtn.MouseButton1Click:Connect(function()
+	setUiVisible(not uiVisible)
+end)
 
 -- Top Diagnostic Pill
 diagFrame = Instance.new("Frame")
@@ -322,8 +482,52 @@ diagBanner.TextTruncate = Enum.TextTruncate.AtEnd
 diagBanner.Text = "Pet Lab Initializing..."
 diagBanner.Parent = diagFrame
 
+-- Top Biome & Staging Teleport Bar ([0] Staging + [1]-[5] Biomes + [T] Turntable)
+biomeBar = Instance.new("Frame")
+biomeBar.Size = UDim2.fromOffset(744, 30)
+biomeBar.Position = UDim2.new(0.5, -372, 0, 52)
+biomeBar.BackgroundColor3 = Color3.fromRGB(20, 24, 34)
+biomeBar.BackgroundTransparency = 0.14
+biomeBar.BorderSizePixel = 0
+biomeBar.Parent = gui
+local bBarCorner = Instance.new("UICorner")
+bBarCorner.CornerRadius = UDim.new(0, 8)
+bBarCorner.Parent = biomeBar
+local bBarStroke = Instance.new("UIStroke")
+bBarStroke.Color = Color3.fromRGB(64, 74, 96)
+bBarStroke.Thickness = 1.2
+bBarStroke.Parent = biomeBar
+local bBarLayout = Instance.new("UIListLayout")
+bBarLayout.FillDirection = Enum.FillDirection.Horizontal
+bBarLayout.Padding = UDim.new(0, 6)
+bBarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+bBarLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+bBarLayout.Parent = biomeBar
+
+local stagingBtn = makeButton(biomeBar, "[0] Staging (18)", UDim2.fromOffset(118, 24), nil, 11)
+stagingBtn.MouseButton1Click:Connect(function()
+	jumpToBiome(0, false)
+end)
+biomeButtons[0] = stagingBtn
+
+local BIOME_SHORT_BTNS = { "[1] Pine", "[2] Swamp", "[3] Savanna", "[4] Alpine", "[5] Volcanic" }
+for i, zone in ipairs(PetLabStageBuilder.BIOME_ZONES) do
+	local lbl = BIOME_SHORT_BTNS[i] or zone.shortLabel
+	local btn = makeButton(biomeBar, lbl, UDim2.fromOffset(90, 24), nil, 11)
+	btn.MouseButton1Click:Connect(function()
+		jumpToBiome(zone.order, false)
+	end)
+	biomeButtons[zone.order] = btn
+end
+
+local ttJumpBtn = makeButton(biomeBar, "[T] Turntable", UDim2.fromOffset(110, 24), nil, 11)
+styleBtn(ttJumpBtn, false, Color3.fromRGB(88, 128, 224))
+ttJumpBtn.MouseButton1Click:Connect(function()
+	jumpToTurntable(UserInputService:IsKeyDown(Enum.KeyCode.LeftShift))
+end)
+
 -- Left Inspector Panel (Species, Scale, Mutations)
-local leftPanel = Instance.new("Frame")
+leftPanel = Instance.new("Frame")
 leftPanel.Size = UDim2.fromOffset(228, 510)
 leftPanel.Position = UDim2.new(0, 14, 0.5, -255)
 leftPanel.BackgroundColor3 = Color3.fromRGB(20, 24, 34)
@@ -366,22 +570,55 @@ local function addSectionHeader(titleText: string, order: number)
 	lbl.Parent = lpScroll
 end
 
-addSectionHeader("VOXEL PET SPECIES", 10)
-for idx, id in ipairs(speciesList) do
+local stagingVoxelIds: { string } = {}
+local stagingRealIds: { string } = {}
+local assignedBiomeIds: { string } = {}
+
+for _, id in ipairs(speciesList) do
 	local mod = VoxelPets.GetSpeciesModule(id)
-	local label = if mod then mod.DisplayName else id
-	local btn = makeButton(lpScroll, label, UDim2.new(1, -6, 0, 30), nil, 12)
-	btn.LayoutOrder = 10 + idx
-	btn.MouseButton1Click:Connect(function()
-		previewCrateMode = false
-		selectedSpecies = id
-		rebuildActiveModel()
-	end)
-	speciesButtons[id] = btn
+	if mod and mod.StagingSlot and mod.StagingSlot > 0 then
+		if mod.VisualStyle == "Realistic" then
+			table.insert(stagingRealIds, id)
+		else
+			table.insert(stagingVoxelIds, id)
+		end
+	else
+		table.insert(assignedBiomeIds, id)
+	end
 end
 
+local function addSpeciesSection(headerTitle: string, ids: { string }, baseOrder: number)
+	if #ids == 0 then
+		return
+	end
+	addSectionHeader(string.format("%s (%d)", headerTitle, #ids), baseOrder)
+	for idx, id in ipairs(ids) do
+		local mod = VoxelPets.GetSpeciesModule(id)
+		local label = if mod then mod.DisplayName else id
+		if mod and mod.StagingSlot and mod.StagingSlot > 0 then
+			local clean = string.gsub(label, " %(Realistic%)$", "")
+			label = string.format("#S%02d %s", mod.StagingSlot, clean)
+		end
+		local btn = makeButton(lpScroll, label, UDim2.new(1, -6, 0, 28), nil, 11)
+		btn.LayoutOrder = baseOrder + idx
+		btn.MouseButton1Click:Connect(function()
+			previewCrateMode = false
+			selectedSpecies = id
+			if cameraPreset == "Lineup" then
+				applyCameraPreset("Orbit34")
+			end
+			rebuildActiveModel()
+		end)
+		speciesButtons[id] = btn
+	end
+end
+
+addSpeciesSection("STAGING • VOXEL 3D", stagingVoxelIds, 10)
+addSpeciesSection("STAGING • REALISTIC 3D", stagingRealIds, 30)
+addSpeciesSection("ASSIGNED BIOME VOXELS", assignedBiomeIds, 50)
+
 crateToggleBtn = makeButton(lpScroll, "Preview Crate (Click to Cycle)", UDim2.new(1, -6, 0, 28), nil, 11)
-crateToggleBtn.LayoutOrder = 40
+crateToggleBtn.LayoutOrder = 72
 local CRATE_RARITIES: { Types.AnimalRarity } = { "Common", "Epic", "Legendary", "Mythic", "Cosmic", "Secret", "Astral", "Infinity", "Primordial" }
 crateToggleBtn.MouseButton1Click:Connect(function()
 	if not previewCrateMode then
@@ -394,11 +631,11 @@ crateToggleBtn.MouseButton1Click:Connect(function()
 	rebuildActiveModel()
 end)
 
-addSectionHeader("SCALE / KG RATIO", 50)
+addSectionHeader("SCALE / KG RATIO", 80)
 local scaleGridHost = Instance.new("Frame")
 scaleGridHost.Size = UDim2.new(1, -4, 0, 56)
 scaleGridHost.BackgroundTransparency = 1
-scaleGridHost.LayoutOrder = 55
+scaleGridHost.LayoutOrder = 85
 scaleGridHost.Parent = lpScroll
 local sgLayout = Instance.new("UIGridLayout")
 sgLayout.CellSize = UDim2.new(0.32, 0, 0, 24)
@@ -414,11 +651,11 @@ for _, sc in ipairs({ 0.55, 1.00, 1.35, 1.85, 2.60, 3.50 }) do
 	scaleButtons[sc] = btn
 end
 
-addSectionHeader("MUTATIONS (" .. tostring(#GameConfig.MUTATION_ORDER) .. ")", 70)
+addSectionHeader("MUTATIONS (" .. tostring(#GameConfig.MUTATION_ORDER) .. ")", 90)
 local mutGridHost = Instance.new("Frame")
 mutGridHost.Size = UDim2.new(1, -4, 0, math.ceil(#GameConfig.MUTATION_ORDER / 2) * 28)
 mutGridHost.BackgroundTransparency = 1
-mutGridHost.LayoutOrder = 75
+mutGridHost.LayoutOrder = 95
 mutGridHost.Parent = lpScroll
 local mgLayout = Instance.new("UIGridLayout")
 mgLayout.CellSize = UDim2.new(0.48, 0, 0, 24)
@@ -436,7 +673,7 @@ for _, mutId in ipairs(GameConfig.MUTATION_ORDER) do
 	mutButtons[mutId] = btn
 end
 
-addSectionHeader("CINEMATIC VFX TEST", 85)
+addSectionHeader("CINEMATIC VFX TEST", 105)
 local VFX_BIOMES = { "AlpinePeaks", "VolcanicJungle", "SavannaCamp", "MangroveSwamp", "PineWoods" }
 local VFX_BIOME_LABELS: { [string]: string } = {
 	AlpinePeaks = "Biome D: AlpinePeaks",
@@ -450,37 +687,57 @@ local vfxBiomeIdx = 1
 local vfxRarityIdx = 1
 
 local vfxBiomeBtn = makeButton(lpScroll, VFX_BIOME_LABELS[VFX_BIOMES[vfxBiomeIdx]], UDim2.new(1, -6, 0, 26), nil, 11)
-vfxBiomeBtn.LayoutOrder = 90
+vfxBiomeBtn.LayoutOrder = 110
 vfxBiomeBtn.MouseButton1Click:Connect(function()
 	vfxBiomeIdx = (vfxBiomeIdx % #VFX_BIOMES) + 1
 	vfxBiomeBtn.Text = VFX_BIOME_LABELS[VFX_BIOMES[vfxBiomeIdx]] or VFX_BIOMES[vfxBiomeIdx]
 end)
 
 local vfxRarityBtn = makeButton(lpScroll, "Rarity: " .. VFX_RARITIES[vfxRarityIdx], UDim2.new(1, -6, 0, 26), nil, 11)
-vfxRarityBtn.LayoutOrder = 91
+vfxRarityBtn.LayoutOrder = 111
 vfxRarityBtn.MouseButton1Click:Connect(function()
 	vfxRarityIdx = (vfxRarityIdx % #VFX_RARITIES) + 1
 	vfxRarityBtn.Text = "Rarity: " .. VFX_RARITIES[vfxRarityIdx]
 end)
 
+local function getVfxSpawnCFrame(): CFrame
+	if cameraPreset == "Player" then
+		local ch = localPlayer.Character
+		local hrp = if ch then ch:FindFirstChild("HumanoidRootPart") else nil
+		if hrp and hrp:IsA("BasePart") then
+			local look = Vector3.new(hrp.CFrame.LookVector.X, 0, hrp.CFrame.LookVector.Z)
+			if look.Magnitude < 0.05 then
+				look = Vector3.new(0, 0, -1)
+			else
+				look = look.Unit
+			end
+			local targetXZ = Vector3.new(hrp.Position.X, 0, hrp.Position.Z) + look * 11
+			local floorY = if targetXZ.Z <= 32.0 then PetLabStageBuilder.SHOWROOM_FLOOR_Y else 0.02
+			local spawnPos = Vector3.new(targetXZ.X, floorY, targetXZ.Z)
+			return CFrame.lookAt(spawnPos, Vector3.new(hrp.Position.X, floorY, hrp.Position.Z))
+		end
+	end
+	return CFrame.new(TURNTABLE_POS)
+end
+
 local vfxHatchRunning = false
 local playHatchBtn = makeButton(lpScroll, "Play Hatch VFX", UDim2.new(1, -6, 0, 28), nil, 12)
-playHatchBtn.LayoutOrder = 92
+playHatchBtn.LayoutOrder = 112
 styleBtn(playHatchBtn, true, Color3.fromRGB(154, 72, 232))
 playHatchBtn.MouseButton1Click:Connect(function()
 	if vfxHatchRunning then
 		return
 	end
 	vfxHatchRunning = true
-	if activeModel then
+	if cameraPreset ~= "Player" and activeModel then
 		activeModel:Destroy()
 		activeModel = nil
+		clearPivotOverlay()
 	end
-	clearPivotOverlay()
 	local r = VFX_RARITIES[vfxRarityIdx]
 	local b = VFX_BIOMES[vfxBiomeIdx]
 	CinematicVFX.PlayCrateHatchSequence({
-		baseCF = CFrame.new(0, STAGE_TOP_Y, 0),
+		baseCF = getVfxSpawnCFrame(),
 		rarity = r,
 		biomeId = b,
 		sizeScale = GameConfig.ComputeCrateScale(r, selectedScale),
@@ -495,17 +752,19 @@ playHatchBtn.MouseButton1Click:Connect(function()
 		playerGui = playerGui,
 		onComplete = function()
 			vfxHatchRunning = false
-			rebuildActiveModel()
+			if not activeModel then
+				rebuildActiveModel()
+			end
 		end,
 	})
 end)
 
 local playMergeBtn = makeButton(lpScroll, "Play Merge VFX", UDim2.new(1, -6, 0, 26), nil, 11)
-playMergeBtn.LayoutOrder = 93
+playMergeBtn.LayoutOrder = 113
 styleBtn(playMergeBtn, true, Color3.fromRGB(48, 168, 188))
 playMergeBtn.MouseButton1Click:Connect(function()
 	CinematicVFX.PlayMergeBurst(
-		Vector3.new(0, STAGE_TOP_Y + 1.8, 0),
+		getVfxSpawnCFrame().Position + Vector3.new(0, 1.8, 0),
 		VFX_RARITIES[vfxRarityIdx],
 		selectedMutation,
 		1.35,
@@ -513,10 +772,10 @@ playMergeBtn.MouseButton1Click:Connect(function()
 	)
 end)
 
--- Bottom Control Bar (Animation Modes, Stress Test, Spin, Pivots, Camera Presets)
-local bottomBar = Instance.new("Frame")
-bottomBar.Size = UDim2.fromOffset(820, 86)
-bottomBar.Position = UDim2.new(0.5, -410, 1, -98)
+-- Bottom Control Bar (Animation Modes, Stress Test, Spin, Pivots, Placeholders, Camera Presets)
+bottomBar = Instance.new("Frame")
+bottomBar.Size = UDim2.fromOffset(968, 86)
+bottomBar.Position = UDim2.new(0.5, -484, 1, -98)
 bottomBar.BackgroundColor3 = Color3.fromRGB(20, 24, 34)
 bottomBar.BackgroundTransparency = 0.14
 bottomBar.BorderSizePixel = 0
@@ -554,7 +813,7 @@ for _, ms in ipairs(modeSpecs) do
 	local btn = makeButton(modeRow, ms.label, UDim2.fromOffset(ms.w, 28), nil, 12)
 	btn.MouseButton1Click:Connect(function()
 		selectedMode = ms.id
-		if activeModel and not previewCrateMode then
+		if activeModel and not previewCrateMode and activeModel:GetAttribute("VoxelRig") == true then
 			if ms.id == "BaseC0" then
 				VoxelPets.ResetRig(activeModel)
 			elseif ms.id ~= "Pause" then
@@ -566,7 +825,7 @@ for _, ms in ipairs(modeSpecs) do
 	modeButtons[ms.id] = btn
 end
 
--- Row 2: Turntable, Debug Toggles, Camera Presets
+-- Row 2: Turntable, Debug Toggles, Placeholder Toggle, Camera Presets
 local utilRow = Instance.new("Frame")
 utilRow.Size = UDim2.new(1, -16, 0, 34)
 utilRow.Position = UDim2.fromOffset(8, 46)
@@ -578,32 +837,40 @@ urLayout.Padding = UDim.new(0, 6)
 urLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 urLayout.Parent = utilRow
 
-spinBtn = makeButton(utilRow, SPIN_LABELS[1], UDim2.fromOffset(92, 26), nil, 11)
+spinBtn = makeButton(utilRow, SPIN_LABELS[1], UDim2.fromOffset(90, 26), nil, 11)
 spinBtn.MouseButton1Click:Connect(function()
 	spinSpeedIndex = (spinSpeedIndex % #SPIN_RATES) + 1
 	refreshButtonHighlights()
 end)
 
-pivotsBtn = makeButton(utilRow, "Joint Pivots", UDim2.fromOffset(96, 26), nil, 11)
+pivotsBtn = makeButton(utilRow, "Joint Pivots", UDim2.fromOffset(92, 26), nil, 11)
 pivotsBtn.MouseButton1Click:Connect(function()
 	showPivots = not showPivots
 	rebuildPivotOverlay()
 	refreshButtonHighlights()
 end)
 
-dummyBtn = makeButton(utilRow, "Scale Dummy", UDim2.fromOffset(96, 26), nil, 11)
+dummyBtn = makeButton(utilRow, "Scale Dummy", UDim2.fromOffset(92, 26), nil, 11)
 dummyBtn.MouseButton1Click:Connect(function()
 	showScaleDummy = not showScaleDummy
 	applyDummyVisibility()
 	refreshButtonHighlights()
 end)
 
+placeholdersBtn = makeButton(utilRow, "TODO Models: ON [P]", UDim2.fromOffset(128, 26), nil, 11)
+placeholdersBtn.MouseButton1Click:Connect(function()
+	showPlaceholders = not showPlaceholders
+	applyPlaceholderVisibility()
+	refreshButtonHighlights()
+end)
+
 local camSpecs: { { id: CameraPreset, label: string, w: number } } = {
-	{ id = "Orbit34", label = "Orbit 3/4", w = 86 },
-	{ id = "Head", label = "Head Close", w = 92 },
-	{ id = "Side", label = "Side", w = 68 },
-	{ id = "Top", label = "Top", w = 64 },
-	{ id = "Player", label = "Player Walk", w = 94 },
+	{ id = "Lineup", label = "Lineup Row", w = 88 },
+	{ id = "Orbit34", label = "Orbit 3/4", w = 80 },
+	{ id = "Head", label = "Head Close", w = 86 },
+	{ id = "Side", label = "Side", w = 60 },
+	{ id = "Top", label = "Top", w = 56 },
+	{ id = "Player", label = "Free Walk [V]", w = 102 },
 }
 for _, cs in ipairs(camSpecs) do
 	local btn = makeButton(utilRow, cs.label, UDim2.fromOffset(cs.w, 26), nil, 11)
@@ -613,17 +880,81 @@ for _, cs in ipairs(camSpecs) do
 	camButtons[cs.id] = btn
 end
 
--- Studio Mouse Orbit + Scroll Zoom when in Scriptable camera presets
+-- [E] ProximityPrompt: Voxel Pets cycle poses, TODO placeholders open on turntable
+ProximityPromptService.PromptTriggered:Connect(function(prompt, player)
+	if player ~= localPlayer or prompt.Name ~= "PetPosePrompt" then
+		return
+	end
+	local slot = prompt:FindFirstAncestorWhichIsA("Model")
+	if not slot or string.sub(slot.Name, 1, 12) ~= "GallerySlot_" then
+		return
+	end
+	if slot:GetAttribute("IsVoxel") == true then
+		local currentPose = (slot:GetAttribute("OverrideAnimMode") :: string?) or "Sync"
+		local idx = table.find(POSE_CYCLE, currentPose) or 1
+		local nextPose = POSE_CYCLE[(idx % #POSE_CYCLE) + 1]
+		slot:SetAttribute("OverrideAnimMode", nextPose)
+
+		local baseObj = prompt:GetAttribute("BaseObjectText")
+		if typeof(baseObj) ~= "string" then
+			baseObj = prompt.ObjectText
+			prompt:SetAttribute("BaseObjectText", baseObj)
+		end
+		prompt.ObjectText = string.format("%s  [%s]", baseObj, nextPose)
+	else
+		local spId = slot:GetAttribute("SpeciesId")
+		if typeof(spId) == "string" and spId ~= "" then
+			previewCrateMode = false
+			selectedSpecies = spId
+			rebuildActiveModel()
+			applyCameraPreset("Orbit34")
+		end
+	end
+end)
+
+-- Studio Mouse Orbit + Scroll Zoom + Showroom Hotkeys (0 Staging, 1-5 Biomes, T Turntable, P TODOs, Tab UI, V Free Walk, Shift Sprint)
+local KEY_TO_BIOME = {
+	[Enum.KeyCode.Zero] = 0,
+	[Enum.KeyCode.One] = 1,
+	[Enum.KeyCode.Two] = 2,
+	[Enum.KeyCode.Three] = 3,
+	[Enum.KeyCode.Four] = 4,
+	[Enum.KeyCode.Five] = 5,
+}
+
 UserInputService.InputBegan:Connect(function(input, gp)
+	if input.KeyCode == Enum.KeyCode.LeftShift then
+		isSprinting = true
+	end
+	if UserInputService:GetFocusedTextBox() then
+		return
+	end
+	if input.KeyCode == Enum.KeyCode.Tab then
+		setUiVisible(not uiVisible)
+		return
+	end
 	if gp then
 		return
 	end
-	if input.UserInputType == Enum.UserInputType.MouseButton2 and cameraPreset ~= "Player" then
+	local biomeIdx = KEY_TO_BIOME[input.KeyCode]
+	if biomeIdx then
+		jumpToBiome(biomeIdx, true)
+	elseif input.KeyCode == Enum.KeyCode.T then
+		jumpToTurntable(false)
+	elseif input.KeyCode == Enum.KeyCode.P then
+		showPlaceholders = not showPlaceholders
+		applyPlaceholderVisibility()
+		refreshButtonHighlights()
+	elseif input.KeyCode == Enum.KeyCode.V then
+		applyCameraPreset("Player")
+	elseif input.UserInputType == Enum.UserInputType.MouseButton2 and cameraPreset ~= "Player" then
 		isDraggingCam = true
 	end
 end)
 UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+	if input.KeyCode == Enum.KeyCode.LeftShift then
+		isSprinting = false
+	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
 		isDraggingCam = false
 	end
 end)
@@ -639,25 +970,67 @@ UserInputService.InputChanged:Connect(function(input, gp)
 	end
 end)
 
--- Init Workbench
+local function onCharacterAdded(char: Model)
+	local hum = char:WaitForChild("Humanoid", 10)
+	if hum and hum:IsA("Humanoid") then
+		hum.WalkSpeed = if isSprinting then SPRINT_SPEED else WALK_SPEED
+		if cameraPreset == "Player" then
+			camera.CameraType = Enum.CameraType.Custom
+			camera.CameraSubject = hum
+		end
+	end
+	local hrp = char:WaitForChild("HumanoidRootPart", 10)
+	if hrp and hrp:IsA("BasePart") then
+		task.defer(function()
+			if hrp.Parent then
+				local targetZ = if hrp.Position.X > 60 then -12 else PetLabStageBuilder.LINEUP_Z
+				hrp.CFrame = CFrame.lookAt(hrp.Position, Vector3.new(hrp.Position.X, hrp.Position.Y, targetZ))
+			end
+		end)
+	end
+end
+
+localPlayer.CharacterAdded:Connect(onCharacterAdded)
+if localPlayer.Character then
+	onCharacterAdded(localPlayer.Character)
+end
+
+-- Init Workbench (Default: Free Walk facing Biome 1 Arch & 5-Biome Promenade)
 rebuildActiveModel()
 applyDummyVisibility()
-applyCameraPreset("Orbit34")
+applyPlaceholderVisibility()
+applyCameraPreset("Player")
 
 RunService.RenderStepped:Connect(function(dt: number)
 	local now = os.clock()
+
+	-- Enforce responsive showroom walk / Shift-sprint speed
+	local char = localPlayer.Character
+	local hum = if char then char:FindFirstChildOfClass("Humanoid") else nil
+	if hum then
+		local desiredSpeed = if isSprinting then SPRINT_SPEED else WALK_SPEED
+		if hum.WalkSpeed ~= desiredSpeed then
+			hum.WalkSpeed = desiredSpeed
+		end
+	end
+
 	local spinRate = SPIN_RATES[spinSpeedIndex]
 	if spinRate > 0 then
 		spinAngle = (spinAngle + spinRate * dt) % (math.pi * 2)
 		if activeModel then
-			activeModel:PivotTo(CFrame.new(0, STAGE_TOP_Y, 0) * CFrame.Angles(0, spinAngle, 0))
+			activeModel:PivotTo(CFrame.new(TURNTABLE_POS) * CFrame.Angles(0, spinAngle, 0))
 		end
 	end
 
+	if selectedMode ~= "Pause" and selectedMode ~= "BaseC0" then
+		animTime += dt
+	end
+
 	if activeModel and not previewCrateMode then
-		if selectedMode ~= "Pause" and selectedMode ~= "BaseC0" then
-			animTime += dt
-			VoxelPets.StepRig(activeModel, selectedMode :: VoxelPets.AnimMode, animTime, 0)
+		if activeModel:GetAttribute("VoxelRig") == true then
+			if selectedMode ~= "Pause" and selectedMode ~= "BaseC0" then
+				VoxelPets.StepRig(activeModel, selectedMode :: VoxelPets.AnimMode, animTime, 0)
+			end
 		end
 
 		if #rainbowParts > 0 then
@@ -667,6 +1040,12 @@ RunService.RenderStepped:Connect(function(dt: number)
 					rp.Color = col
 				end
 			end
+		end
+		local mutHl = activeModel:FindFirstChild("MutationHighlight")
+		if mutHl and mutHl:IsA("Highlight") and mutHl:GetAttribute("RainbowHighlight") == true then
+			local col = Color3.fromHSV((now * 0.32) % 1, 0.85, 1)
+			mutHl.FillColor = col
+			mutHl.OutlineColor = col
 		end
 
 		if showPivots then
@@ -678,14 +1057,24 @@ RunService.RenderStepped:Connect(function(dt: number)
 		end
 	end
 
-	-- Keep background gallery lineup animated gently in Idle
+	-- Sync rigged VoxelPets in LineupGallery (skip static placeholders for 60 FPS performance)
 	local stage = Workspace:FindFirstChild("PetLabStage")
 	local gallery = if stage then stage:FindFirstChild("LineupGallery") else nil
 	if gallery then
 		for idx, ch in ipairs(gallery:GetChildren()) do
-			local pet = ch:FindFirstChildWhichIsA("Model")
-			if pet and pet:GetAttribute("VoxelRig") == true then
-				VoxelPets.StepRig(pet, "Idle", now, idx * 1.4)
+			if ch:IsA("Model") and ch:GetAttribute("IsVoxel") == true then
+				local pet = ch:FindFirstChildWhichIsA("Model")
+				if pet and pet:GetAttribute("VoxelRig") == true then
+					local overrideMode = ch:GetAttribute("OverrideAnimMode")
+					local effectiveMode = if typeof(overrideMode) == "string" and overrideMode ~= "Sync"
+						then overrideMode
+						else selectedMode
+					if effectiveMode == "BaseC0" then
+						VoxelPets.ResetRig(pet)
+					elseif effectiveMode ~= "Pause" then
+						VoxelPets.StepRig(pet, effectiveMode :: VoxelPets.AnimMode, animTime, idx * 0.8)
+					end
+				end
 			end
 		end
 	end
@@ -693,14 +1082,28 @@ RunService.RenderStepped:Connect(function(dt: number)
 	-- Studio Camera Framing
 	if cameraPreset ~= "Player" then
 		camera.CameraType = Enum.CameraType.Scriptable
-		local lookTarget = Vector3.new(0, STAGE_TOP_Y + 1.5 * selectedScale, 0)
-		if activeModel and cameraPreset == "Head" then
-			local hp = activeModel:FindFirstChild("Head")
-			if hp and hp:IsA("BasePart") then
-				lookTarget = hp.Position
+		local lookTarget: Vector3
+		local baseDist: number
+		if cameraPreset == "Lineup" then
+			if focusedBiomeOrder == 0 then
+				lookTarget = Vector3.new(STAGING_CENTER_X, 3.6, -11.5)
+				baseDist = 56 * camZoom
+			else
+				local zone = PetLabStageBuilder.BIOME_ZONES[focusedBiomeOrder] or PetLabStageBuilder.BIOME_ZONES[1]
+				local zCenter = if zone then (zone.courtZ - 2) else PetLabStageBuilder.LINEUP_Z
+				lookTarget = Vector3.new(0, 3.2, zCenter)
+				baseDist = 42 * camZoom
 			end
+		else
+			lookTarget = TURNTABLE_POS + Vector3.new(0, 1.5 * selectedScale, 0)
+			if activeModel and cameraPreset == "Head" then
+				local hp = activeModel:FindFirstChild("Head")
+				if hp and hp:IsA("BasePart") then
+					lookTarget = hp.Position
+				end
+			end
+			baseDist = (if cameraPreset == "Head" then 5.4 else 8.8) * math.max(0.75, selectedScale * 0.85) * camZoom
 		end
-		local baseDist = (if cameraPreset == "Head" then 5.4 else 8.8) * math.max(0.75, selectedScale * 0.85) * camZoom
 		local offset = CFrame.Angles(0, camYaw, 0) * CFrame.Angles(-camPitch, 0, 0) * Vector3.new(0, 0, baseDist)
 		camera.CFrame = CFrame.lookAt(lookTarget + offset, lookTarget)
 	end
