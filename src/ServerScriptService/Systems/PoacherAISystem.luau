@@ -1,6 +1,7 @@
 --!strict
 -- PoacherAISystem.luau
--- Manages Biome Poachers & Bosses: Waypoint Patrol, Biome-Scoped End-to-End Chase to Safe Zone, & Shield/GodMode checks
+-- Manages Biome Pet Guards & Bosses (5-Biome Voxel Guard Rigs):
+-- Waypoint Patrol, Biome-Scoped End-to-End Chase to Safe Zone, Attack Animation Sync, & Shield/GodMode checks.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -10,6 +11,7 @@ local Workspace = game:GetService("Workspace")
 local BiomeConfig = require(ReplicatedStorage.Config.BiomeConfig)
 local VehicleConfig = require(ReplicatedStorage.Config.VehicleConfig)
 local GameConfig = require(ReplicatedStorage.Config.GameConfig)
+local VoxelPetGuardBuilder = require(ReplicatedStorage.Modules.VoxelPetGuardBuilder)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 
 local DataService = require(script.Parent.Parent.Services.DataService)
@@ -31,6 +33,13 @@ type PoacherAgent = {
 	waypoints: { Vector3 },
 	wpIndex: number,
 	baseScale: number,
+	rootYOffset: number,
+	groundY: number,
+	catchRadius: number,
+	lastAnimState: string,
+	lastQuantSpeed: number,
+	attackSeq: number,
+	groundRayAccum: number,
 }
 
 local agents: { PoacherAgent } = {}
@@ -119,75 +128,70 @@ local ENEMY_TIERS: { [string]: { emoji: string, label: string, color: Color3 } }
 	VolcanicJungle = { emoji = "😈", label = "Nightmare", color = Color3.fromRGB(218, 76, 255) },
 }
 
-local function buildPoacherModel(name: string, isBoss: boolean, biomeId: string, accentColor: Color3, pos: Vector3, parent: Instance): (Model, Part, Part, number)
-	local ca = ReplicatedStorage:FindFirstChild("CuratedAssets")
-	local heroSrc = if ca then ca:FindFirstChild("Hero_PoacherBoss") else nil
+local function sampleFloorHeight(rayParams: RaycastParams, x: number, z: number, fallback: number): number
+	local hit = Workspace:Raycast(Vector3.new(x, 2.5, z), Vector3.new(0, -5.0, 0), rayParams)
+	if hit and hit.Position.Y >= -0.2 and hit.Position.Y <= 1.25 then
+		return hit.Position.Y
+	end
+	return fallback
+end
 
-	local m = Instance.new("Model")
+local function buildPoacherModel(
+	name: string,
+	isBoss: boolean,
+	biomeId: string,
+	_accentColor: Color3,
+	pos: Vector3,
+	initialGroundY: number,
+	parent: Instance
+): (Model, Part, Part, number, number, number)
+	local guardCfg = VoxelPetGuardBuilder.GetConfig(biomeId)
+	local guardScale = if isBoss then (guardCfg.scale * 1.16) else (guardCfg.scale * 0.85)
+	local spawnCF = CFrame.new(pos.X, initialGroundY, pos.Z)
+
+	local m = VoxelPetGuardBuilder.Build(biomeId, spawnCF, {
+		scale = guardScale,
+		rigged = true,
+		isBoss = isBoss,
+		canCollide = false,
+		withEffects = true,
+		parent = nil,
+	})
 	m.Name = name
+	m.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 
-	local root = Instance.new("Part")
-	root.Name = "HumanoidRootPart"
-	local scale = if isBoss then 1.6 else 1.05
-	root.Size = Vector3.new(3.5 * scale, 5.5 * scale, 3.5 * scale)
-	root.Anchored = true
-	root.CanCollide = false
-	root.CanTouch = false
-	root.CanQuery = false
-	root.Transparency = 1
-	root.CFrame = CFrame.new(pos)
-	root.Parent = m
-	m.PrimaryPart = root
+	local root = m.PrimaryPart :: Part
+	local rootYOffset = tonumber(m:GetAttribute("RootYOffset")) or (3.2 * guardScale)
+
+	local hitW = math.clamp(3.6 * guardScale, 3.8, 9.0)
+	local hitH = math.clamp(7.4 * guardScale, 6.8, 17.5)
+	local hitD = math.clamp(3.4 * guardScale, 3.6, 8.6)
+	local catchRadius = math.clamp((if isBoss then 3.8 else 3.0) * math.sqrt(guardScale), 3.4, 7.2)
 
 	local hitbox = Instance.new("Part")
 	hitbox.Name = "HitboxTrigger"
 	hitbox.Shape = Enum.PartType.Block
-	hitbox.Size = if isBoss then Vector3.new(5.6 * scale, 7.2 * scale, 5.6 * scale) else Vector3.new(3.6 * scale, 5.2 * scale, 3.6 * scale)
+	hitbox.Size = Vector3.new(hitW, hitH, hitD)
 	hitbox.Transparency = 1
 	hitbox.Anchored = true
 	hitbox.CanCollide = false
 	hitbox.CanTouch = true
 	hitbox.CanQuery = true
-	hitbox.CFrame = CFrame.new(pos)
+	hitbox.CastShadow = false
+	hitbox.CFrame = CFrame.new(pos.X, initialGroundY + hitH * 0.5, pos.Z)
 	hitbox:SetAttribute("PoacherBiomeId", biomeId)
 	hitbox:SetAttribute("IsBoss", isBoss)
+	hitbox:SetAttribute("CatchRadius", catchRadius)
+	hitbox:SetAttribute("GuardScale", guardScale)
 	hitbox.Parent = m
 
-	if heroSrc and heroSrc:IsA("Model") then
-		local clone = heroSrc:Clone()
-		pcall(function()
-			clone:ScaleTo(clone:GetScale() * scale)
-		end)
-		for _, d in ipairs(clone:GetDescendants()) do
-			if d:IsA("BasePart") then
-				d.Anchored = true
-				d.CanCollide = false
-				d.CanTouch = true
-			elseif d:IsA("BaseScript") then
-				d:Destroy()
-			end
-		end
-		clone:PivotTo(CFrame.new(pos))
-		clone.Parent = m
-	else
-		local body = Instance.new("Part")
-		body.Name = "Body"
-		body.Size = Vector3.new(3 * scale, 4.5 * scale, 2.2 * scale)
-		body.Color = if isBoss then Color3.fromRGB(168, 36, 36) else accentColor
-		body.Anchored = true
-		body.CanCollide = false
-		body.CanTouch = true
-		body.CFrame = CFrame.new(pos)
-		body.Parent = m
-	end
-
-	-- Minimal Floating Emoji + Single-Word Difficulty Badge (Image 10 style — no box background!)
+	-- Minimal Floating Emoji + Single-Word Difficulty Badge (clears horned hats cleanly)
 	local tierInfo = ENEMY_TIERS[biomeId] or ENEMY_TIERS.PineWoods
 	local bb = Instance.new("BillboardGui")
 	bb.Size = UDim2.fromOffset(132, 74)
-	bb.StudsOffset = Vector3.new(0, 4.8 * scale + 1.2, 0)
+	bb.StudsOffset = Vector3.new(0, 6.4 * guardScale + 1.4, 0)
 	bb.AlwaysOnTop = false
-	bb.MaxDistance = 120
+	bb.MaxDistance = 150
 	bb.Parent = root
 
 	local emojiLbl = Instance.new("TextLabel")
@@ -211,19 +215,34 @@ local function buildPoacherModel(name: string, isBoss: boolean, biomeId: string,
 	lblSt.Color = Color3.fromRGB(10, 12, 16)
 	lblSt.Parent = lbl
 
+	m:SetAttribute("GuardAnimState", "Walk")
+	m:SetAttribute("GuardMoveSpeed", 0)
+	m:SetAttribute("GuardAttackSeq", 0)
+	m:SetAttribute("IsBoss", isBoss)
 	m.Parent = parent
-	return m, root, hitbox, scale
+
+	return m, root, hitbox, guardScale, rootYOffset, catchRadius
 end
 
 function PoacherAISystem.Init()
 	local gw = Workspace:WaitForChild("GameWorld")
 	local biomesFolder = gw:WaitForChild("Biomes")
+	local sanctuaryHub = gw:FindFirstChild("SanctuaryHub")
 
 	local activeFolder = gw:FindFirstChild("ActivePoachers")
 	if activeFolder then activeFolder:Destroy() end
 	activeFolder = Instance.new("Folder")
 	activeFolder.Name = "ActivePoachers"
 	activeFolder.Parent = gw
+
+	local groundFilter: { Instance } = { biomesFolder }
+	if sanctuaryHub then
+		table.insert(groundFilter, sanctuaryHub)
+	end
+	local groundRayParams = RaycastParams.new()
+	groundRayParams.FilterType = Enum.RaycastFilterType.Include
+	groundRayParams.FilterDescendantsInstances = groundFilter
+	groundRayParams.RespectCanCollide = true
 
 	local lastCatchTick: { [number]: number } = {}
 
@@ -248,6 +267,11 @@ function PoacherAISystem.Init()
 			return
 		end
 		lastCatchTick[player.UserId] = now
+
+		-- Trigger Net-Staff attack swing across clients
+		ag.attackSeq += 1
+		ag.model:SetAttribute("GuardAttackSeq", ag.attackSeq)
+
 		local shields = playerShields[player.UserId] or 0
 		if shields > 0 then
 			local rem = shields - 1
@@ -311,9 +335,10 @@ function PoacherAISystem.Init()
 			if ag.model.Name == poacherName then
 				if hasAggroInBiome(player.UserId, ag.biomeId) then
 					local xzDist = Vector2.new(pRoot.Position.X - ag.root.Position.X, pRoot.Position.Z - ag.root.Position.Z).Magnitude
-					local dy = math.abs(pRoot.Position.Y - ag.root.Position.Y)
-					local maxDist = if ag.isBoss then 7.5 else 5.8
-					if xzDist <= maxDist and dy <= 7.0 then
+					local dy = math.abs(pRoot.Position.Y - ag.hitbox.Position.Y)
+					local maxDy = ag.hitbox.Size.Y * 0.5 + 2.5
+					local maxDist = ag.catchRadius + 2.4
+					if xzDist <= maxDist and dy <= maxDy then
 						tryCatchPlayer(ag, player, os.clock())
 					end
 				end
@@ -321,6 +346,52 @@ function PoacherAISystem.Init()
 			end
 		end
 	end)
+
+	local function spawnAgent(
+		id: string,
+		displayName: string,
+		biome: Types.BiomeDefinition,
+		isBoss: boolean,
+		baseSpeed: number,
+		startPos: Vector3,
+		waypoints: { Vector3 },
+		wpIndex: number
+	)
+		local initY = sampleFloorHeight(groundRayParams, startPos.X, startPos.Z, 0.0)
+		local m, root, hitbox, scale, rootYOffset, catchRadius = buildPoacherModel(
+			displayName,
+			isBoss,
+			biome.id,
+			if isBoss then Color3.fromRGB(255, 62, 62) else biome.accentColor,
+			startPos,
+			initY,
+			activeFolder
+		)
+		local ag: PoacherAgent = {
+			id = id,
+			biomeId = biome.id,
+			isBoss = isBoss,
+			baseSpeed = baseSpeed,
+			recommendedSpeed = biome.recommendedSpeed,
+			zMin = biome.zStart + 8,
+			zMax = biome.zEnd - 8,
+			model = m,
+			root = root,
+			hitbox = hitbox,
+			waypoints = waypoints,
+			wpIndex = wpIndex,
+			baseScale = scale,
+			rootYOffset = rootYOffset,
+			groundY = initY,
+			catchRadius = catchRadius,
+			lastAnimState = "Walk",
+			lastQuantSpeed = 0,
+			attackSeq = 0,
+			groundRayAccum = math.random() * 0.12,
+		}
+		table.insert(agents, ag)
+		bindHitboxTouch(ag)
+	end
 
 	for _, biome in ipairs(BiomeConfig) do
 		local bFolder = biomesFolder:FindFirstChild(biome.id)
@@ -340,65 +411,10 @@ function PoacherAISystem.Init()
 			}
 		end
 
-		-- Spawn 2 Biome-Scoped Patrol Guards & 1 Biome Boss
-		local guard1M, guard1Root, guard1Hitbox, g1Scale = buildPoacherModel(biome.id .. " Guard #1", false, biome.id, biome.accentColor, waypoints[1], activeFolder)
-		local ag1: PoacherAgent = {
-			id = biome.id .. "_Guard1",
-			biomeId = biome.id,
-			isBoss = false,
-			baseSpeed = biome.poacherSpeed,
-			recommendedSpeed = biome.recommendedSpeed,
-			zMin = biome.zStart + 8,
-			zMax = biome.zEnd - 8,
-			model = guard1M,
-			root = guard1Root,
-			hitbox = guard1Hitbox,
-			waypoints = waypoints,
-			wpIndex = 2,
-			baseScale = g1Scale,
-		}
-		table.insert(agents, ag1)
-		bindHitboxTouch(ag1)
-
-		local g2Start = waypoints[#waypoints]
-		local guard2M, guard2Root, guard2Hitbox, g2Scale = buildPoacherModel(biome.id .. " Guard #2", false, biome.id, biome.accentColor, g2Start, activeFolder)
-		local ag2: PoacherAgent = {
-			id = biome.id .. "_Guard2",
-			biomeId = biome.id,
-			isBoss = false,
-			baseSpeed = biome.poacherSpeed * 1.05,
-			recommendedSpeed = biome.recommendedSpeed,
-			zMin = biome.zStart + 8,
-			zMax = biome.zEnd - 8,
-			model = guard2M,
-			root = guard2Root,
-			hitbox = guard2Hitbox,
-			waypoints = waypoints,
-			wpIndex = math.max(1, #waypoints - 1),
-			baseScale = g2Scale,
-		}
-		table.insert(agents, ag2)
-		bindHitboxTouch(ag2)
-
-		local bossPos = waypoints[math.min(3, #waypoints)]
-		local bossM, bossRoot, bossHitbox, bScale = buildPoacherModel(biome.bossName, true, biome.id, Color3.fromRGB(255, 62, 62), bossPos, activeFolder)
-		local agBoss: PoacherAgent = {
-			id = biome.id .. "_Boss",
-			biomeId = biome.id,
-			isBoss = true,
-			baseSpeed = biome.bossSpeed,
-			recommendedSpeed = biome.recommendedSpeed,
-			zMin = biome.zStart + 8,
-			zMax = biome.zEnd - 8,
-			model = bossM,
-			root = bossRoot,
-			hitbox = bossHitbox,
-			waypoints = waypoints,
-			wpIndex = 1,
-			baseScale = bScale,
-		}
-		table.insert(agents, agBoss)
-		bindHitboxTouch(agBoss)
+		-- Spawn 2 Biome-Scoped Patrol Guards & 1 Biome Boss (5-View Rigged Voxel Guard Series)
+		spawnAgent(biome.id .. "_Guard1", biome.id .. " Guard #1", biome, false, biome.poacherSpeed, waypoints[1], waypoints, 2)
+		spawnAgent(biome.id .. "_Guard2", biome.id .. " Guard #2", biome, false, biome.poacherSpeed * 1.05, waypoints[#waypoints], waypoints, math.max(1, #waypoints - 1))
+		spawnAgent(biome.id .. "_Boss", biome.bossName, biome, true, biome.bossSpeed, waypoints[math.min(3, #waypoints)], waypoints, 1)
 	end
 
 	RunService.Heartbeat:Connect(function(dt: number)
@@ -466,14 +482,38 @@ function PoacherAISystem.Init()
 				moveSpeed *= 1.22 -- Close-range tackle lunge
 			end
 
-			if dist > 1.5 then
+			local movingNow = false
+			if dist > 1.5 and moveSpeed > 0.05 then
+				movingNow = true
 				local step = math.min(dist, moveSpeed * dt)
 				local dir = delta.Unit
-				local nextPos = Vector3.new(currPos.X + dir.X * step, 3.2 * ag.baseScale, currPos.Z + dir.Z * step)
-				local lookCF = CFrame.lookAt(nextPos, nextPos + dir)
-				ag.model:PivotTo(lookCF)
+				local nx = currPos.X + dir.X * step
+				local nz = currPos.Z + dir.Z * step
+
+				ag.groundRayAccum += dt
+				if ag.groundRayAccum >= 0.12 then
+					ag.groundRayAccum = 0
+					local targetGroundY = sampleFloorHeight(groundRayParams, nx, nz, ag.groundY)
+					ag.groundY = ag.groundY + (targetGroundY - ag.groundY) * math.min(1, dt * 16)
+				end
+
+				local groundCF = CFrame.lookAt(Vector3.new(nx, ag.groundY, nz), Vector3.new(nx + dir.X, ag.groundY, nz + dir.Z))
+				-- Update ONLY root & hitbox CFrames (never Model:PivotTo each frame so Motor6D limbs animate cleanly on Client!)
+				ag.root.CFrame = groundCF * CFrame.new(0, ag.rootYOffset, 0)
+				ag.hitbox.CFrame = groundCF * CFrame.new(0, ag.hitbox.Size.Y * 0.5, 0)
 			elseif not chasingPlayer then
 				ag.wpIndex = (ag.wpIndex % #ag.waypoints) + 1
+			end
+
+			local nextState = if chasingPlayer then "Chase" elseif movingNow then "Walk" else "Idle"
+			local quantSpeed = math.floor(moveSpeed * 2 + 0.5) * 0.5
+			if ag.lastAnimState ~= nextState then
+				ag.lastAnimState = nextState
+				ag.model:SetAttribute("GuardAnimState", nextState)
+			end
+			if math.abs(ag.lastQuantSpeed - quantSpeed) >= 0.45 then
+				ag.lastQuantSpeed = quantSpeed
+				ag.model:SetAttribute("GuardMoveSpeed", quantSpeed)
 			end
 
 			-- Direct contact & close-range tackle check (ONLY targets players towing crates AND aggroed in this enemy's biome)
@@ -484,15 +524,15 @@ function PoacherAISystem.Init()
 						local char = player.Character
 						local pRoot = if char then char:FindFirstChild("HumanoidRootPart") else nil
 						if pRoot and pRoot:IsA("BasePart") and pRoot.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX + 2 then
-							local dy = math.abs(pRoot.Position.Y - ag.root.Position.Y)
-							if dy <= 6.0 then
+							local dy = math.abs(pRoot.Position.Y - ag.hitbox.Position.Y)
+							local maxDy = ag.hitbox.Size.Y * 0.5 + 2.5
+							if dy <= maxDy then
 								local localHit = ag.hitbox.CFrame:PointToObjectSpace(pRoot.Position)
 								local inBox = math.abs(localHit.X) <= (ag.hitbox.Size.X * 0.5)
 									and math.abs(localHit.Z) <= (ag.hitbox.Size.Z * 0.5)
 									and math.abs(localHit.Y) <= (ag.hitbox.Size.Y * 0.5 + 0.5)
 								local xzDist = Vector2.new(pRoot.Position.X - ag.root.Position.X, pRoot.Position.Z - ag.root.Position.Z).Magnitude
-								local catchRadius = if ag.isBoss then 4.8 else 3.4
-								if inBox or xzDist <= catchRadius then
+								if inBox or xzDist <= ag.catchRadius then
 									tryCatchPlayer(ag, player, now)
 								end
 							end

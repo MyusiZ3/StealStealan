@@ -526,8 +526,10 @@ RunService.Heartbeat:Connect(function()
 
 			local pRoot = poacherModel:FindFirstChild("HumanoidRootPart") or hitbox
 			if pRoot and pRoot:IsA("BasePart") then
-				local dy = math.abs(root.Position.Y - pRoot.Position.Y)
-				if dy <= 6.0 then
+				local checkY = if hitbox and hitbox:IsA("BasePart") then hitbox.Position.Y else pRoot.Position.Y
+				local maxDy = if hitbox and hitbox:IsA("BasePart") then (hitbox.Size.Y * 0.5 + 2.5) else 6.0
+				local dy = math.abs(root.Position.Y - checkY)
+				if dy <= maxDy then
 					local isBoss = (hitbox and hitbox:GetAttribute("IsBoss") == true) == true
 					local inBox = false
 					if hitbox and hitbox:IsA("BasePart") then
@@ -536,7 +538,7 @@ RunService.Heartbeat:Connect(function()
 							and math.abs(localHit.Z) <= (hitbox.Size.Z * 0.5)
 							and math.abs(localHit.Y) <= (hitbox.Size.Y * 0.5 + 0.5)
 					end
-					local catchRadius = if isBoss then 4.8 else 3.4
+					local catchRadius = (if hitbox then tonumber(hitbox:GetAttribute("CatchRadius")) else nil) or (if isBoss then 4.8 else 3.4)
 					local xzDist = Vector2.new(root.Position.X - pRoot.Position.X, root.Position.Z - pRoot.Position.Z).Magnitude
 					if inBox or xzDist <= catchRadius then
 						Remotes.Get("PlayerTouchedPoacher"):FireServer(poacherModel.Name)
