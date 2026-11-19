@@ -444,7 +444,6 @@ function LassoRescueSystem.StartPull(player: Player, crateId: string)
 	if not crate.pullStartedAt then
 		crate.pullStartedAt = now
 	end
-	PoacherAISystem.TriggerBiomeAggro(crate.biomeId, player)
 	Remotes.Get("PullProgressSync"):FireClient(player, {
 		active = true,
 		crateId = crateId,
@@ -549,10 +548,12 @@ end
 function LassoRescueSystem.DropPlayerCrates(player: Player, dropOrigin: Vector3)
 	local list = playerTowedCrates[player.UserId]
 	if not list or #list == 0 then
+		PoacherAISystem.ClearBiomeAggro(player, nil)
 		return
 	end
 	playerTowedCrates[player.UserId] = {}
 	syncPlayerTowAttributes(player)
+	PoacherAISystem.ClearBiomeAggro(player, nil)
 
 	local cratesFolder = Workspace:FindFirstChild("GameWorld") and Workspace.GameWorld:FindFirstChild("ActiveCrates")
 	if not cratesFolder then

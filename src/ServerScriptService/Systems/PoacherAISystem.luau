@@ -56,10 +56,33 @@ function PoacherAISystem.ResetShieldsForPlayer(player: Player)
 	player:SetAttribute("ArmorShields", hits)
 end
 
+local function syncAggroBiomesAttr(player: Player)
+	local map = playerBiomeAggro[player.UserId]
+	if not map or next(map) == nil then
+		player:SetAttribute("AggroBiomesCsv", "")
+		return
+	end
+	local keys: { string } = {}
+	for bId, active in pairs(map) do
+		if active then
+			table.insert(keys, bId)
+		end
+	end
+	if #keys == 0 then
+		player:SetAttribute("AggroBiomesCsv", "")
+	else
+		player:SetAttribute("AggroBiomesCsv", "," .. table.concat(keys, ",") .. ",")
+	end
+end
+
 function PoacherAISystem.TriggerBiomeAggro(biomeId: string, player: Player)
+	if (tonumber(player:GetAttribute("TowedCrateCount")) or 0) <= 0 then
+		return
+	end
 	local uid = player.UserId
 	playerBiomeAggro[uid] = playerBiomeAggro[uid] or {}
 	playerBiomeAggro[uid][biomeId] = true
+	syncAggroBiomesAttr(player)
 	Remotes.Get("PoacherAlertSync"):FireClient(player, true, biomeId)
 end
 
@@ -67,6 +90,7 @@ function PoacherAISystem.ClearBiomeAggro(player: Player, biomeId: string?)
 	local uid = player.UserId
 	local map = playerBiomeAggro[uid]
 	if not map then
+		player:SetAttribute("AggroBiomesCsv", "")
 		Remotes.Get("PoacherAlertSync"):FireClient(player, false, "")
 		return
 	end
@@ -75,6 +99,7 @@ function PoacherAISystem.ClearBiomeAggro(player: Player, biomeId: string?)
 	else
 		table.clear(map)
 	end
+	syncAggroBiomesAttr(player)
 	local hasAny = next(map) ~= nil
 	if not hasAny then
 		Remotes.Get("PoacherAlertSync"):FireClient(player, false, "")
@@ -206,9 +231,12 @@ function PoacherAISystem.Init()
 		if AdminService.HasGodMode(player) then
 			return
 		end
-		-- Only players actively towing a crate can be tackled by poachers!
-		local towedCount = player:GetAttribute("TowedCrateCount") or 0
+		-- Only players actively towing a crate from this enemy's biome can be tackled!
+		local towedCount = tonumber(player:GetAttribute("TowedCrateCount")) or 0
 		if towedCount <= 0 then
+			return
+		end
+		if not hasAggroInBiome(player.UserId, ag.biomeId) then
 			return
 		end
 		local char = player.Character
@@ -253,8 +281,8 @@ function PoacherAISystem.Init()
 			if not char or not char:IsA("Model") then return end
 			local p = Players:GetPlayerFromCharacter(char)
 			if p then
-				local towedCount = p:GetAttribute("TowedCrateCount") or 0
-				if towedCount > 0 then
+				local towedCount = tonumber(p:GetAttribute("TowedCrateCount")) or 0
+				if towedCount > 0 and hasAggroInBiome(p.UserId, ag.biomeId) then
 					tryCatchPlayer(ag, p, os.clock())
 				end
 			end
@@ -270,6 +298,10 @@ function PoacherAISystem.Init()
 		if typeof(poacherName) ~= "string" or AdminService.HasGodMode(player) then
 			return
 		end
+		local towedCount = tonumber(player:GetAttribute("TowedCrateCount")) or 0
+		if towedCount <= 0 then
+			return
+		end
 		local char = player.Character
 		local pRoot = if char then char:FindFirstChild("HumanoidRootPart") else nil
 		if not pRoot or not pRoot:IsA("BasePart") or pRoot.Position.Z <= GameConfig.WORLD.SAFE_ZONE_Z_MAX + 2 then
@@ -277,8 +309,13 @@ function PoacherAISystem.Init()
 		end
 		for _, ag in ipairs(agents) do
 			if ag.model.Name == poacherName then
-				if (pRoot.Position - ag.root.Position).Magnitude <= 16 then
-					tryCatchPlayer(ag, player, os.clock())
+				if hasAggroInBiome(player.UserId, ag.biomeId) then
+					local xzDist = Vector2.new(pRoot.Position.X - ag.root.Position.X, pRoot.Position.Z - ag.root.Position.Z).Magnitude
+					local dy = math.abs(pRoot.Position.Y - ag.root.Position.Y)
+					local maxDist = if ag.isBoss then 7.5 else 5.8
+					if xzDist <= maxDist and dy <= 7.0 then
+						tryCatchPlayer(ag, player, os.clock())
+					end
 				end
 				break
 			end
@@ -368,13 +405,15 @@ function PoacherAISystem.Init()
 		local now = os.clock()
 		local speedMult = AdminService.GetPoacherSpeedMultiplier()
 
-		-- Clear aggro immediately once a fleeing player makes it back inside the Safe Zone
+		-- Clear aggro immediately once a fleeing player makes it back inside the Safe Zone OR is no longer carrying crates
 		for _, p in ipairs(Players:GetPlayers()) do
 			local map = playerBiomeAggro[p.UserId]
 			if map and next(map) ~= nil then
 				local pChar = p.Character
 				local pRoot = if pChar then pChar:FindFirstChild("HumanoidRootPart") else nil
-				if pRoot and pRoot:IsA("BasePart") and pRoot.Position.Z <= GameConfig.WORLD.SAFE_ZONE_Z_MAX then
+				local inSafe = pRoot and pRoot:IsA("BasePart") and pRoot.Position.Z <= GameConfig.WORLD.SAFE_ZONE_Z_MAX
+				local towedCount = tonumber(p:GetAttribute("TowedCrateCount")) or 0
+				if inSafe or towedCount <= 0 then
 					PoacherAISystem.ClearBiomeAggro(p, nil)
 				end
 			end
@@ -386,23 +425,20 @@ function PoacherAISystem.Init()
 			local chasingPlayer: Player? = nil
 			local bestDistSq = math.huge
 
-			-- Find closest thief (ONLY players actively towing crates outside Safe Zone)
+			-- Find closest thief (ONLY players actively towing crates from THIS enemy's aggroed biome outside Safe Zone)
 			for _, candidate in ipairs(Players:GetPlayers()) do
 				if not AdminService.HasGodMode(candidate) then
-					local towedCount = candidate:GetAttribute("TowedCrateCount") or 0
-					if towedCount > 0 then
+					local towedCount = tonumber(candidate:GetAttribute("TowedCrateCount")) or 0
+					if towedCount > 0 and hasAggroInBiome(candidate.UserId, ag.biomeId) then
 						local cChar = candidate.Character
 						local cHum = if cChar then cChar:FindFirstChildOfClass("Humanoid") else nil
 						local cRoot = if cChar then cChar:FindFirstChild("HumanoidRootPart") else nil
 						if cHum and cHum.Health > 0 and cRoot and cRoot:IsA("BasePart") and cRoot.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX + 2 then
 							local d = (cRoot.Position - currPos)
 							local distSq = d.X * d.X + d.Z * d.Z
-							local inBiomeBounds = (cRoot.Position.Z >= ag.zMin - 4 and cRoot.Position.Z <= ag.zMax + 4)
-							if hasAggroInBiome(candidate.UserId, ag.biomeId) or (inBiomeBounds and distSq <= 28 * 28) then
-								if distSq < bestDistSq then
-									bestDistSq = distSq
-									chasingPlayer = candidate
-								end
+							if distSq < bestDistSq then
+								bestDistSq = distSq
+								chasingPlayer = candidate
 							end
 						end
 					end
@@ -440,11 +476,11 @@ function PoacherAISystem.Init()
 				ag.wpIndex = (ag.wpIndex % #ag.waypoints) + 1
 			end
 
-			-- Direct contact & close-range tackle check (ONLY targets players with towed crates)
+			-- Direct contact & close-range tackle check (ONLY targets players towing crates AND aggroed in this enemy's biome)
 			for _, player in ipairs(Players:GetPlayers()) do
 				if not AdminService.HasGodMode(player) then
-					local towedCount = player:GetAttribute("TowedCrateCount") or 0
-					if towedCount > 0 then
+					local towedCount = tonumber(player:GetAttribute("TowedCrateCount")) or 0
+					if towedCount > 0 and hasAggroInBiome(player.UserId, ag.biomeId) then
 						local char = player.Character
 						local pRoot = if char then char:FindFirstChild("HumanoidRootPart") else nil
 						if pRoot and pRoot:IsA("BasePart") and pRoot.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX + 2 then

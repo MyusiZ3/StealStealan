@@ -5415,7 +5415,8 @@ localPlayer.AttributeChanged:Connect(function(attrName)
 end)
 
 Remotes.Get("PoacherAlertSync").OnClientEvent:Connect(function(active)
-	isPoacherChasing = (active == true)
+	local carryingCrates = (tonumber(localPlayer:GetAttribute("TowedCrateCount")) or 0) > 0
+	isPoacherChasing = (active == true) and carryingCrates
 end)
 
 -- Open matching standalone modal when Hub ProximityPrompts trigger (NOT one merged universal shop)
@@ -6160,7 +6161,10 @@ RunService.Heartbeat:Connect(function(dt: number)
 	updateCrateAnnouncePosition()
 
 	local carryingCrates = (tonumber(localPlayer:GetAttribute("TowedCrateCount")) or 0) > 0
-	local inDanger = isPoacherChasing or carryingCrates
+	if not carryingCrates then
+		isPoacherChasing = false
+	end
+	local inDanger = carryingCrates
 	dangerOverlayGui.Enabled = inDanger
 	runVignette.Visible = inDanger
 	runAlertBanner.Visible = inDanger

@@ -483,13 +483,21 @@ Remotes.Get("PlayerKnockback").OnClientEvent:Connect(function(knockVel: Vector3,
 	executeKnockback(knockVel, stunDuration, true)
 end)
 
--- Zero-latency local contact detection so enemies launch the player immediately upon touching
+-- Zero-latency local contact detection ONLY when carrying a crate & chased by that enemy's biome
 RunService.Heartbeat:Connect(function()
 	local now = os.clock()
 	if (now - lastKnockbackTick) <= 1.15 then
 		return
 	end
 	if localPlayer:GetAttribute("GodMode") == true or localPlayer:GetAttribute("AdminGodMode") == true then
+		return
+	end
+	local towedCount = tonumber(localPlayer:GetAttribute("TowedCrateCount")) or 0
+	if towedCount <= 0 then
+		return
+	end
+	local aggroCsv = tostring(localPlayer:GetAttribute("AggroBiomesCsv") or "")
+	if aggroCsv == "" then
 		return
 	end
 	local char = localPlayer.Character
@@ -510,17 +518,29 @@ RunService.Heartbeat:Connect(function()
 
 	for _, poacherModel in ipairs(activePoachers:GetChildren()) do
 		if poacherModel:IsA("Model") then
-			local pRoot = poacherModel:FindFirstChild("HumanoidRootPart") or poacherModel:FindFirstChild("HitboxTrigger")
+			local hitbox = poacherModel:FindFirstChild("HitboxTrigger")
+			local poacherBiomeId = if hitbox then tostring(hitbox:GetAttribute("PoacherBiomeId") or "") else ""
+			if poacherBiomeId == "" or not string.find(aggroCsv, "," .. poacherBiomeId .. ",", 1, true) then
+				continue
+			end
+
+			local pRoot = poacherModel:FindFirstChild("HumanoidRootPart") or hitbox
 			if pRoot and pRoot:IsA("BasePart") then
 				local dy = math.abs(root.Position.Y - pRoot.Position.Y)
-				if dy <= 8.5 then
-					local hitbox = poacherModel:FindFirstChild("HitboxTrigger")
+				if dy <= 6.0 then
 					local isBoss = (hitbox and hitbox:GetAttribute("IsBoss") == true) == true
-					local catchRadius = if isBoss then 10.0 else 7.8
+					local inBox = false
+					if hitbox and hitbox:IsA("BasePart") then
+						local localHit = hitbox.CFrame:PointToObjectSpace(root.Position)
+						inBox = math.abs(localHit.X) <= (hitbox.Size.X * 0.5)
+							and math.abs(localHit.Z) <= (hitbox.Size.Z * 0.5)
+							and math.abs(localHit.Y) <= (hitbox.Size.Y * 0.5 + 0.5)
+					end
+					local catchRadius = if isBoss then 4.8 else 3.4
 					local xzDist = Vector2.new(root.Position.X - pRoot.Position.X, root.Position.Z - pRoot.Position.Z).Magnitude
-					if xzDist <= catchRadius then
+					if inBox or xzDist <= catchRadius then
 						Remotes.Get("PlayerTouchedPoacher"):FireServer(poacherModel.Name)
-						if (localPlayer:GetAttribute("ArmorShields") or 0) <= 0 then
+						if (tonumber(localPlayer:GetAttribute("ArmorShields")) or 0) <= 0 then
 							local away = Vector3.new(root.Position.X - pRoot.Position.X, 0, root.Position.Z - pRoot.Position.Z)
 							if away.Magnitude < 0.1 then
 								away = Vector3.new(0, 0, -1)

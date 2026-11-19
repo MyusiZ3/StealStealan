@@ -127,17 +127,30 @@ Remotes.Get("PlayWorldVFX").OnClientEvent:Connect(function(vfxType)
 	end
 end)
 
+local lastAlarmTick = 0
+local function playPoacherAlarmDebounced()
+	local now = os.clock()
+	if (now - lastAlarmTick) < 1.0 then
+		return
+	end
+	lastAlarmTick = now
+	playSFX(SoundConfig.SFX.PoacherAlarm, 0.85)
+end
+
 Remotes.Get("PoacherAlertSync").OnClientEvent:Connect(function(active)
-	inBossChase = (active == true)
+	local cnt = tonumber(localPlayer:GetAttribute("TowedCrateCount")) or 0
+	inBossChase = (active == true) and (cnt > 0)
 	if inBossChase then
-		playSFX(SoundConfig.SFX.PoacherAlarm, 0.85)
+		playPoacherAlarmDebounced()
 	end
 end)
 
 localPlayer:GetAttributeChangedSignal("TowedCrateCount"):Connect(function()
 	local cnt = tonumber(localPlayer:GetAttribute("TowedCrateCount")) or 0
 	if cnt > 0 then
-		playSFX(SoundConfig.SFX.PoacherAlarm, 0.85)
+		playPoacherAlarmDebounced()
+	else
+		inBossChase = false
 	end
 end)
 
