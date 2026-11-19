@@ -4,6 +4,7 @@
 -- Superadmin-Only Titles (Owner / Admin), Overhead & Chat Tags, Moderation (Kill/Kick/Ban/TP/Freeze),
 -- Economy (Give/Set Money, Give/Set Speed, Tuners), World & Pet Spawner, & Admin Abuse Events.
 
+local MessagingService = game:GetService("MessagingService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -47,8 +48,15 @@ local liveTuners = {
 	mutationLuckMult = 1.0,
 }
 
+local GLOBAL_ADMIN_TOPIC = "StealStealan_GlobalAdmin_v1"
+
 local rarityWeightOverrides: { [string]: number } = {}
 local mutationWeightOverrides: { [string]: number } = {}
+local sizeBracketOverrides: { [string]: number } = {}
+local semiRngPity = {
+	luckyEvery = 10,
+	ultraEvery = 25,
+}
 local forcedWildMutation: string = "Random"
 
 local selfTools: { [number]: {
@@ -62,7 +70,7 @@ local selfTools: { [number]: {
 local commandCooldowns: { [string]: number } = {}
 
 local crateRainCallback: (() -> ())? = nil
-local worldSpawnerCallback: ((string, Types.AnimalRarity?, string?, Vector3?) -> boolean)? = nil
+local worldSpawnerCallback: ((string, Types.AnimalRarity?, string?, Vector3?, Types.AnimalMutation?, number?) -> boolean)? = nil
 local killCleanupCallback: ((Player, Vector3) -> ())? = nil
 local waveResetCallback: (() -> ())? = nil
 
@@ -70,7 +78,7 @@ function AdminService.RegisterCrateRainCallback(fn: () -> ())
 	crateRainCallback = fn
 end
 
-function AdminService.RegisterWorldSpawnerCallback(fn: (string, Types.AnimalRarity?, string?, Vector3?) -> boolean)
+function AdminService.RegisterWorldSpawnerCallback(fn: (string, Types.AnimalRarity?, string?, Vector3?, Types.AnimalMutation?, number?) -> boolean)
 	worldSpawnerCallback = fn
 end
 
@@ -322,6 +330,10 @@ function AdminService.GetForcedWildMutation(): string?
 	return if forcedWildMutation ~= "Random" then forcedWildMutation else nil
 end
 
+function AdminService.GetSizeBracketOverrides(): { [string]: number }?
+	return if next(sizeBracketOverrides) ~= nil then sizeBracketOverrides else nil
+end
+
 function AdminService.GetGiantSizeMultiplier(): number
 	if AdminService.IsEventActive("MutationParty100x") then
 		return 12.0
@@ -505,6 +517,8 @@ function AdminService.SyncAdminState(targetPlayer: Player?)
 			liveTuners = liveTuners,
 			rarityWeightOverrides = rarityWeightOverrides,
 			mutationWeightOverrides = mutationWeightOverrides,
+			sizeBracketOverrides = sizeBracketOverrides,
+			semiRngPity = semiRngPity,
 			forcedWildMutation = forcedWildMutation,
 			selfTools = selfTools[p.UserId] or { godMode = false, instantPull = false, instantUnbox = false, superSpeed = false, invisible = false },
 			players = playerList,
@@ -629,6 +643,363 @@ function AdminService.OnPlayerJoined(player: Player)
 	end
 end
 
+local function executeBatchWorldSpawn(payload: any, originAdmin: Player?): number
+	if not worldSpawnerCallback then
+		return 0
+	end
+	local qty = math.clamp(math.floor(tonumber(payload.quantity) or 1), 1, 50)
+	local rarList: { { rarity: string, w: number } } = {}
+	local totalW = 0
+	if type(payload.rarities) == "table" then
+		for _, item in ipairs(payload.rarities) do
+			if type(item) == "table" then
+				local r = tostring(item.rarity or "")
+				local pct = math.max(0, tonumber(item.pct) or 0)
+				if GameConfig.RARITY_TIER_INDEX[r] and pct > 0 then
+					totalW += pct
+					table.insert(rarList, { rarity = r, w = pct })
+				end
+			end
+		end
+	end
+	if #rarList == 0 then
+		local fallbackRar = tostring(payload.rarity or "Legendary")
+		if not GameConfig.RARITY_TIER_INDEX[fallbackRar] then
+			fallbackRar = "Legendary"
+		end
+		table.insert(rarList, { rarity = fallbackRar, w = 100 })
+		totalW = 100
+	end
+
+	local mutName = tostring(payload.mutation or "None")
+	local mutChance = math.clamp(tonumber(payload.mutationChancePct) or 0, 0, 100)
+	local minR = math.clamp(tonumber(payload.minWeightRatio) or 0.85, 0.40, 10.0)
+	local maxR = math.clamp(tonumber(payload.maxWeightRatio) or 1.35, minR, 12.0)
+	local area = tostring(payload.area or "Default")
+
+	-- Pre-map rarities -> matching biomes for "Default" area
+	local biomesByRarity: { [string]: { string } } = {}
+	for _, s in ipairs(AnimalConfig.ALL) do
+		biomesByRarity[s.rarity] = biomesByRarity[s.rarity] or {}
+		if not table.find(biomesByRarity[s.rarity], s.biomeId) then
+			table.insert(biomesByRarity[s.rarity], s.biomeId)
+		end
+	end
+
+	local spawnedCount = 0
+	for i = 1, qty do
+		local roll = math.random() * totalW
+		local acc = 0
+		local chosenRarity = rarList[1].rarity
+		for _, entry in ipairs(rarList) do
+			acc += entry.w
+			if roll <= acc then
+				chosenRarity = entry.rarity
+				break
+			end
+		end
+
+		local chosenMut: Types.AnimalMutation = "None"
+		if mutName ~= "None" and math.random() * 100 <= mutChance then
+			if mutName == "Random" then
+				chosenMut = AnimalConfig.RollMutation(12.0, AdminService.GetMutationWeightOverrides(), nil)
+			else
+				chosenMut = sanitizeMutation(mutName)
+			end
+		end
+
+		local szRatio = math.floor((minR + math.random() * (maxR - minR)) * 100 + 0.5) / 100
+
+		local nearPos: Vector3? = nil
+		local biomeId = "PineWoods"
+		if area == "NearAdmin" and originAdmin and originAdmin.Character then
+			local hrp = originAdmin.Character:FindFirstChild("HumanoidRootPart")
+			if hrp and hrp:IsA("BasePart") then
+				local spreadAngle = (i / math.max(1, qty)) * math.pi * 2
+				local rad = if qty > 1 then (4 + (i % 4) * 2.5) else 0
+				local desired = hrp.Position + hrp.CFrame.LookVector * 10 + Vector3.new(math.cos(spreadAngle) * rad, 0, math.sin(spreadAngle) * rad)
+				local safeZ = math.max(desired.Z, GameConfig.WORLD.SAFE_ZONE_Z_MAX + 16)
+				nearPos = Vector3.new(math.clamp(desired.X, -70, 70), desired.Y, safeZ)
+				for _, b in ipairs(BiomeConfig) do
+					if safeZ >= b.zStart and safeZ <= b.zEnd then
+						biomeId = b.id
+						break
+					end
+				end
+			end
+		elseif area ~= "Default" and area ~= "" and area ~= "NearAdmin" then
+			biomeId = area
+		else
+			local pool = biomesByRarity[chosenRarity]
+			if pool and #pool > 0 then
+				biomeId = pool[math.random(1, #pool)]
+			else
+				local reqTier = GameConfig.GetRarityTier(chosenRarity)
+				for _, b in ipairs(BiomeConfig) do
+					if GameConfig.GetRarityTier(b.maxRarity) >= reqTier then
+						biomeId = b.id
+						break
+					end
+				end
+			end
+		end
+
+		if worldSpawnerCallback(biomeId, chosenRarity :: Types.AnimalRarity, nil, nearPos, chosenMut, szRatio) then
+			spawnedCount += 1
+		end
+	end
+	return spawnedCount
+end
+
+local function applyGlobalAdminAction(action: string, payload: any, adminPlayer: Player?, rank: number, isRemoteRelay: boolean): (boolean, boolean)
+	if action == "BatchSpawnWorldCrates" then
+		if not worldSpawnerCallback then
+			if adminPlayer then
+				Remotes.Get("NotifyClient"):FireClient(adminPlayer, "World spawner not initialized!", Color3.fromRGB(255, 96, 96))
+			end
+			return true, false
+		end
+		-- On remote servers, fallback NearAdmin to Default biome since adminPlayer is not on that server
+		local cleanPayload = payload
+		if isRemoteRelay and tostring(payload.area or "") == "NearAdmin" then
+			cleanPayload = table.clone(payload)
+			cleanPayload.area = "Default"
+		end
+		local cnt = executeBatchWorldSpawn(cleanPayload, adminPlayer)
+		if adminPlayer then
+			local scopeTag = if tostring(payload.scope or "") == "AllServers" then "All Servers" else "This Server"
+			Remotes.Get("NotifyClient"):FireClient(adminPlayer, string.format("Spawned %d custom crate(s) [%s]!", cnt, scopeTag), Color3.fromRGB(84, 245, 148))
+		end
+		return true, true
+	elseif action == "SetLiveMultiplier" then
+		local key = tostring(payload.key or "")
+		local rawNum = tonumber(payload.value)
+		local val = if rawNum then isFiniteNonNeg(rawNum, 10000) else nil
+		if val and (liveTuners :: any)[key] ~= nil then
+			if (key == "rarityLuckMult" or key == "mutationLuckMult") and not isRemoteRelay and rank < 3 then
+				if adminPlayer then
+					Remotes.Get("NotifyClient"):FireClient(adminPlayer, "Owner rank required for Luck multipliers!", Color3.fromRGB(255, 96, 96))
+				end
+				return true, false
+			end
+			val = math.max(0.05, val)
+			;(liveTuners :: any)[key] = val
+			refreshAllPlayersEconomy()
+			AdminService.BroadcastActiveBuffs(nil)
+			if adminPlayer then
+				Remotes.Get("NotifyClient"):FireClient(adminPlayer, string.format("Live %s set to %.2fx", key, val), Color3.fromRGB(0, 245, 212))
+			end
+			return true, true
+		end
+		return true, false
+	elseif action == "ResetMultipliers" then
+		liveTuners.cashMult = 1.0
+		liveTuners.speedMult = 1.0
+		liveTuners.poacherSpeedMult = 1.0
+		liveTuners.resistanceMult = 1.0
+		if isRemoteRelay or rank >= 3 then
+			liveTuners.rarityLuckMult = 1.0
+			liveTuners.mutationLuckMult = 1.0
+		end
+		refreshAllPlayersEconomy()
+		AdminService.BroadcastActiveBuffs(nil)
+		if adminPlayer then
+			Remotes.Get("NotifyClient"):FireClient(adminPlayer, "All live multipliers reset to 1.0x!", Color3.fromRGB(84, 245, 148))
+		end
+		return true, true
+	elseif action == "SetRarityLuck" or action == "SetMutationLuck" or action == "SetRarityWeight" or action == "SetMutationWeight" or action == "SetSizeBracketWeight" or action == "SetPityThresholds" or action == "SetForcedMutation" or action == "ResetSpawnRates" or action == "TriggerWaveReset" then
+		if not isRemoteRelay and rank < 3 then
+			if adminPlayer then
+				Remotes.Get("NotifyClient"):FireClient(adminPlayer, "Owner (Superadmin) rank required to modify spawn rates!", Color3.fromRGB(255, 96, 96))
+			end
+			return true, false
+		end
+		if action == "SetRarityLuck" or action == "SetMutationLuck" then
+			local val = isFiniteNonNeg(tonumber(payload.value) or 1.0, 10000)
+			if val then
+				val = math.max(0.05, val)
+				if action == "SetRarityLuck" then
+					liveTuners.rarityLuckMult = val
+				else
+					liveTuners.mutationLuckMult = val
+				end
+				AdminService.BroadcastActiveBuffs(nil)
+				if adminPlayer then
+					Remotes.Get("NotifyClient"):FireClient(adminPlayer, string.format("[Owner] %s = %.2fx", action, val), Color3.fromRGB(255, 214, 72))
+				end
+			end
+		elseif action == "SetRarityWeight" then
+			local rar = tostring(payload.rarity or "")
+			if GameConfig.RARITY_TIER_INDEX[rar] then
+				local rawW = tonumber(payload.weight)
+				if not rawW or rawW < 0 then
+					rarityWeightOverrides[rar] = nil
+					if adminPlayer then
+						Remotes.Get("NotifyClient"):FireClient(adminPlayer, "[Owner] Reset crate weight for " .. rar, Color3.fromRGB(168, 224, 255))
+					end
+				else
+					local cleanW = isFiniteNonNeg(rawW, 1000000) or 0
+					rarityWeightOverrides[rar] = cleanW
+					if adminPlayer then
+						Remotes.Get("NotifyClient"):FireClient(adminPlayer, string.format("[Owner] %s Crate Weight -> %.3f", rar, cleanW), Color3.fromRGB(255, 214, 72))
+					end
+				end
+			end
+		elseif action == "SetMutationWeight" then
+			local mut = tostring(payload.mutation or "")
+			if (GameConfig.MUTATIONS :: any)[mut] then
+				local rawW = tonumber(payload.weight)
+				if not rawW or rawW < 0 then
+					mutationWeightOverrides[mut] = nil
+					if adminPlayer then
+						Remotes.Get("NotifyClient"):FireClient(adminPlayer, "[Owner] Reset mutation weight for " .. mut, Color3.fromRGB(168, 224, 255))
+					end
+				else
+					local cleanW = isFiniteNonNeg(rawW, 1000000) or 0
+					mutationWeightOverrides[mut] = cleanW
+					if adminPlayer then
+						Remotes.Get("NotifyClient"):FireClient(adminPlayer, string.format("[Owner] %s Mutation Weight -> %.3f", mut, cleanW), Color3.fromRGB(192, 132, 252))
+					end
+				end
+			end
+		elseif action == "SetSizeBracketWeight" then
+			local br = tostring(payload.bracket or "")
+			local validBracket = false
+			for _, sb in ipairs(GameConfig.SIZE_BRACKETS) do
+				if sb.name == br then
+					validBracket = true
+					break
+				end
+			end
+			if validBracket then
+				local rawW = tonumber(payload.weight)
+				if not rawW or rawW < 0 then
+					sizeBracketOverrides[br] = nil
+					if adminPlayer then
+						Remotes.Get("NotifyClient"):FireClient(adminPlayer, "[Owner] Reset size bracket weight for " .. br, Color3.fromRGB(168, 224, 255))
+					end
+				else
+					local cleanW = isFiniteNonNeg(rawW, 1000000) or 0
+					sizeBracketOverrides[br] = cleanW
+					if adminPlayer then
+						Remotes.Get("NotifyClient"):FireClient(adminPlayer, string.format("[Owner] %s Size Weight -> %.2f", br, cleanW), Color3.fromRGB(88, 224, 255))
+					end
+				end
+			end
+		elseif action == "SetPityThresholds" then
+			semiRngPity.luckyEvery = math.clamp(math.floor(tonumber(payload.luckyEvery) or 10), 2, 100)
+			semiRngPity.ultraEvery = math.clamp(math.floor(tonumber(payload.ultraEvery) or 25), 5, 250)
+			Workspace:SetAttribute("LuckyCageEvery", semiRngPity.luckyEvery)
+			Workspace:SetAttribute("UltraCageEvery", semiRngPity.ultraEvery)
+			if adminPlayer then
+				Remotes.Get("NotifyClient"):FireClient(adminPlayer, string.format("[Owner] Pity updated: Lucky=%d, Ultra=%d", semiRngPity.luckyEvery, semiRngPity.ultraEvery), Color3.fromRGB(255, 214, 72))
+			end
+		elseif action == "SetForcedMutation" then
+			local mut = tostring(payload.mutation or "Random")
+			if mut == "Random" or (GameConfig.MUTATIONS :: any)[mut] then
+				forcedWildMutation = mut
+				if adminPlayer then
+					Remotes.Get("NotifyClient"):FireClient(adminPlayer, "[Owner] Forced Wild Mutation: " .. mut, Color3.fromRGB(224, 92, 255))
+				end
+			end
+		elseif action == "ResetSpawnRates" then
+			liveTuners.rarityLuckMult = 1.0
+			liveTuners.mutationLuckMult = 1.0
+			table.clear(rarityWeightOverrides)
+			table.clear(mutationWeightOverrides)
+			table.clear(sizeBracketOverrides)
+			semiRngPity.luckyEvery = 10
+			semiRngPity.ultraEvery = 25
+			Workspace:SetAttribute("LuckyCageEvery", 10)
+			Workspace:SetAttribute("UltraCageEvery", 25)
+			forcedWildMutation = "Random"
+			AdminService.BroadcastActiveBuffs(nil)
+			if adminPlayer then
+				Remotes.Get("NotifyClient"):FireClient(adminPlayer, "[Owner] All crate, mutation & size RNG rates reset to default!", Color3.fromRGB(84, 245, 148))
+			end
+		elseif action == "TriggerWaveReset" then
+			if waveResetCallback then
+				task.spawn(waveResetCallback)
+				if adminPlayer then
+					Remotes.Get("NotifyClient"):FireClient(adminPlayer, "[Owner] Respawned all biome crates using current rates!", Color3.fromRGB(84, 245, 148))
+				end
+			end
+		end
+		return true, true
+	elseif action == "TriggerEvent" then
+		local eventId = tostring(payload.eventId or "")
+		local def = (AdminConfig.ADMIN_ABUSE_EVENTS :: any)[eventId]
+		if def then
+			local rawDur = tonumber(payload.durationSeconds)
+			local customDur = math.clamp(math.floor(rawDur or def.durationSeconds), 5, 86400)
+			local unixNow = os.time()
+			if payload.mode == "extend" and activeEvents[eventId] and activeEvents[eventId] > unixNow then
+				activeEvents[eventId] += customDur
+			else
+				activeEvents[eventId] = unixNow + customDur
+			end
+			activeEventDurations[eventId] = customDur
+			local totalRem = math.max(1, activeEvents[eventId] - unixNow)
+			syncEventWorldAttributes()
+			refreshAllPlayersEconomy()
+			AdminService.BroadcastActiveBuffs(nil)
+
+			local bannerDurText = if totalRem >= 60 then string.format("%dm %ds", math.floor(totalRem / 60), totalRem % 60) else (tostring(totalRem) .. "s")
+			Remotes.Get("GlobalEventBanner"):FireAllClients(string.format("%s %s (%s) — %s", def.icon or "🔥", def.title, bannerDurText, def.description), def.color, 9)
+			if eventId == "CrateRain" and crateRainCallback then
+				task.spawn(crateRainCallback)
+			elseif eventId == "TitanicZoo" then
+				PlotService.BroadcastAllPlotsSync()
+			end
+			return true, true
+		end
+		return true, false
+	elseif action == "StopEvent" then
+		local eventId = tostring(payload.eventId or "")
+		local def = (AdminConfig.ADMIN_ABUSE_EVENTS :: any)[eventId]
+		if activeEvents[eventId] ~= nil then
+			activeEvents[eventId] = nil
+			activeEventDurations[eventId] = nil
+			syncEventWorldAttributes()
+			refreshAllPlayersEconomy()
+			AdminService.BroadcastActiveBuffs(nil)
+			if adminPlayer then
+				Remotes.Get("NotifyClient"):FireClient(adminPlayer, "Stopped event: " .. (if def then def.shortLabel else eventId), Color3.fromRGB(255, 196, 62))
+			end
+			return true, true
+		end
+		return true, false
+	elseif action == "StopAllEvents" then
+		table.clear(activeEvents)
+		table.clear(activeEventDurations)
+		liveTuners.cashMult = 1.0
+		liveTuners.speedMult = 1.0
+		liveTuners.poacherSpeedMult = 1.0
+		liveTuners.resistanceMult = 1.0
+		syncEventWorldAttributes()
+		refreshAllPlayersEconomy()
+		AdminService.BroadcastActiveBuffs(nil)
+		Remotes.Get("GlobalEventBanner"):FireAllClients("Admin ended active server events.", Color3.fromRGB(180, 190, 210), 4)
+		return true, true
+	elseif action == "Broadcast" then
+		local filteredMsg: string
+		local bannerSender: string
+		if adminPlayer then
+			local rec = verifiedRoles[adminPlayer.UserId] or refreshRoleCacheForPlayer(adminPlayer)
+			local tag = if rec.title == "Owner" then "[OWNER " else "[ADMIN "
+			filteredMsg = filterBroadcastMessage(adminPlayer, tostring(payload.message or "Hello Rangers!"))
+			bannerSender = tag .. adminPlayer.DisplayName .. "]: "
+			payload.filteredBanner = bannerSender .. filteredMsg
+		else
+			bannerSender = ""
+			filteredMsg = tostring(payload.filteredBanner or payload.message or "[GLOBAL ADMIN BROADCAST]")
+		end
+		Remotes.Get("GlobalEventBanner"):FireAllClients(bannerSender .. filteredMsg, Color3.fromRGB(255, 214, 62), 7)
+		return true, true
+	end
+	return false, false
+end
+
 function AdminService.Init()
 	PlotService.RegisterLiveGetters({
 		getCashMultiplier = AdminService.GetCashMultiplier,
@@ -637,8 +1008,26 @@ function AdminService.Init()
 		isInstantUnbox = AdminService.HasInstantUnbox,
 		getMutationWeightOverrides = AdminService.GetMutationWeightOverrides,
 		getForcedWildMutation = AdminService.GetForcedWildMutation,
+		getSizeBracketOverrides = AdminService.GetSizeBracketOverrides,
 	})
 	syncEventWorldAttributes()
+	Workspace:SetAttribute("LuckyCageEvery", semiRngPity.luckyEvery)
+	Workspace:SetAttribute("UltraCageEvery", semiRngPity.ultraEvery)
+
+	task.spawn(function()
+		pcall(function()
+			MessagingService:SubscribeAsync(GLOBAL_ADMIN_TOPIC, function(msg)
+				local data = msg and msg.Data
+				if type(data) ~= "table" or (game.JobId ~= "" and data.originJobId == game.JobId) then
+					return
+				end
+				if typeof(data.action) == "string" and type(data.payload) == "table" then
+					applyGlobalAdminAction(data.action, data.payload, nil, 3, true)
+					AdminService.SyncAdminState(nil)
+				end
+			end)
+		end)
+	end)
 
 	Remotes.Get("AdminCommand").OnServerEvent:Connect(function(adminPlayer, action, payload)
 		if typeof(action) ~= "string" then return end
@@ -936,7 +1325,7 @@ function AdminService.Init()
 		elseif action == "SetTreadmillLevel" then
 			local target = findTargetPlayer(payload) or adminPlayer
 			local prof = DataService.GetProfile(target)
-			local lvl = math.clamp(math.floor(tonumber(payload.level) or 10), 1, 100)
+			local lvl = math.clamp(math.floor(tonumber(payload.level) or 12), 1, GameConfig.TREADMILL.MAX_LEVEL)
 			if prof then
 				prof.treadmillLevel = lvl
 				PlotService.RefreshPlotBoardVisuals(target)
@@ -1051,6 +1440,62 @@ function AdminService.Init()
 				Remotes.Get("NotifyClient"):FireClient(adminPlayer, string.format("Instant-Readied %d Pen crate(s) for %s!", count, target.Name), Color3.fromRGB(250, 204, 21))
 			end
 
+		elseif action == "GivePlayerItems" then
+			local target = findTargetPlayer(payload) or adminPlayer
+			local giveMode = tostring(payload.giveMode or "CrateInv")
+			local qty = math.clamp(math.floor(tonumber(payload.quantity) or 1), 1, 25)
+			local rarity = tostring(payload.rarity or "Legendary") :: Types.AnimalRarity
+			local biomeId = tostring(payload.biomeId or "PineWoods")
+			local useSpec = payload.useSelectedSpecies == true
+			local customMut = sanitizeMutation(payload.mutation)
+			local minR = math.clamp(tonumber(payload.minWeightRatio) or tonumber(payload.sizeRatio) or 1.0, 0.45, 10.0)
+			local maxR = math.clamp(tonumber(payload.maxWeightRatio) or minR, minR, 12.0)
+
+			local granted = 0
+			for _ = 1, qty do
+				local szRatio = math.floor((minR + math.random() * (maxR - minR)) * 100 + 0.5) / 100
+				local spec = resolveCrateSpecies(biomeId, rarity, tostring(payload.speciesId or ""), useSpec)
+				if giveMode == "DirectPet" then
+					local animal = PlotService.GrantAnimalToPlayer(target, spec.id, szRatio, customMut, {
+						originSource = "Admin",
+					})
+					if animal then granted += 1 end
+				elseif giveMode == "PenCrate" then
+					local uid = PlotService.AddCrateToInventory(target, spec.biomeId, spec.rarity, spec.id, GameConfig.ComputeCrateScale(spec.rarity, szRatio), {
+						customMutation = if customMut ~= "None" then customMut else nil,
+						customSizeRatio = szRatio,
+						originSource = "Admin",
+					})
+					if uid then
+						if PlotService.PlaceCrateInPen(target, uid, math.random(-18, 18), math.random(-10, 10)) then
+							granted += 1
+							if payload.instantReady ~= false then
+								local prof = DataService.GetProfile(target)
+								if prof and prof.pendingCrates[uid] then
+									prof.pendingCrates[uid].unlockAt = os.time()
+								end
+							end
+						else
+							granted += 1
+						end
+					end
+				else
+					local uid = PlotService.AddCrateToInventory(target, spec.biomeId, spec.rarity, spec.id, GameConfig.ComputeCrateScale(spec.rarity, szRatio), {
+						customMutation = if customMut ~= "None" then customMut else nil,
+						customSizeRatio = szRatio,
+						originSource = "Admin",
+					})
+					if uid then granted += 1 end
+				end
+			end
+			PlotService.RefreshPlotBoardVisuals(target)
+			PlotService.BroadcastAllPlotsSync()
+			DataService.SyncProfile(target)
+			Remotes.Get("NotifyClient"):FireClient(adminPlayer, string.format("Gave %dx [%s / %s] (%s) to %s!", granted, rarity, customMut, giveMode, target.Name), Color3.fromRGB(84, 245, 148))
+			if target ~= adminPlayer then
+				Remotes.Get("NotifyClient"):FireClient(target, string.format("Admin gave you %dx [%s] item(s)!", granted, rarity), Color3.fromRGB(84, 245, 148))
+			end
+
 		elseif action == "SpawnWorldCrate" then
 			if not worldSpawnerCallback then
 				Remotes.Get("NotifyClient"):FireClient(adminPlayer, "World spawner not initialized!", Color3.fromRGB(255, 96, 96))
@@ -1080,163 +1525,12 @@ function AdminService.Init()
 					end
 				end
 			end
-			local okSpawn = worldSpawnerCallback(biomeId, rarity, speciesArg, nearPos)
+			local okSpawn = worldSpawnerCallback(biomeId, rarity, speciesArg, nearPos, nil, nil)
 			if okSpawn then
 				Remotes.Get("NotifyClient"):FireClient(adminPlayer, string.format("Spawned %s crate -> %s!", rarity, spawnNote), Color3.fromRGB(84, 245, 148))
 			else
 				Remotes.Get("NotifyClient"):FireClient(adminPlayer, "World crate spawn failed!", Color3.fromRGB(255, 96, 96))
 			end
-
-		elseif action == "SetLiveMultiplier" then
-			local key = tostring(payload.key or "")
-			local rawNum = tonumber(payload.value)
-			local val = if rawNum then isFiniteNonNeg(rawNum, 10000) else nil
-			if val and (liveTuners :: any)[key] ~= nil then
-				if (key == "rarityLuckMult" or key == "mutationLuckMult") and rank < 3 then
-					Remotes.Get("NotifyClient"):FireClient(adminPlayer, "Owner rank required for Luck multipliers!", Color3.fromRGB(255, 96, 96))
-					return
-				end
-				val = math.max(0.05, val)
-				;(liveTuners :: any)[key] = val
-				refreshAllPlayersEconomy()
-				AdminService.BroadcastActiveBuffs(nil)
-				Remotes.Get("NotifyClient"):FireClient(adminPlayer, string.format("Live %s set to %.2fx", key, val), Color3.fromRGB(0, 245, 212))
-			end
-
-		elseif action == "ResetMultipliers" then
-			liveTuners.cashMult = 1.0
-			liveTuners.speedMult = 1.0
-			liveTuners.poacherSpeedMult = 1.0
-			liveTuners.resistanceMult = 1.0
-			if rank >= 3 then
-				liveTuners.rarityLuckMult = 1.0
-				liveTuners.mutationLuckMult = 1.0
-			end
-			refreshAllPlayersEconomy()
-			AdminService.BroadcastActiveBuffs(nil)
-			Remotes.Get("NotifyClient"):FireClient(adminPlayer, "All live multipliers reset to 1.0x!", Color3.fromRGB(84, 245, 148))
-
-		-- OWNER / SUPERADMIN SPAWN & MUTATION RATE CONTROLS (Rank >= 3)
-		elseif action == "SetRarityLuck" or action == "SetMutationLuck" or action == "SetRarityWeight" or action == "SetMutationWeight" or action == "SetForcedMutation" or action == "ResetSpawnRates" or action == "TriggerWaveReset" then
-			if rank < 3 then
-				Remotes.Get("NotifyClient"):FireClient(adminPlayer, "Owner (Superadmin) rank required to modify spawn rates!", Color3.fromRGB(255, 96, 96))
-				return
-			end
-			if action == "SetRarityLuck" or action == "SetMutationLuck" then
-				local val = isFiniteNonNeg(tonumber(payload.value) or 1.0, 10000)
-				if val then
-					val = math.max(0.05, val)
-					if action == "SetRarityLuck" then
-						liveTuners.rarityLuckMult = val
-					else
-						liveTuners.mutationLuckMult = val
-					end
-					AdminService.BroadcastActiveBuffs(nil)
-					Remotes.Get("NotifyClient"):FireClient(adminPlayer, string.format("[Owner] %s = %.2fx", action, val), Color3.fromRGB(255, 214, 72))
-				end
-			elseif action == "SetRarityWeight" then
-				local rar = tostring(payload.rarity or "")
-				if GameConfig.RARITY_TIER_INDEX[rar] then
-					local rawW = tonumber(payload.weight)
-					if not rawW or rawW < 0 then
-						rarityWeightOverrides[rar] = nil
-						Remotes.Get("NotifyClient"):FireClient(adminPlayer, "[Owner] Reset crate weight for " .. rar, Color3.fromRGB(168, 224, 255))
-					else
-						local cleanW = isFiniteNonNeg(rawW, 1000000) or 0
-						rarityWeightOverrides[rar] = cleanW
-						Remotes.Get("NotifyClient"):FireClient(adminPlayer, string.format("[Owner] %s Crate Weight -> %.3f", rar, cleanW), Color3.fromRGB(255, 214, 72))
-					end
-				end
-			elseif action == "SetMutationWeight" then
-				local mut = tostring(payload.mutation or "")
-				if (GameConfig.MUTATIONS :: any)[mut] then
-					local rawW = tonumber(payload.weight)
-					if not rawW or rawW < 0 then
-						mutationWeightOverrides[mut] = nil
-						Remotes.Get("NotifyClient"):FireClient(adminPlayer, "[Owner] Reset mutation weight for " .. mut, Color3.fromRGB(168, 224, 255))
-					else
-						local cleanW = isFiniteNonNeg(rawW, 1000000) or 0
-						mutationWeightOverrides[mut] = cleanW
-						Remotes.Get("NotifyClient"):FireClient(adminPlayer, string.format("[Owner] %s Mutation Weight -> %.3f", mut, cleanW), Color3.fromRGB(192, 132, 252))
-					end
-				end
-			elseif action == "SetForcedMutation" then
-				local mut = tostring(payload.mutation or "Random")
-				if mut == "Random" or (GameConfig.MUTATIONS :: any)[mut] then
-					forcedWildMutation = mut
-					Remotes.Get("NotifyClient"):FireClient(adminPlayer, "[Owner] Forced Wild Mutation: " .. mut, Color3.fromRGB(224, 92, 255))
-				end
-			elseif action == "ResetSpawnRates" then
-				liveTuners.rarityLuckMult = 1.0
-				liveTuners.mutationLuckMult = 1.0
-				table.clear(rarityWeightOverrides)
-				table.clear(mutationWeightOverrides)
-				forcedWildMutation = "Random"
-				AdminService.BroadcastActiveBuffs(nil)
-				Remotes.Get("NotifyClient"):FireClient(adminPlayer, "[Owner] All crate rarity & mutation rates reset to default!", Color3.fromRGB(84, 245, 148))
-			elseif action == "TriggerWaveReset" then
-				if waveResetCallback then
-					task.spawn(waveResetCallback)
-					Remotes.Get("NotifyClient"):FireClient(adminPlayer, "[Owner] Respawned all biome crates using current rates!", Color3.fromRGB(84, 245, 148))
-				end
-			end
-
-		elseif action == "TriggerEvent" then
-			local eventId = tostring(payload.eventId or "")
-			local def = (AdminConfig.ADMIN_ABUSE_EVENTS :: any)[eventId]
-			if def then
-				local rawDur = tonumber(payload.durationSeconds)
-				local customDur = math.clamp(math.floor(rawDur or def.durationSeconds), 5, 86400)
-				local unixNow = os.time()
-				if payload.mode == "extend" and activeEvents[eventId] and activeEvents[eventId] > unixNow then
-					activeEvents[eventId] += customDur
-				else
-					activeEvents[eventId] = unixNow + customDur
-				end
-				activeEventDurations[eventId] = customDur
-				local totalRem = math.max(1, activeEvents[eventId] - unixNow)
-				syncEventWorldAttributes()
-				refreshAllPlayersEconomy()
-				AdminService.BroadcastActiveBuffs(nil)
-
-				local bannerDurText = if totalRem >= 60 then string.format("%dm %ds", math.floor(totalRem / 60), totalRem % 60) else (tostring(totalRem) .. "s")
-				Remotes.Get("GlobalEventBanner"):FireAllClients(string.format("%s %s (%s) — %s", def.icon or "🔥", def.title, bannerDurText, def.description), def.color, 9)
-				if eventId == "CrateRain" and crateRainCallback then
-					task.spawn(crateRainCallback)
-				elseif eventId == "TitanicZoo" then
-					PlotService.BroadcastAllPlotsSync()
-				end
-			end
-
-		elseif action == "StopEvent" then
-			local eventId = tostring(payload.eventId or "")
-			local def = (AdminConfig.ADMIN_ABUSE_EVENTS :: any)[eventId]
-			if activeEvents[eventId] ~= nil then
-				activeEvents[eventId] = nil
-				activeEventDurations[eventId] = nil
-				syncEventWorldAttributes()
-				refreshAllPlayersEconomy()
-				AdminService.BroadcastActiveBuffs(nil)
-				Remotes.Get("NotifyClient"):FireClient(adminPlayer, "Stopped event: " .. (if def then def.shortLabel else eventId), Color3.fromRGB(255, 196, 62))
-			end
-
-		elseif action == "StopAllEvents" then
-			table.clear(activeEvents)
-			table.clear(activeEventDurations)
-			liveTuners.cashMult = 1.0
-			liveTuners.speedMult = 1.0
-			liveTuners.poacherSpeedMult = 1.0
-			liveTuners.resistanceMult = 1.0
-			syncEventWorldAttributes()
-			refreshAllPlayersEconomy()
-			AdminService.BroadcastActiveBuffs(nil)
-			Remotes.Get("GlobalEventBanner"):FireAllClients("Admin ended active server events.", Color3.fromRGB(180, 190, 210), 4)
-
-		elseif action == "Broadcast" then
-			local rec = verifiedRoles[adminPlayer.UserId] or refreshRoleCacheForPlayer(adminPlayer)
-			local tag = if rec.title == "Owner" then "[OWNER " else "[ADMIN "
-			local filteredMsg = filterBroadcastMessage(adminPlayer, tostring(payload.message or "Hello Rangers!"))
-			Remotes.Get("GlobalEventBanner"):FireAllClients(tag .. adminPlayer.DisplayName .. "]: " .. filteredMsg, Color3.fromRGB(255, 214, 62), 7)
 
 		elseif action == "ToggleSelfTool" then
 			local key = tostring(payload.tool or "")
@@ -1261,6 +1555,20 @@ function AdminService.Init()
 					string.format("%s: %s", key, if newState then "ENABLED" else "DISABLED"),
 					if newState then Color3.fromRGB(84, 245, 148) else Color3.fromRGB(148, 163, 184)
 				)
+			end
+		else
+			local handled, relayAll = applyGlobalAdminAction(action, payload, adminPlayer, rank, false)
+			if handled and relayAll and tostring(payload.scope or "") == "AllServers" then
+				task.spawn(function()
+					pcall(function()
+						MessagingService:PublishAsync(GLOBAL_ADMIN_TOPIC, {
+							originJobId = game.JobId,
+							action = action,
+							payload = payload,
+							adminName = adminPlayer.DisplayName,
+						})
+					end)
+				end)
 			end
 		end
 

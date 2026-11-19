@@ -259,17 +259,25 @@ function AnimalConfig.RollSpeciesForBiome(
 	return matching[math.random(1, #matching)]
 end
 
-function AnimalConfig.RollSizeRatio(giantBonusMult: number?): number
+function AnimalConfig.RollSizeRatio(giantBonusMult: number?, sizeBracketOverrides: { [string]: number }?): number
 	local bonus = giantBonusMult or 1.0
 	local total = 0
 	local brackets = {}
 	for _, b in ipairs(GameConfig.SIZE_BRACKETS) do
-		local w = b.weight
+		local baseW = if sizeBracketOverrides and sizeBracketOverrides[b.name] ~= nil
+			then math.max(0, sizeBracketOverrides[b.name])
+			else b.weight
+		local w = baseW
 		if b.minRatio >= 2.0 then
 			w = w * bonus
 		end
-		total += w
-		table.insert(brackets, { b = b, w = w })
+		if w > 0 then
+			total += w
+			table.insert(brackets, { b = b, w = w })
+		end
+	end
+	if total <= 0 or #brackets == 0 then
+		return 1.0
 	end
 	local roll = math.random() * total
 	local acc = 0
