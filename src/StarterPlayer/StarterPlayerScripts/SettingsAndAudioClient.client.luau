@@ -121,11 +121,16 @@ Remotes.Get("CrateHatchReveal").OnClientEvent:Connect(function(data)
 	end
 end)
 
+Remotes.Get("PlayWorldVFX").OnClientEvent:Connect(function(vfxType)
+	if vfxType == "CashPileSuction" then
+		playSFX(SoundConfig.SFX.CoinCollect, 0.90)
+	end
+end)
+
 Remotes.Get("PoacherAlertSync").OnClientEvent:Connect(function(active)
 	inBossChase = (active == true)
 	if inBossChase then
 		playSFX(SoundConfig.SFX.PoacherAlarm, 0.85)
-		switchBGM(SoundConfig.BGM.Boss)
 	end
 end)
 
@@ -133,7 +138,6 @@ localPlayer:GetAttributeChangedSignal("TowedCrateCount"):Connect(function()
 	local cnt = tonumber(localPlayer:GetAttribute("TowedCrateCount")) or 0
 	if cnt > 0 then
 		playSFX(SoundConfig.SFX.PoacherAlarm, 0.85)
-		switchBGM(SoundConfig.BGM.Boss)
 	end
 end)
 
@@ -160,23 +164,17 @@ Remotes.Get("PullProgressSync").OnClientEvent:Connect(function(data)
 	end
 end)
 
+-- Single seamless BGM loop using SoundConfig.BGM.Hub across all biomes (prevents transition glitches)
 local accum = 0
 RunService.Heartbeat:Connect(function(dt: number)
 	accum += dt
 	if accum < 1.0 then return end
 	accum = 0
-	local carrying = (tonumber(localPlayer:GetAttribute("TowedCrateCount")) or 0) > 0
-	if inBossChase or carrying then
-		switchBGM(SoundConfig.BGM.Boss)
-		return
-	end
-	local char = localPlayer.Character
-	local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
-	if root and root:IsA("BasePart") then
-		if root.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX then
-			switchBGM(SoundConfig.BGM.Wild)
-		else
-			switchBGM(SoundConfig.BGM.Hub)
-		end
+	if currentTrackId ~= SoundConfig.BGM.Hub then
+		switchBGM(SoundConfig.BGM.Hub)
+	elseif bgmGroup.Volume > 0 and not bgmPlayer.IsPlaying then
+		pcall(function()
+			bgmPlayer:Play()
+		end)
 	end
 end)

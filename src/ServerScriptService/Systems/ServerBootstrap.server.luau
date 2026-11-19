@@ -46,7 +46,10 @@ FuseMergeSystem.Init()
 DataService.StartAutoSaveLoop()
 
 -- Player Lifecycle
-Players.PlayerAdded:Connect(function(player)
+local function onPlayerAdded(player: Player)
+	if sessionStartTimes[player.UserId] then
+		return
+	end
 	local isBanned, reason = DataService.CheckBan(player.UserId)
 	if isBanned then
 		player:Kick("Banned: " .. tostring(reason))
@@ -67,7 +70,7 @@ Players.PlayerAdded:Connect(function(player)
 		PlotService.BroadcastAllPlotsSync()
 	end)
 
-	player.CharacterAdded:Connect(function(character)
+	local function onCharacterAdded(character: Model)
 		PoacherAISystem.ResetShieldsForPlayer(player)
 		AdminService.ApplyCharacterTag(player, character)
 		local hum = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 5)
@@ -104,8 +107,18 @@ Players.PlayerAdded:Connect(function(player)
 				PlotService.TeleportPlayerToPlot(player)
 			end
 		end)
-	end)
-end)
+	end
+
+	player.CharacterAdded:Connect(onCharacterAdded)
+	if player.Character then
+		task.spawn(onCharacterAdded, player.Character)
+	end
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+for _, existingPlayer in ipairs(Players:GetPlayers()) do
+	task.spawn(onPlayerAdded, existingPlayer)
+end
 
 Remotes.Get("UpdateSettings").OnServerEvent:Connect(function(player, newSettings)
 	if type(newSettings) ~= "table" then return end
@@ -118,6 +131,7 @@ Remotes.Get("UpdateSettings").OnServerEvent:Connect(function(player, newSettings
 	if type(newSettings.hideOtherAnimals) == "boolean" then profile.settings.hideOtherAnimals = newSettings.hideOtherAnimals end
 	if type(newSettings.hideOwnAnimals) == "boolean" then profile.settings.hideOwnAnimals = newSettings.hideOwnAnimals end
 	if type(newSettings.lowVFX) == "boolean" then profile.settings.lowVFX = newSettings.lowVFX end
+	if type(newSettings.hatchCutsceneEnabled) == "boolean" then profile.settings.hatchCutsceneEnabled = newSettings.hatchCutsceneEnabled end
 	if newSettings.graphicsQuality == "Low" or newSettings.graphicsQuality == "Medium" or newSettings.graphicsQuality == "High" then
 		profile.settings.graphicsQuality = newSettings.graphicsQuality
 	end

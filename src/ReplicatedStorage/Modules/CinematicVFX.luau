@@ -46,6 +46,7 @@ export type HatchSequenceParams = {
 	openerPlayer: Player?,
 	isLocalOpener: boolean,
 	lowVFX: boolean,
+	hatchCutsceneEnabled: boolean?,
 	playerGui: PlayerGui?,
 	variant: number?,
 	onComplete: (() -> ())?,
@@ -932,18 +933,6 @@ function CinematicVFX.PlayCrateHatchSequence(params: HatchSequenceParams)
 			spawnShockRing(detOrigin + Vector3.new(0, 2.2 * sc, 0), 2 * sc, 20 * sc, 0.28, raritySec, 0.58, CFrame.Angles(math.rad(-35), -0.4, 0))
 			spawnCometOrbs(detOrigin + Vector3.new(0, 1.8 * sc, 0), 16, rarityCol, theme.primary, sc, 0.85)
 			spawnParticleBurst(detOrigin + Vector3.new(0, 1.8 * sc, 0), rarityCol, theme.primary, 65, 16, 36, 1.2 * sc, 1.0, -22)
-
-			if params.isLocalOpener and not params.lowVFX and params.playerGui then
-				CinematicVFX.PlayRareRevealBanner(params.playerGui, {
-					rarity = rarity,
-					biomeId = biomeId,
-					speciesId = params.speciesId,
-					mutation = params.mutation,
-					sizeRatio = params.sizeRatio,
-					weightKg = params.weightKg,
-					oddsDenom = params.oddsDenom,
-				})
-			end
 		elseif tier >= 7 then
 			-- Cosmic .. Divine
 			spawnSkyPillar(detOrigin, 38, 1.15 * sc, rarityCol, theme.primary, 0.85, false)
@@ -953,18 +942,6 @@ function CinematicVFX.PlayCrateHatchSequence(params: HatchSequenceParams)
 			spawnShockRing(detOrigin + Vector3.new(0, 2.4 * sc, 0), 1.5 * sc, 11 * sc, 0.20, raritySec, 0.40)
 			spawnCometOrbs(detOrigin + Vector3.new(0, 1.5 * sc, 0), 10, rarityCol, theme.primary, sc, 0.70)
 			spawnParticleBurst(detOrigin + Vector3.new(0, 1.5 * sc, 0), rarityCol, theme.primary, 52, 14, 28, 1.05 * sc, 0.9, -20)
-
-			if params.isLocalOpener and not params.lowVFX and params.playerGui then
-				CinematicVFX.PlayRareRevealBanner(params.playerGui, {
-					rarity = rarity,
-					biomeId = biomeId,
-					speciesId = params.speciesId,
-					mutation = params.mutation,
-					sizeRatio = params.sizeRatio,
-					weightKg = params.weightKg,
-					oddsDenom = params.oddsDenom,
-				})
-			end
 		elseif tier >= 4 then
 			-- Epic .. Mythic
 			spawnCrystalMonoliths(detOrigin, 8, 3.2 * sc, 3.2 * sc, 3.2 * sc, theme, rarityCol, raritySec, 0.72)
@@ -977,7 +954,8 @@ function CinematicVFX.PlayCrateHatchSequence(params: HatchSequenceParams)
 			spawnParticleBurst(detOrigin + Vector3.new(0, 1.2 * sc, 0), rarityCol, Color3.new(1, 1, 1), 24, 10, 20, 0.85 * sc, 0.75, -18)
 		end
 
-		-- PHASE 3: Hatched Pet Erupts & Swoops Toward Opener
+		-- PHASE 3: Hatched Pet Erupts & Either Plays 3D Close-Up Cutscene (Legendary+) OR Fast Pen Swoop
+		local doCameraCutscene = (params.isLocalOpener == true) and (params.hatchCutsceneEnabled ~= false) and (tier >= 5) and (params.playerGui ~= nil)
 		local vpMod = VoxelPets.GetSpeciesModule(params.speciesId)
 		local bossMult = if vpMod and vpMod.Archetype == "CataclysmColossus" then 1.35 else 1.0
 		local petScale = math.clamp((tonumber(params.sizeRatio) or 1.0) * 0.92 * bossMult, 0.85, 2.25)
@@ -986,19 +964,190 @@ function CinematicVFX.PlayCrateHatchSequence(params: HatchSequenceParams)
 		local originPos = (baseCF * CFrame.new(0, 1.8 * sc, 0)).Position
 		animPet:PivotTo(CFrame.new(originPos))
 		animPet.Parent = getVFXFolder()
-		Debris:AddItem(animPet, 3.5)
+		Debris:AddItem(animPet, if doCameraCutscene then 6.5 else 3.5)
+
+		local inc = AnimalConfig.ComputeIncomePerSec({
+			uid = "",
+			speciesId = params.speciesId,
+			sizeRatio = tonumber(params.sizeRatio) or 1.0,
+			weightKg = tonumber(params.weightKg) or 5.0,
+			mutation = (params.mutation or "None") :: any,
+			locked = false,
+			acquiredAt = 0,
+		})
+
+		if doCameraCutscene and params.playerGui then
+			local gui = params.playerGui :: PlayerGui
+			local oldCut = gui:FindFirstChild("RareHatchCinematicGui")
+			if oldCut then oldCut:Destroy() end
+
+			local cutGui = Instance.new("ScreenGui")
+			cutGui.Name = "RareHatchCinematicGui"
+			cutGui.DisplayOrder = 950
+			cutGui.IgnoreGuiInset = true
+			cutGui.ResetOnSpawn = false
+			cutGui.Parent = gui
+
+			local skipBtn = Instance.new("TextButton")
+			skipBtn.Size = UDim2.fromScale(1, 1)
+			skipBtn.BackgroundTransparency = 1
+			skipBtn.Text = ""
+			skipBtn.ZIndex = 10
+			skipBtn.Parent = cutGui
+
+			local blackFlash = Instance.new("Frame")
+			blackFlash.Name = "BlackFlash"
+			blackFlash.Size = UDim2.fromScale(1, 1)
+			blackFlash.BackgroundColor3 = Color3.new(0, 0, 0)
+			blackFlash.BackgroundTransparency = 0
+			blackFlash.BorderSizePixel = 0
+			blackFlash.ZIndex = 9
+			blackFlash.Parent = cutGui
+
+			local topBar = Instance.new("Frame")
+			topBar.Size = UDim2.new(1, 0, 0.13, 0)
+			topBar.Position = UDim2.fromScale(0, -0.14)
+			topBar.BackgroundColor3 = Color3.fromRGB(4, 5, 8)
+			topBar.BorderSizePixel = 0
+			topBar.ZIndex = 4
+			topBar.Parent = cutGui
+
+			local botBar = Instance.new("Frame")
+			botBar.Size = UDim2.new(1, 0, 0.16, 0)
+			botBar.Position = UDim2.fromScale(0, 1.01)
+			botBar.BackgroundColor3 = Color3.fromRGB(4, 5, 8)
+			botBar.BorderSizePixel = 0
+			botBar.ZIndex = 4
+			botBar.Parent = cutGui
+
+			local skipHint = Instance.new("TextLabel")
+			skipHint.AnchorPoint = Vector2.new(0.5, 0.5)
+			skipHint.Position = UDim2.fromScale(0.5, 0.52)
+			skipHint.Size = UDim2.new(0.6, 0, 0, 20)
+			skipHint.BackgroundTransparency = 1
+			skipHint.Font = Enum.Font.GothamBold
+			skipHint.TextSize = 13
+			skipHint.TextColor3 = Color3.fromRGB(165, 175, 195)
+			skipHint.Text = "Tap anywhere to continue"
+			skipHint.ZIndex = 6
+			skipHint.Parent = botBar
+
+			local rarityLbl = Instance.new("TextLabel")
+			rarityLbl.AnchorPoint = Vector2.new(0.5, 0.5)
+			rarityLbl.Position = UDim2.fromScale(0.5, 0.72)
+			rarityLbl.Size = UDim2.new(0.85, 0, 0, 28)
+			rarityLbl.BackgroundTransparency = 1
+			rarityLbl.Font = Enum.Font.FredokaOne
+			rarityLbl.TextScaled = true
+			rarityLbl.Text = string.format("✦ %s  •  1 IN %s ✦", string.upper(rarity), FormatUtil.Number(params.oddsDenom or 1))
+			rarityLbl.ZIndex = 6
+			rarityLbl.Parent = cutGui
+			local rSt = Instance.new("UIStroke")
+			rSt.Thickness = 2.8
+			rSt.Color = Color3.fromRGB(6, 8, 12)
+			rSt.Parent = rarityLbl
+			RarityEffects.ApplyTextEffect(rarityLbl, rarity)
+
+			local mut = tostring(params.mutation or "None")
+			local speciesName = if spec then spec.name else params.speciesId
+			local nameLbl = Instance.new("TextLabel")
+			nameLbl.AnchorPoint = Vector2.new(0.5, 0.5)
+			nameLbl.Position = UDim2.fromScale(0.5, 0.775)
+			nameLbl.Size = UDim2.new(0.9, 0, 0, 44)
+			nameLbl.BackgroundTransparency = 1
+			nameLbl.Font = Enum.Font.FredokaOne
+			nameLbl.TextScaled = true
+			nameLbl.TextColor3 = Color3.new(1, 1, 1)
+			nameLbl.Text = (if mut ~= "None" then ("[" .. string.upper(mut) .. "] ") else "") .. speciesName
+			nameLbl.ZIndex = 6
+			nameLbl.Parent = cutGui
+			local nSt = Instance.new("UIStroke")
+			nSt.Thickness = 3.2
+			nSt.Color = Color3.fromRGB(6, 8, 12)
+			nSt.Parent = nameLbl
+
+			local statsLbl = Instance.new("TextLabel")
+			statsLbl.AnchorPoint = Vector2.new(0.5, 0.5)
+			statsLbl.Position = UDim2.fromScale(0.5, 0.822)
+			statsLbl.Size = UDim2.new(0.8, 0, 0, 22)
+			statsLbl.BackgroundTransparency = 1
+			statsLbl.Font = Enum.Font.GothamBold
+			statsLbl.TextScaled = true
+			statsLbl.TextColor3 = Color3.fromRGB(108, 255, 142)
+			statsLbl.Text = string.format("+$%s/s   •   %.2fx Size   •   %.1f KG", FormatUtil.Number(inc), tonumber(params.sizeRatio) or 1, tonumber(params.weightKg) or 5)
+			statsLbl.ZIndex = 6
+			statsLbl.Parent = cutGui
+			local sSt = Instance.new("UIStroke")
+			sSt.Thickness = 2.2
+			sSt.Color = Color3.fromRGB(6, 8, 12)
+			sSt.Parent = statsLbl
+
+			TweenService:Create(topBar, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = UDim2.fromScale(0, 0) }):Play()
+			TweenService:Create(botBar, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = UDim2.fromScale(0, 0.84) }):Play()
+			task.delay(0.09, function()
+				if blackFlash.Parent then
+					TweenService:Create(blackFlash, TweenInfo.new(0.24, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = 1 }):Play()
+				end
+			end)
+
+			local skipped = false
+			skipBtn.MouseButton1Click:Connect(function()
+				skipped = true
+			end)
+
+			local cam = Workspace.CurrentCamera
+			local origCamType = if cam then cam.CameraType else Enum.CameraType.Custom
+			local origFOV = if cam then cam.FieldOfView else 70
+
+			local heroPos = baseCF.Position + Vector3.new(0, 1.15, 0)
+			local baseRot = baseCF - baseCF.Position
+			animPet:PivotTo(CFrame.new(heroPos) * baseRot)
+			local _, petBoxSz = animPet:GetBoundingBox()
+			local maxDim = math.clamp(math.max(petBoxSz.X, petBoxSz.Y, petBoxSz.Z), 3.0, 14.0)
+			local isVoxelCut = (animPet:GetAttribute("VoxelRig") == true)
+
+			if cam then
+				cam.CameraType = Enum.CameraType.Scriptable
+			end
+
+			local cutDur = if tier >= 11 then 2.85 else 2.45
+			local cutT0 = os.clock()
+			while not skipped and os.clock() - cutT0 < cutDur and animPet.Parent and cutGui.Parent do
+				local el = os.clock() - cutT0
+				local a = math.clamp(el / cutDur, 0, 1)
+				local easeA = 1 - math.pow(1 - a, 2.2)
+				local yawAngle = -0.32 + easeA * 0.60
+				local orbitDir = (baseRot * CFrame.Angles(0, yawAngle, 0)).LookVector
+				local dist = maxDim * 1.65 + 2.8
+				local camPos = heroPos - orbitDir * dist + Vector3.new(0, maxDim * 0.38, 0)
+				local lookTarget = heroPos + Vector3.new(0, maxDim * 0.22, 0)
+				animPet:PivotTo(CFrame.new(heroPos + Vector3.new(0, math.sin(el * 2.8) * 0.14, 0)) * baseRot)
+				if isVoxelCut then
+					VoxelPets.StepRig(animPet, "Idle", el, 0)
+				end
+				if cam then
+					cam.CFrame = CFrame.lookAt(camPos, lookTarget)
+					cam.FieldOfView = 56 - easeA * 11
+				end
+				RunService.RenderStepped:Wait()
+			end
+
+			if cam then
+				cam.CameraType = origCamType
+				cam.FieldOfView = origFOV
+			end
+			if cutGui.Parent then
+				cutGui:Destroy()
+			end
+			if animPet.Parent then
+				animPet:Destroy()
+			end
+			finishCallback()
+			return
+		end
 
 		local pRoot = animPet.PrimaryPart
 		if pRoot then
-			local inc = AnimalConfig.ComputeIncomePerSec({
-				uid = "",
-				speciesId = params.speciesId,
-				sizeRatio = tonumber(params.sizeRatio) or 1.0,
-				weightKg = tonumber(params.weightKg) or 5.0,
-				mutation = (params.mutation or "None") :: any,
-				locked = false,
-				acquiredAt = 0,
-			})
 			local _, boxSz = animPet:GetBoundingBox()
 			local bb = Instance.new("BillboardGui")
 			bb.Size = UDim2.fromOffset(200, 62)
