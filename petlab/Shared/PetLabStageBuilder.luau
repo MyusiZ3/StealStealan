@@ -7,12 +7,14 @@ local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
+local Types = require(ReplicatedStorage.Shared.Types)
 local AnimalConfig = require(ReplicatedStorage.Config.AnimalConfig)
 local BiomeConfig = require(ReplicatedStorage.Config.BiomeConfig)
 local GameConfig = require(ReplicatedStorage.Config.GameConfig)
 local FormatUtil = require(ReplicatedStorage.Modules.FormatUtil)
 local VoxelPets = require(ReplicatedStorage.Modules.VoxelPets)
 local AnimalVisualBuilder = require(ReplicatedStorage.Modules.AnimalVisualBuilder)
+local VoxelCrateBuilder = require(ReplicatedStorage.Modules.VoxelCrateBuilder)
 
 local PetLabStageBuilder = {}
 
@@ -21,7 +23,8 @@ PetLabStageBuilder.SHOWROOM_FLOOR_Y = 0.04
 PetLabStageBuilder.BIOME_SPAWN_POS = Vector3.new(0, 0.05, 24)
 PetLabStageBuilder.STAGING_CENTER_X = 128
 PetLabStageBuilder.STAGING_SPAWN_POS = Vector3.new(128, 0.05, 14)
-PetLabStageBuilder.SPAWN_POS = PetLabStageBuilder.STAGING_SPAWN_POS
+PetLabStageBuilder.TURNTABLESPAWN_POS = Vector3.new(0, 0.05, 26)
+PetLabStageBuilder.SPAWN_POS = PetLabStageBuilder.TURNTABLESPAWN_POS
 PetLabStageBuilder.TURNTABLE_POS = Vector3.new(0, 0.80, 42)
 PetLabStageBuilder.LINEUP_Z = 4
 
@@ -134,7 +137,7 @@ local function buildScaleReference(parent: Instance, origin: Vector3?)
 	ref.Parent = parent
 
 	local base = origin or Vector3.new(0, 0, 0)
-	local dummyX = base.X + 5.6
+	local dummyX = base.X + 8.0
 	local dummyZ = base.Z
 	local skin = Color3.fromRGB(206, 214, 226)
 	local torsoCol = Color3.fromRGB(78, 134, 212)
@@ -200,17 +203,17 @@ local function buildScaleReference(parent: Instance, origin: Vector3?)
 	tl.Text = "Player Ref (5 st)"
 	tl.Parent = tag
 
-	-- Height Ruler (1..8 studs) next to the dummy
+	-- Height Ruler (1..12 studs) next to the dummy
 	local rulerX = dummyX + 1.85
 	makePart({
 		name = "RulerPost",
-		size = Vector3.new(0.14, 8.2, 0.14),
-		cframe = CFrame.new(rulerX, 4.1, dummyZ),
+		size = Vector3.new(0.14, 12.2, 0.14),
+		cframe = CFrame.new(rulerX, 6.1, dummyZ),
 		color = Color3.fromRGB(96, 108, 128),
 		canCollide = false,
 		parent = ref,
 	})
-	for h = 1, 8 do
+	for h = 1, 12 do
 		local tick = makePart({
 			name = "RulerTick_" .. h,
 			size = Vector3.new(0.45, 0.08, 0.16),
@@ -224,7 +227,7 @@ local function buildScaleReference(parent: Instance, origin: Vector3?)
 			bb.Name = "RulerLbl_" .. h
 			bb.Size = UDim2.fromOffset(64, 24)
 			bb.StudsOffset = Vector3.new(0.75, 0, 0)
-			bb.MaxDistance = 70
+			bb.MaxDistance = 90
 			bb.Parent = tick
 			local lbl = Instance.new("TextLabel")
 			lbl.Size = UDim2.fromScale(1, 1)
@@ -379,10 +382,14 @@ local function buildRarityRow(
 	end
 
 	local segWidths: { number } = {}
+	local segSlotSpacings: { number } = {}
 	local totalWidth = 0
 	for i, seg in ipairs(segments) do
-		local w = math.max(0, #seg.items - 1) * rowOpts.slotSpacing + rowOpts.sidePad * 2
+		local slotSp = if seg.tier >= 15 then math.max(rowOpts.slotSpacing, 14.5) else rowOpts.slotSpacing
+		local sidePad = if seg.tier >= 15 then math.max(rowOpts.sidePad, 8.2) else rowOpts.sidePad
+		local w = math.max(0, #seg.items - 1) * slotSp + sidePad * 2
 		segWidths[i] = w
+		segSlotSpacings[i] = slotSp
 		totalWidth += w
 		if i > 1 then
 			totalWidth += rowOpts.segGap
@@ -461,9 +468,10 @@ local function buildRarityRow(
 		signLbl.Text = string.format("%s (%d)", string.upper(seg.rarity), #seg.items)
 		signLbl.Parent = signBg
 
-		local firstSlotX = segCenterX - ((#seg.items - 1) * rowOpts.slotSpacing) * 0.5
+		local segSlotSpacing = segSlotSpacings[i]
+		local firstSlotX = segCenterX - ((#seg.items - 1) * segSlotSpacing) * 0.5
 		for k, spec in ipairs(seg.items) do
-			local pedX = firstSlotX + (k - 1) * rowOpts.slotSpacing
+			local pedX = firstSlotX + (k - 1) * segSlotSpacing
 			local isVoxel = VoxelPets.IsVoxelRigSpecies(spec.id)
 
 			local ped = Instance.new("Model")
@@ -500,10 +508,22 @@ local function buildRarityRow(
 			end
 			prompt.Parent = strip
 
-			local petScale = if isVoxel then 1.30 else 1.00
-			local galleryPet = if isVoxel
-				then VoxelPets.Build(spec.id, petScale, "None", false)
-				else AnimalVisualBuilder.BuildAnimalModel(spec.id, petScale, "None", true)
+			local mod = VoxelPets.GetSpeciesModule(spec.id)
+			local petScale = if isVoxel then (if mod and mod.DefaultScale then mod.DefaultScale else 1.30) else 1.00
+			local galleryPet: Model
+			if isVoxel then
+				local customVfx = if spec.id == "VharazhulCataclysm"
+					then ReplicatedStorage:FindFirstChild("CustomVFXShowcase_VharazhulCataclysm")
+					else nil
+				if customVfx and customVfx:IsA("Model") then
+					galleryPet = customVfx:Clone()
+					galleryPet.Name = "Animal_VharazhulCataclysm"
+				else
+					galleryPet = VoxelPets.Build(spec.id, petScale, "None", false)
+				end
+			else
+				galleryPet = AnimalVisualBuilder.BuildAnimalModel(spec.id, petScale, "None", true)
+			end
 			galleryPet:PivotTo(
 				CFrame.lookAt(
 					Vector3.new(pedX, daisTopY, rowOpts.rowZ),
@@ -513,10 +533,12 @@ local function buildRarityRow(
 			galleryPet:SetAttribute("PetLabGallery", true)
 			galleryPet.Parent = ped
 
+			local _, boxSz = galleryPet:GetBoundingBox()
+			local tagH = if isVoxel then math.max(6.5, boxSz.Y + 1.0) else 4.6
 			local tagAnchor = makePart({
 				name = "TagAnchor",
 				size = Vector3.new(0.1, 0.1, 0.1),
-				cframe = CFrame.new(pedX, daisTopY + (if isVoxel then 6.5 else 4.6), rowOpts.rowZ),
+				cframe = CFrame.new(pedX, daisTopY + tagH, rowOpts.rowZ),
 				color = rarityCol,
 				canCollide = false,
 				transparency = 1,
@@ -577,12 +599,206 @@ local function buildRarityRow(
 	end
 end
 
+local function hasUserVfxDescendants(container: Instance): boolean
+	for _, desc in ipairs(container:GetDescendants()) do
+		if
+			desc:IsA("ParticleEmitter")
+			or desc:IsA("Beam")
+			or desc:IsA("Trail")
+			or desc:IsA("Sparkles")
+			or desc:IsA("Fire")
+			or desc:IsA("Smoke")
+			or desc:IsA("Highlight")
+		then
+			return true
+		end
+	end
+	return false
+end
+
+local function buildVoxelCrateShowcase(opts: {
+	name: string,
+	pos: Vector3,
+	lookDirZ: number,
+	crateScale: number,
+	daisHeight: number,
+	useCylinder: boolean,
+	rarity: Types.AnimalRarity?,
+	biomeId: string?,
+	title: string,
+	subtitle: string,
+	parent: Instance,
+}): Model
+	local showcase = Instance.new("Model")
+	showcase.Name = opts.name
+	showcase.Parent = opts.parent
+
+	local topY = opts.pos.Y + opts.daisHeight
+	local crateRarity: Types.AnimalRarity = opts.rarity or "Primordial"
+	local crateBiome = opts.biomeId or "VolcanicJungle"
+	local accent = GameConfig.RARITY_COLORS[crateRarity] or Color3.fromRGB(255, 34, 78)
+
+	if opts.useCylinder then
+		makePart({
+			name = "CratePlinthBase",
+			size = Vector3.new(0.36, 8.6, 8.6),
+			cframe = CFrame.new(opts.pos.X, opts.pos.Y + 0.18, opts.pos.Z) * CFrame.Angles(0, 0, math.rad(90)),
+			color = Color3.fromRGB(24, 20, 28),
+			shape = Enum.PartType.Cylinder,
+			parent = showcase,
+		})
+		makePart({
+			name = "CratePlinthDeck",
+			size = Vector3.new(math.max(0.2, opts.daisHeight - 0.36), 7.8, 7.8),
+			cframe = CFrame.new(opts.pos.X, opts.pos.Y + 0.36 + (opts.daisHeight - 0.36) * 0.5, opts.pos.Z)
+				* CFrame.Angles(0, 0, math.rad(90)),
+			color = Color3.fromRGB(36, 30, 44),
+			shape = Enum.PartType.Cylinder,
+			parent = showcase,
+		})
+		local ring = makePart({
+			name = "CratePlinthRing",
+			size = Vector3.new(0.10, 8.05, 8.05),
+			cframe = CFrame.new(opts.pos.X, topY - 0.05, opts.pos.Z) * CFrame.Angles(0, 0, math.rad(90)),
+			color = accent,
+			material = Enum.Material.Neon,
+			shape = Enum.PartType.Cylinder,
+			canCollide = false,
+			parent = showcase,
+		})
+		ring.CastShadow = false
+	else
+		makePart({
+			name = "CratePlinthDais",
+			size = Vector3.new(8.2, opts.daisHeight, 8.8),
+			cframe = CFrame.new(opts.pos.X, opts.pos.Y + opts.daisHeight * 0.5, opts.pos.Z),
+			color = Color3.fromRGB(24, 20, 28),
+			canCollide = true,
+			parent = showcase,
+		})
+		local trim = makePart({
+			name = "CratePlinthTrim",
+			size = Vector3.new(8.2, 0.09, 0.18),
+			cframe = CFrame.new(opts.pos.X, topY - 0.045, opts.pos.Z + 4.46),
+			color = accent,
+			material = Enum.Material.Neon,
+			canCollide = false,
+			parent = showcase,
+		})
+		trim.CastShadow = false
+	end
+
+	local crateModel = AnimalVisualBuilder.BuildCrateModel(crateRarity, crateBiome, opts.crateScale, {
+		isBuried = false,
+		canCollide = true,
+		showBeacon = false,
+	})
+	crateModel.Name = opts.name .. "_Model"
+	crateModel:PivotTo(
+		CFrame.lookAt(
+			Vector3.new(opts.pos.X, topY, opts.pos.Z),
+			Vector3.new(opts.pos.X, topY, opts.pos.Z + opts.lookDirZ * 10)
+		)
+	)
+	crateModel:SetAttribute("PetLabCrateShowcase", true)
+	crateModel:SetAttribute("ShowcaseRarity", crateRarity)
+	crateModel:SetAttribute("ShowcaseBiome", crateBiome)
+	crateModel.Parent = showcase
+
+	if crateModel.PrimaryPart then
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.Name = "InspectCrateShowcasePrompt"
+		prompt.KeyboardKeyCode = Enum.KeyCode.E
+		prompt.HoldDuration = 0
+		prompt.MaxActivationDistance = 12
+		prompt.RequiresLineOfSight = false
+		prompt.ActionText = "Inspect Crate on Turntable"
+		prompt.ObjectText = crateModel:GetAttribute("CrateTitle") or (crateRarity .. " Crate")
+		prompt.Parent = crateModel.PrimaryPart
+	end
+
+	local _, crateSz = crateModel:GetBoundingBox()
+	local tagAnchor = makePart({
+		name = "TagAnchor",
+		size = Vector3.new(0.1, 0.1, 0.1),
+		cframe = CFrame.new(opts.pos.X, topY + math.max(6.8, crateSz.Y + 1.25), opts.pos.Z),
+		color = accent,
+		canCollide = false,
+		transparency = 1,
+		parent = showcase,
+	})
+	tagAnchor.CastShadow = false
+
+	local bb = Instance.new("BillboardGui")
+	bb.Name = "CrateShowcaseTag"
+	bb.Size = UDim2.new(7.4, 0, 1.95, 0)
+	bb.StudsOffset = Vector3.zero
+	bb.MaxDistance = 72
+	bb.Parent = tagAnchor
+
+	local card = Instance.new("Frame")
+	card.Size = UDim2.fromScale(1, 1)
+	card.BackgroundColor3 = Color3.fromRGB(22, 14, 20)
+	card.BackgroundTransparency = 0.2
+	card.BorderSizePixel = 0
+	card.Parent = bb
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0.22, 0)
+	corner.Parent = card
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = accent
+	stroke.Thickness = 2.2
+	stroke.Parent = card
+
+	local nameLbl = Instance.new("TextLabel")
+	nameLbl.Size = UDim2.new(0.94, 0, 0.50, 0)
+	nameLbl.Position = UDim2.new(0.03, 0, 0.04, 0)
+	nameLbl.BackgroundTransparency = 1
+	nameLbl.Font = Enum.Font.FredokaOne
+	nameLbl.TextScaled = true
+	nameLbl.TextColor3 = Color3.new(1, 1, 1)
+	nameLbl.TextStrokeTransparency = 0.2
+	nameLbl.Text = opts.title
+	nameLbl.Parent = card
+
+	local subLbl = Instance.new("TextLabel")
+	subLbl.Size = UDim2.new(0.94, 0, 0.40, 0)
+	subLbl.Position = UDim2.new(0.03, 0, 0.54, 0)
+	subLbl.BackgroundTransparency = 1
+	subLbl.Font = Enum.Font.GothamBold
+	subLbl.TextScaled = true
+	subLbl.TextColor3 = Color3.fromRGB(255, 168, 74)
+	subLbl.TextStrokeTransparency = 0.2
+	subLbl.Text = opts.subtitle
+	subLbl.Parent = card
+
+	return showcase
+end
+
 function PetLabStageBuilder.BuildStage(): Folder
 	configureNeutralLighting()
 	VoxelPets.EnsureMeshTemplatesLoaded()
 
+	local oldCustomShowcase = ReplicatedStorage:FindFirstChild("CustomVFXShowcase_VharazhulCataclysm")
+	if oldCustomShowcase then
+		oldCustomShowcase:Destroy()
+	end
+
 	local old = Workspace:FindFirstChild("PetLabStage")
 	if old then
+		local oldTt = old:FindFirstChild("CenterTurntable")
+		local oldTtShowcase = if oldTt then oldTt:FindFirstChild("VFXStudioShowcase_Turntable") else nil
+		local oldGallery = old:FindFirstChild("LineupGallery")
+		local oldSlot = if oldGallery then oldGallery:FindFirstChild("GallerySlot_VharazhulCataclysm") else nil
+		local oldGalleryPet = if oldSlot then oldSlot:FindFirstChild("Animal_VharazhulCataclysm") else nil
+		for _, candidate in ipairs({ oldTtShowcase, oldGalleryPet }) do
+			if candidate and candidate:IsA("Model") and hasUserVfxDescendants(candidate) then
+				local preserved = candidate:Clone()
+				preserved.Name = "CustomVFXShowcase_VharazhulCataclysm"
+				preserved.Parent = ReplicatedStorage
+				break
+			end
+		end
 		old:Destroy()
 	end
 
@@ -634,7 +850,7 @@ function PetLabStageBuilder.BuildStage(): Folder
 
 	makePart({
 		name = "TurntableBase",
-		size = Vector3.new(0.4, 11.2, 11.2),
+		size = Vector3.new(0.4, 14.4, 14.4),
 		cframe = CFrame.new(ttX, 0.2, ttZ) * CFrame.Angles(0, 0, math.rad(90)),
 		color = Color3.fromRGB(58, 66, 82),
 		shape = Enum.PartType.Cylinder,
@@ -642,7 +858,7 @@ function PetLabStageBuilder.BuildStage(): Folder
 	})
 	makePart({
 		name = "TurntableDeck",
-		size = Vector3.new(0.4, 9.6, 9.6),
+		size = Vector3.new(0.4, 12.6, 12.6),
 		cframe = CFrame.new(ttX, 0.6, ttZ) * CFrame.Angles(0, 0, math.rad(90)),
 		color = Color3.fromRGB(214, 222, 234),
 		shape = Enum.PartType.Cylinder,
@@ -650,16 +866,40 @@ function PetLabStageBuilder.BuildStage(): Folder
 	})
 	makePart({
 		name = "TurntableRing",
-		size = Vector3.new(0.1, 9.9, 9.9),
+		size = Vector3.new(0.1, 12.9, 12.9),
 		cframe = CFrame.new(ttX, 0.76, ttZ) * CFrame.Angles(0, 0, math.rad(90)),
-		color = Color3.fromRGB(68, 178, 255),
+		color = Color3.fromRGB(188, 24, 34),
 		shape = Enum.PartType.Cylinder,
 		canCollide = false,
 		parent = turntable,
 	})
 
-	-- 3. 5-Stud Scale Dummy + Height Ruler next to the turntable
+	-- Edit-mode showcase for VharazhulCataclysm on the Center Turntable (clean rig for manual VFX)
+	local showcaseBoss = VoxelPets.Build("VharazhulCataclysm", 1.50, "None", false)
+	showcaseBoss.Name = "VFXStudioShowcase_Turntable"
+	showcaseBoss:PivotTo(
+		CFrame.lookAt(
+			Vector3.new(ttX, PetLabStageBuilder.STAGE_TOP_Y, ttZ),
+			Vector3.new(ttX, PetLabStageBuilder.STAGE_TOP_Y, ttZ - 10)
+		)
+	)
+	showcaseBoss.Parent = turntable
+
+	-- 3. 5-Stud Scale Dummy + Height Ruler next to the turntable + Hero Primordial Voxel Crate Showcase
 	buildScaleReference(stage, Vector3.new(ttX, 0, ttZ))
+	buildVoxelCrateShowcase({
+		name = "Showcase_PrimordialCrate",
+		pos = Vector3.new(ttX - 9.8, 0, ttZ),
+		lookDirZ = -1,
+		crateScale = 1.25,
+		daisHeight = PetLabStageBuilder.STAGE_TOP_Y,
+		useCylinder = true,
+		rarity = "Primordial",
+		biomeId = "VolcanicJungle",
+		title = "PRIMORDIAL VOXEL BOX",
+		subtitle = "[PRIMORDIAL CRATE • VOXEL 3D]  [E] Inspect",
+		parent = stage,
+	})
 
 	-- 4. Dark Checkerboard Showroom Floor (8-stud tiles covering X = -64..64, Z = -168..32) & Back Wall
 	local checkerFolder = Instance.new("Folder")
@@ -803,6 +1043,16 @@ function PetLabStageBuilder.BuildStage(): Folder
 		local prefab = VoxelPets.Build(id, 1.30, "None", false)
 		prefab.Parent = prefabs
 	end
+	local crateRarities = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Cosmic", "Divine", "Astral", "Singularity", "Primordial" }
+	for _, cr in ipairs(crateRarities) do
+		local cp = AnimalVisualBuilder.BuildCrateModel(cr :: any, "PineWoods", 1.0, {
+			isBuried = false,
+			canCollide = false,
+			showBeacon = false,
+		})
+		cp.Name = cr .. "VoxelCrate"
+		cp.Parent = prefabs
+	end
 
 	for _, zone in ipairs(PetLabStageBuilder.BIOME_ZONES) do
 		local biomeDef = BIOME_DEF_BY_ID[zone.id]
@@ -847,14 +1097,42 @@ function PetLabStageBuilder.BuildStage(): Folder
 
 		buildRarityRow(zone, apexSegments, {
 			rowZ = zone.courtZ - 8.0,
-			slotSpacing = 8.2,
-			sidePad = 3.6,
-			segGap = 2.4,
-			daisDepth = 8.2,
+			slotSpacing = 8.4,
+			sidePad = 3.8,
+			segGap = 2.2,
+			daisDepth = 8.8,
 			computeDaisHeight = function(tier: number): number
-				return 0.42 + (tier - 7) * 0.04
+				return if tier >= 15 then 0.92 else 0.42 + (tier - 7) * 0.04
 			end,
 		}, gallery, zoneModel)
+
+		-- Showcase the Biome Max Crate in each biome zone
+		local biomeMaxRarity = maxRarity
+		local segApex = zoneModel:FindFirstChild("Segment_" .. biomeMaxRarity) or zoneModel:FindFirstChild("Segment_Primordial")
+		local segDais = if segApex then segApex:FindFirstChild("SegmentDais") else nil
+		local crateX = if segDais and segDais:IsA("BasePart")
+			then segDais.Position.X + segDais.Size.X * 0.5 + 5.8
+			else 26.0
+		local crateZ = if segDais and segDais:IsA("BasePart")
+			then segDais.Position.Z
+			else (zone.courtZ - 8.0)
+
+		local title = string.upper(VoxelCrateBuilder.GetTitle(biomeMaxRarity))
+		local subtitle = string.format("[%s MAX • %s • VOXEL 3D]", string.upper(zone.id), string.upper(biomeMaxRarity))
+
+		buildVoxelCrateShowcase({
+			name = "Showcase_BiomeCrate_" .. zone.id,
+			pos = Vector3.new(crateX, PetLabStageBuilder.SHOWROOM_FLOOR_Y, crateZ),
+			lookDirZ = 1,
+			crateScale = if biomeMaxRarity == "Primordial" then 1.35 else 1.25,
+			daisHeight = if biomeMaxRarity == "Primordial" then 0.92 else 0.70,
+			useCylinder = false,
+			rarity = biomeMaxRarity,
+			biomeId = zone.id,
+			title = title,
+			subtitle = subtitle,
+			parent = zoneModel,
+		})
 	end
 
 	-- 6. Dedicated Candidate Staging Wing (East Court @ X = 128): Voxel Front Row vs Lightweight Realistic Back Row

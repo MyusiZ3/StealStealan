@@ -57,7 +57,7 @@
           "CanCollide": false,
           "Neutral": true,
           "Duration": 0,
-          "Position": [128, 0.05, 14],
+          "Position": [0, 0.05, 26],
           "Size": [6, 0.1, 6],
           "Transparency": 1,
           "Color": [0.16, 0.20, 0.27],

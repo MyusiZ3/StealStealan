@@ -36,12 +36,13 @@ type CameraPreset = "Lineup" | "Orbit34" | "Head" | "Side" | "Top" | "Player"
 
 local speciesList = VoxelPets.GetSpeciesIds()
 local stagingPairs = VoxelPets.GetStagingPairs()
-local selectedSpecies = (if stagingPairs[1] and stagingPairs[1].voxelId then stagingPairs[1].voxelId else speciesList[1]) or "AbyssTideLeviathan"
-local selectedScale = 1.35
+local selectedSpecies = "VharazhulCataclysm"
+local selectedScale = 1.50
 local selectedMutation: Types.AnimalMutation = "None"
 local selectedMode: InspectorMode = "Idle"
 local previewCrateMode = false
-local selectedCrateRarity: Types.AnimalRarity = "Astral"
+local selectedCrateRarity: Types.AnimalRarity = "Primordial"
+local selectedCrateBiome: string = "VolcanicJungle"
 
 local spinSpeedIndex = 1
 local SPIN_LABELS = { "Spin: OFF", "Spin: Slow", "Spin: Fast" }
@@ -50,7 +51,8 @@ local SPIN_RATES = { 0, 0.45, 1.35 }
 local showPivots = false
 local showScaleDummy = true
 local showPlaceholders = true
-local focusedBiomeOrder = 0
+local showAuraVFX = true
+local focusedBiomeOrder = 5
 local uiVisible = true
 local isSprinting = false
 local cameraPreset: CameraPreset = "Player"
@@ -66,13 +68,44 @@ local rainbowParts: { BasePart } = {}
 local pivotMarkers: { { motor: Motor6D, dot: Part } } = {}
 local pivotFolder: Folder? = nil
 
+type DragState = {
+	target: Frame,
+	startMouse: Vector2,
+	startPos: Vector2,
+}
+
+type FloatingWindow = {
+	id: string,
+	root: Frame,
+	headerBar: Frame,
+	body: Frame,
+	collapseBtn: TextButton,
+	closeBtn: TextButton,
+	isCollapsed: () -> boolean,
+	setCollapsed: (collapsed: boolean) -> (),
+	isHidden: () -> boolean,
+	setVisible: (visible: boolean) -> (),
+	setBodyHeight: (height: number) -> (),
+	clamp: () -> (),
+	syncGlobalVisibility: () -> (),
+}
+
+local activeDrag: DragState? = nil
+local userMovedWindow: { [GuiObject]: boolean } = {}
+local zCounter = 10
+
 -- UI References
+local gui: ScreenGui
 local diagBanner: TextLabel
 local diagFrame: Frame
 local biomeBar: Frame
-local leftPanel: Frame
-local bottomBar: Frame
-local hudToggleBtn: TextButton
+local camRow: Frame
+local launcherBar: Frame
+local hideAllBtn: TextButton
+local launcherChips: { [string]: TextButton } = {}
+local leftWin: FloatingWindow
+local topWin: FloatingWindow
+local ctrlWin: FloatingWindow
 local biomeButtons: { [number]: TextButton } = {}
 local speciesButtons: { [string]: TextButton } = {}
 local scaleButtons: { [number]: TextButton } = {}
@@ -84,6 +117,7 @@ local spinBtn: TextButton
 local pivotsBtn: TextButton
 local dummyBtn: TextButton
 local placeholdersBtn: TextButton
+local auraBtn: TextButton
 
 local function styleBtn(btn: TextButton, active: boolean, activeCol: Color3?)
 	btn.BackgroundColor3 = if active then (activeCol or Color3.fromRGB(48, 138, 232)) else Color3.fromRGB(36, 42, 54)
@@ -119,6 +153,227 @@ local function makeButton(parent: Instance, text: string, size: UDim2, pos: UDim
 	stroke.Thickness = 1
 	stroke.Parent = b
 	return b
+end
+
+local HEADER_H = 26
+
+local function getCanvasSize(): Vector2
+	if gui and gui.AbsoluteSize.X > 100 and gui.AbsoluteSize.Y > 100 then
+		return gui.AbsoluteSize
+	end
+	local cam = Workspace.CurrentCamera
+	local vp = if cam then cam.ViewportSize else Vector2.new(1280, 720)
+	return Vector2.new(vp.X, math.max(200, vp.Y - 58))
+end
+
+local function clampWindowPos(target: Frame, rawX: number, rawY: number): Vector2
+	local vp = getCanvasSize()
+	local sizeX = if target.Size.X.Offset > 0 then target.Size.X.Offset else target.AbsoluteSize.X
+	local sizeY = if target.Size.Y.Offset > 0 then target.Size.Y.Offset else target.AbsoluteSize.Y
+	local margin = 8
+	local maxX = math.max(margin, vp.X - sizeX - margin)
+	local maxY = math.max(margin, vp.Y - sizeY - margin)
+	return Vector2.new(
+		math.clamp(math.round(rawX), margin, maxX),
+		math.clamp(math.round(rawY), margin, maxY)
+	)
+end
+
+local function attachDragHandle(handle: GuiObject, target: Frame, onFocus: (() -> ())?)
+	handle.InputBegan:Connect(function(input: InputObject)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if onFocus then
+				onFocus()
+			end
+			activeDrag = {
+				target = target,
+				startMouse = Vector2.new(input.Position.X, input.Position.Y),
+				startPos = Vector2.new(target.Position.X.Offset, target.Position.Y.Offset),
+			}
+		end
+	end)
+end
+
+local function makeFloatingWindow(opts: {
+	id: string,
+	title: string,
+	width: number,
+	bodyHeight: number,
+	pos: Vector2,
+	accent: Color3?,
+	parent: Instance,
+	onVisibilityChanged: (() -> ())?,
+}): FloatingWindow
+	local collapsed = false
+	local userHidden = false
+	local width = opts.width
+	local bodyH = opts.bodyHeight
+	local accent = opts.accent or Color3.fromRGB(78, 138, 224)
+
+	local root = Instance.new("Frame")
+	root.Name = "Win_" .. opts.id
+	root.Size = UDim2.fromOffset(width, HEADER_H + bodyH)
+	root.Position = UDim2.fromOffset(opts.pos.X, opts.pos.Y)
+	root.BackgroundColor3 = Color3.fromRGB(20, 24, 34)
+	root.BackgroundTransparency = 0.14
+	root.BorderSizePixel = 0
+	root.ClipsDescendants = true
+	zCounter += 1
+	root.ZIndex = zCounter
+	root.Parent = opts.parent
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = root
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(68, 78, 102)
+	stroke.Thickness = 1.3
+	stroke.Parent = root
+
+	local headerBar = Instance.new("Frame")
+	headerBar.Name = "HeaderBar"
+	headerBar.Size = UDim2.new(1, 0, 0, HEADER_H)
+	headerBar.Position = UDim2.fromOffset(0, 0)
+	headerBar.BackgroundColor3 = Color3.fromRGB(28, 34, 48)
+	headerBar.BackgroundTransparency = 0.06
+	headerBar.BorderSizePixel = 0
+	headerBar.Parent = root
+
+	local accentBar = Instance.new("Frame")
+	accentBar.Size = UDim2.new(1, 0, 0, 2)
+	accentBar.Position = UDim2.new(0, 0, 1, -2)
+	accentBar.BackgroundColor3 = accent
+	accentBar.BackgroundTransparency = 0.35
+	accentBar.BorderSizePixel = 0
+	accentBar.Parent = headerBar
+
+	local dragRegion = Instance.new("Frame")
+	dragRegion.Name = "DragRegion"
+	dragRegion.Size = UDim2.new(1, -54, 1, 0)
+	dragRegion.Position = UDim2.fromOffset(0, 0)
+	dragRegion.BackgroundTransparency = 1
+	dragRegion.Active = true
+	dragRegion.Parent = headerBar
+
+	local titleLbl = Instance.new("TextLabel")
+	titleLbl.Size = UDim2.new(1, -10, 1, 0)
+	titleLbl.Position = UDim2.fromOffset(8, 0)
+	titleLbl.BackgroundTransparency = 1
+	titleLbl.Font = Enum.Font.GothamBold
+	titleLbl.TextSize = 11
+	titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+	titleLbl.TextColor3 = Color3.fromRGB(220, 228, 244)
+	titleLbl.TextTruncate = Enum.TextTruncate.AtEnd
+	titleLbl.Text = "⠿  " .. opts.title
+	titleLbl.Parent = dragRegion
+
+	local collapseBtn = makeButton(headerBar, "–", UDim2.fromOffset(22, 18), UDim2.new(1, -50, 0, 4), 12)
+	collapseBtn.Name = "CollapseBtn"
+	styleBtn(collapseBtn, false, Color3.fromRGB(64, 118, 198))
+
+	local closeBtn = makeButton(headerBar, "×", UDim2.fromOffset(22, 18), UDim2.new(1, -25, 0, 4), 12)
+	closeBtn.Name = "CloseBtn"
+	closeBtn.BackgroundColor3 = Color3.fromRGB(68, 36, 44)
+	closeBtn.TextColor3 = Color3.fromRGB(255, 190, 196)
+	local closeStroke = closeBtn:FindFirstChildOfClass("UIStroke")
+	if closeStroke then
+		closeStroke.Color = Color3.fromRGB(132, 68, 82)
+	end
+
+	local body = Instance.new("Frame")
+	body.Name = "Body"
+	body.Size = UDim2.new(1, 0, 0, bodyH)
+	body.Position = UDim2.fromOffset(0, HEADER_H)
+	body.BackgroundTransparency = 1
+	body.BorderSizePixel = 0
+	body.Parent = root
+
+	local function bringToFront()
+		zCounter += 1
+		root.ZIndex = zCounter
+		if launcherBar then
+			launcherBar.ZIndex = zCounter + 10
+		end
+	end
+
+	local function clampSelf()
+		local cur = Vector2.new(root.Position.X.Offset, root.Position.Y.Offset)
+		local c = clampWindowPos(root, cur.X, cur.Y)
+		root.Position = UDim2.fromOffset(c.X, c.Y)
+	end
+
+	local function setCollapsed(c: boolean)
+		collapsed = c
+		body.Visible = not c
+		collapseBtn.Text = if c then "+" else "–"
+		root.Size = UDim2.fromOffset(width, if c then HEADER_H else (HEADER_H + bodyH))
+		styleBtn(collapseBtn, c, Color3.fromRGB(64, 118, 198))
+		clampSelf()
+	end
+
+	local function syncGlobalVisibility()
+		root.Visible = uiVisible and (not userHidden)
+	end
+
+	local function setVisible(v: boolean)
+		userHidden = not v
+		syncGlobalVisibility()
+		if v then
+			bringToFront()
+			clampSelf()
+		end
+		if opts.onVisibilityChanged then
+			opts.onVisibilityChanged()
+		end
+	end
+
+	local function setBodyHeight(newH: number)
+		bodyH = newH
+		body.Size = UDim2.new(1, 0, 0, bodyH)
+		if not collapsed then
+			root.Size = UDim2.fromOffset(width, HEADER_H + bodyH)
+		end
+		clampSelf()
+	end
+
+	attachDragHandle(dragRegion, root, bringToFront)
+	root.InputBegan:Connect(function(input: InputObject)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			bringToFront()
+		end
+	end)
+
+	collapseBtn.MouseButton1Click:Connect(function()
+		bringToFront()
+		setCollapsed(not collapsed)
+	end)
+
+	closeBtn.MouseButton1Click:Connect(function()
+		setVisible(false)
+	end)
+
+	clampSelf()
+
+	return {
+		id = opts.id,
+		root = root,
+		headerBar = headerBar,
+		body = body,
+		collapseBtn = collapseBtn,
+		closeBtn = closeBtn,
+		isCollapsed = function()
+			return collapsed
+		end,
+		setCollapsed = setCollapsed,
+		isHidden = function()
+			return userHidden
+		end,
+		setVisible = setVisible,
+		setBodyHeight = setBodyHeight,
+		clamp = clampSelf,
+		syncGlobalVisibility = syncGlobalVisibility,
+	}
 end
 
 local function clearPivotOverlay()
@@ -199,6 +454,24 @@ local function applyPlaceholderVisibility()
 	end
 end
 
+local function applyAuraInContainer(container: Instance?)
+	if not container then
+		return
+	end
+	for _, d in ipairs(container:GetDescendants()) do
+		if (d:IsA("ParticleEmitter") or d:IsA("Beam") or d:IsA("Trail")) and d:GetAttribute("VFXStudioAura") == true then
+			d.Enabled = showAuraVFX
+		end
+	end
+end
+
+local function applyAuraVisibility()
+	applyAuraInContainer(activeModel)
+	local stage = Workspace:FindFirstChild("PetLabStage")
+	local gallery = if stage then stage:FindFirstChild("LineupGallery") else nil
+	applyAuraInContainer(gallery)
+end
+
 local function updateDiagnosticBanner()
 	if not activeModel then
 		diagBanner.Text = "No active model"
@@ -206,8 +479,17 @@ local function updateDiagnosticBanner()
 		return
 	end
 	if previewCrateMode then
-		diagBanner.Text = string.format("CRATE PREVIEW  |  %s  |  Scale %.2fx", selectedCrateRarity, selectedScale)
-		diagFrame.BackgroundColor3 = Color3.fromRGB(38, 62, 102)
+		local title = if activeModel then (activeModel:GetAttribute("CrateTitle") or selectedCrateRarity) else selectedCrateRarity
+		local pCount = 0
+		if activeModel then
+			for _, d in ipairs(activeModel:GetDescendants()) do
+				if d:IsA("BasePart") then
+					pCount += 1
+				end
+			end
+		end
+		diagBanner.Text = string.format("CRATE PREVIEW  |  %s (%s)  |  Scale %.2fx  |  %d Parts", tostring(title), selectedCrateRarity, selectedScale, pCount)
+		diagFrame.BackgroundColor3 = if selectedCrateRarity == "Primordial" then Color3.fromRGB(118, 22, 46) else Color3.fromRGB(38, 62, 102)
 		return
 	end
 	if not VoxelPets.IsVoxelRigSpecies(selectedSpecies) then
@@ -290,8 +572,22 @@ local function refreshButtonHighlights()
 	styleBtn(pivotsBtn, showPivots, Color3.fromRGB(36, 178, 188))
 	styleBtn(dummyBtn, showScaleDummy, Color3.fromRGB(78, 142, 206))
 	if placeholdersBtn then
-		placeholdersBtn.Text = if showPlaceholders then "TODO Models: ON [P]" else "TODO Models: OFF [P]"
+		placeholdersBtn.Text = if showPlaceholders then "TODO: ON [P]" else "TODO: OFF [P]"
 		styleBtn(placeholdersBtn, showPlaceholders, Color3.fromRGB(196, 134, 48))
+	end
+	if auraBtn then
+		auraBtn.Text = if showAuraVFX then "Aura: ON [G]" else "Aura: OFF [G]"
+		styleBtn(auraBtn, showAuraVFX, Color3.fromRGB(224, 72, 168))
+	end
+	local chipColors: { [string]: Color3 } = {
+		Inspector = Color3.fromRGB(58, 134, 224),
+		Zones = Color3.fromRGB(48, 168, 132),
+		Controls = Color3.fromRGB(142, 102, 226),
+	}
+	for id, chip in pairs(launcherChips) do
+		local winRef = if id == "Inspector" then leftWin elseif id == "Zones" then topWin else ctrlWin
+		local isShown = if winRef then (not winRef.isHidden()) else true
+		styleBtn(chip, isShown, chipColors[id])
 	end
 end
 
@@ -305,13 +601,23 @@ local function rebuildActiveModel()
 
 	local m: Model
 	if previewCrateMode then
-		m = AnimalVisualBuilder.BuildCrateModel(selectedCrateRarity, "VolcanicJungle", selectedScale, {
+		m = AnimalVisualBuilder.BuildCrateModel(selectedCrateRarity, selectedCrateBiome, selectedScale, {
 			isBuried = false,
 			canCollide = false,
 			showBeacon = false,
 		})
 	elseif VoxelPets.IsVoxelRigSpecies(selectedSpecies) then
-		m = VoxelPets.Build(selectedSpecies, selectedScale, selectedMutation, false)
+		local customVfxTemplate = if selectedSpecies == "VharazhulCataclysm"
+				and math.abs(selectedScale - 1.50) < 0.01
+				and selectedMutation == "None"
+			then ReplicatedStorage:FindFirstChild("CustomVFXShowcase_VharazhulCataclysm")
+			else nil
+		if customVfxTemplate and customVfxTemplate:IsA("Model") then
+			m = customVfxTemplate:Clone()
+			m.Name = "Animal_VharazhulCataclysm"
+		else
+			m = VoxelPets.Build(selectedSpecies, selectedScale, selectedMutation, false)
+		end
 	else
 		m = AnimalVisualBuilder.BuildAnimalModel(selectedSpecies, selectedScale, selectedMutation, false)
 	end
@@ -326,6 +632,9 @@ local function rebuildActiveModel()
 		end
 	end
 
+	-- Evaluate bind-pose ground clearance before stepping procedural idle/walk offsets
+	updateDiagnosticBanner()
+
 	if not previewCrateMode and m:GetAttribute("VoxelRig") == true then
 		if selectedMode == "BaseC0" then
 			VoxelPets.ResetRig(m)
@@ -335,7 +644,7 @@ local function rebuildActiveModel()
 	end
 
 	rebuildPivotOverlay()
-	updateDiagnosticBanner()
+	applyAuraInContainer(activeModel)
 	refreshButtonHighlights()
 end
 
@@ -432,125 +741,234 @@ pcall(function()
 	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
 end)
 
-local gui = Instance.new("ScreenGui")
+gui = Instance.new("ScreenGui")
 gui.Name = "PetLabInspectorGui"
 gui.ResetOnSpawn = false
 gui.DisplayOrder = 50
-gui.IgnoreGuiInset = true
+gui.IgnoreGuiInset = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = playerGui
 
--- Persistent Top-Right UI Toggle Button (never hidden by Tab)
-hudToggleBtn = makeButton(gui, "Hide UI [Tab]", UDim2.fromOffset(146, 34), UDim2.new(1, -160, 0, 12), 12)
-styleBtn(hudToggleBtn, true, Color3.fromRGB(44, 56, 78))
+local initVp = getCanvasSize()
+
+-- Persistent Draggable Top-Right Launcher Bar (never hidden by Tab/H; collapses to compact pill)
+launcherBar = Instance.new("Frame")
+launcherBar.Name = "LauncherBar"
+launcherBar.Size = UDim2.fromOffset(346, 30)
+launcherBar.Position = UDim2.fromOffset(math.max(8, initVp.X - 354), 8)
+launcherBar.BackgroundColor3 = Color3.fromRGB(20, 24, 34)
+launcherBar.BackgroundTransparency = 0.12
+launcherBar.BorderSizePixel = 0
+launcherBar.ZIndex = 50
+launcherBar.Parent = gui
+local lbCorner = Instance.new("UICorner")
+lbCorner.CornerRadius = UDim.new(0, 8)
+lbCorner.Parent = launcherBar
+local lbStroke = Instance.new("UIStroke")
+lbStroke.Color = Color3.fromRGB(74, 88, 116)
+lbStroke.Thickness = 1.3
+lbStroke.Parent = launcherBar
+
+local launcherGrip = Instance.new("Frame")
+launcherGrip.Name = "LauncherGrip"
+launcherGrip.Size = UDim2.fromOffset(22, 30)
+launcherGrip.Position = UDim2.fromOffset(0, 0)
+launcherGrip.BackgroundTransparency = 1
+launcherGrip.Active = true
+launcherGrip.Parent = launcherBar
+local gripText = Instance.new("TextLabel")
+gripText.Size = UDim2.fromScale(1, 1)
+gripText.BackgroundTransparency = 1
+gripText.Font = Enum.Font.GothamBold
+gripText.TextSize = 13
+gripText.TextColor3 = Color3.fromRGB(160, 180, 214)
+gripText.Text = "⠿"
+gripText.Parent = launcherGrip
+attachDragHandle(launcherGrip, launcherBar)
+
+local launcherDivider = Instance.new("Frame")
+launcherDivider.Size = UDim2.new(0, 1, 1, -10)
+launcherDivider.Position = UDim2.fromOffset(22, 5)
+launcherDivider.BackgroundColor3 = Color3.fromRGB(66, 78, 102)
+launcherDivider.BorderSizePixel = 0
+launcherDivider.Parent = launcherBar
+
+local chipHost = Instance.new("Frame")
+chipHost.Size = UDim2.new(1, -28, 1, 0)
+chipHost.Position = UDim2.fromOffset(24, 0)
+chipHost.BackgroundTransparency = 1
+chipHost.Parent = launcherBar
+local chipLayout = Instance.new("UIListLayout")
+chipLayout.FillDirection = Enum.FillDirection.Horizontal
+chipLayout.Padding = UDim.new(0, 4)
+chipLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+chipLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+chipLayout.SortOrder = Enum.SortOrder.LayoutOrder
+chipLayout.Parent = chipHost
 
 local function setUiVisible(visible: boolean)
 	uiVisible = visible
-	diagFrame.Visible = visible
-	biomeBar.Visible = visible
-	leftPanel.Visible = visible
-	bottomBar.Visible = visible
-	hudToggleBtn.Text = if visible then "Hide UI [Tab]" else "Show UI [Tab]"
-	styleBtn(hudToggleBtn, visible, Color3.fromRGB(44, 56, 78))
+	if leftWin then
+		leftWin.syncGlobalVisibility()
+	end
+	if topWin then
+		topWin.syncGlobalVisibility()
+	end
+	if ctrlWin then
+		ctrlWin.syncGlobalVisibility()
+	end
+	for _, chip in pairs(launcherChips) do
+		chip.Visible = visible
+	end
+	hideAllBtn.Text = if visible then "Hide UI [Tab]" else "Show UI [Tab]"
+	styleBtn(hideAllBtn, visible, Color3.fromRGB(44, 56, 78))
+
+	local oldW = launcherBar.Size.X.Offset
+	local newW = if visible then 346 else 134
+	local newH = if visible then 30 else 28
+	launcherGrip.Size = UDim2.fromOffset(22, newH)
+	launcherBar.Size = UDim2.fromOffset(newW, newH)
+	local targetX = launcherBar.Position.X.Offset + (oldW - newW)
+	local clamped = clampWindowPos(launcherBar, targetX, launcherBar.Position.Y.Offset)
+	launcherBar.Position = UDim2.fromOffset(clamped.X, clamped.Y)
+	refreshButtonHighlights()
 end
 
-hudToggleBtn.MouseButton1Click:Connect(function()
+local LAUNCHER_SPECS: { { id: string, label: string, w: number } } = {
+	{ id = "Inspector", label = "Inspector", w = 72 },
+	{ id = "Zones", label = "Zones", w = 54 },
+	{ id = "Controls", label = "Controls", w = 66 },
+}
+for idx, spec in ipairs(LAUNCHER_SPECS) do
+	local chip = makeButton(chipHost, spec.label, UDim2.fromOffset(spec.w, 22), nil, 10)
+	chip.Name = "Chip_" .. spec.id
+	chip.LayoutOrder = idx
+	chip.TextWrapped = false
+	chip.MouseButton1Click:Connect(function()
+		local winRef = if spec.id == "Inspector" then leftWin elseif spec.id == "Zones" then topWin else ctrlWin
+		if winRef then
+			if not uiVisible then
+				setUiVisible(true)
+			end
+			winRef.setVisible(winRef.isHidden())
+		end
+	end)
+	launcherChips[spec.id] = chip
+end
+
+hideAllBtn = makeButton(chipHost, "Hide UI [Tab]", UDim2.fromOffset(98, 22), nil, 10)
+hideAllBtn.Name = "HideAllBtn"
+hideAllBtn.LayoutOrder = 10
+hideAllBtn.TextWrapped = false
+styleBtn(hideAllBtn, true, Color3.fromRGB(44, 56, 78))
+hideAllBtn.MouseButton1Click:Connect(function()
 	setUiVisible(not uiVisible)
 end)
 
--- Top Diagnostic Pill
+-- Top Draggable Status & Zone Teleport Window ([0] Stage + [1]-[5] Biomes + [T] Table)
+topWin = makeFloatingWindow({
+	id = "Zones",
+	title = "STATUS & TELEPORT",
+	width = 536,
+	bodyHeight = 62,
+	pos = Vector2.new(math.clamp(math.floor((initVp.X - 536) * 0.5), 244, math.max(244, initVp.X - 544)), 44),
+	accent = Color3.fromRGB(56, 178, 136),
+	parent = gui,
+	onVisibilityChanged = refreshButtonHighlights,
+})
+
 diagFrame = Instance.new("Frame")
-diagFrame.Size = UDim2.fromOffset(560, 34)
-diagFrame.Position = UDim2.new(0.5, -280, 0, 12)
+diagFrame.Size = UDim2.fromOffset(520, 24)
+diagFrame.Position = UDim2.fromOffset(8, 4)
 diagFrame.BackgroundColor3 = Color3.fromRGB(26, 98, 58)
 diagFrame.BorderSizePixel = 0
-diagFrame.Parent = gui
+diagFrame.Parent = topWin.body
 local diagCorner = Instance.new("UICorner")
-diagCorner.CornerRadius = UDim.new(0, 10)
+diagCorner.CornerRadius = UDim.new(0, 6)
 diagCorner.Parent = diagFrame
 local diagStroke = Instance.new("UIStroke")
 diagStroke.Color = Color3.fromRGB(22, 26, 36)
-diagStroke.Thickness = 2
+diagStroke.Thickness = 1.4
 diagStroke.Parent = diagFrame
 diagBanner = Instance.new("TextLabel")
-diagBanner.Size = UDim2.new(1, -16, 1, 0)
-diagBanner.Position = UDim2.fromOffset(8, 0)
+diagBanner.Size = UDim2.new(1, -12, 1, 0)
+diagBanner.Position = UDim2.fromOffset(6, 0)
 diagBanner.BackgroundTransparency = 1
 diagBanner.Font = Enum.Font.GothamBold
-diagBanner.TextSize = 13
+diagBanner.TextSize = 11
 diagBanner.TextColor3 = Color3.new(1, 1, 1)
 diagBanner.TextTruncate = Enum.TextTruncate.AtEnd
 diagBanner.Text = "Pet Lab Initializing..."
 diagBanner.Parent = diagFrame
 
--- Top Biome & Staging Teleport Bar ([0] Staging + [1]-[5] Biomes + [T] Turntable)
 biomeBar = Instance.new("Frame")
-biomeBar.Size = UDim2.fromOffset(744, 30)
-biomeBar.Position = UDim2.new(0.5, -372, 0, 52)
-biomeBar.BackgroundColor3 = Color3.fromRGB(20, 24, 34)
-biomeBar.BackgroundTransparency = 0.14
+biomeBar.Size = UDim2.fromOffset(520, 26)
+biomeBar.Position = UDim2.fromOffset(8, 32)
+biomeBar.BackgroundTransparency = 1
 biomeBar.BorderSizePixel = 0
-biomeBar.Parent = gui
-local bBarCorner = Instance.new("UICorner")
-bBarCorner.CornerRadius = UDim.new(0, 8)
-bBarCorner.Parent = biomeBar
-local bBarStroke = Instance.new("UIStroke")
-bBarStroke.Color = Color3.fromRGB(64, 74, 96)
-bBarStroke.Thickness = 1.2
-bBarStroke.Parent = biomeBar
+biomeBar.Parent = topWin.body
 local bBarLayout = Instance.new("UIListLayout")
 bBarLayout.FillDirection = Enum.FillDirection.Horizontal
-bBarLayout.Padding = UDim.new(0, 6)
+bBarLayout.Padding = UDim.new(0, 4)
 bBarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 bBarLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 bBarLayout.Parent = biomeBar
 
-local stagingBtn = makeButton(biomeBar, "[0] Staging (18)", UDim2.fromOffset(118, 24), nil, 11)
+local stagingBtn = makeButton(biomeBar, "[0] Stage", UDim2.fromOffset(74, 24), nil, 10)
+stagingBtn.TextWrapped = false
+stagingBtn.Visible = (#stagingPairs > 0)
 stagingBtn.MouseButton1Click:Connect(function()
 	jumpToBiome(0, false)
 end)
 biomeButtons[0] = stagingBtn
 
-local BIOME_SHORT_BTNS = { "[1] Pine", "[2] Swamp", "[3] Savanna", "[4] Alpine", "[5] Volcanic" }
+local BIOME_SHORT_BTNS: { { label: string, w: number } } = {
+	{ label = "[1] Pine", w = 64 },
+	{ label = "[2] Swamp", w = 70 },
+	{ label = "[3] Savanna", w = 76 },
+	{ label = "[4] Alpine", w = 68 },
+	{ label = "[5] Volcanic", w = 76 },
+}
 for i, zone in ipairs(PetLabStageBuilder.BIOME_ZONES) do
-	local lbl = BIOME_SHORT_BTNS[i] or zone.shortLabel
-	local btn = makeButton(biomeBar, lbl, UDim2.fromOffset(90, 24), nil, 11)
+	local spec = BIOME_SHORT_BTNS[i]
+	local lbl = if spec then spec.label else zone.shortLabel
+	local bw = if spec then spec.w else 70
+	local btn = makeButton(biomeBar, lbl, UDim2.fromOffset(bw, 24), nil, 10)
+	btn.TextWrapped = false
 	btn.MouseButton1Click:Connect(function()
 		jumpToBiome(zone.order, false)
 	end)
 	biomeButtons[zone.order] = btn
 end
 
-local ttJumpBtn = makeButton(biomeBar, "[T] Turntable", UDim2.fromOffset(110, 24), nil, 11)
+local ttJumpBtn = makeButton(biomeBar, "[T] Table", UDim2.fromOffset(68, 24), nil, 10)
+ttJumpBtn.TextWrapped = false
 styleBtn(ttJumpBtn, false, Color3.fromRGB(88, 128, 224))
 ttJumpBtn.MouseButton1Click:Connect(function()
 	jumpToTurntable(UserInputService:IsKeyDown(Enum.KeyCode.LeftShift))
 end)
 
--- Left Inspector Panel (Species, Scale, Mutations)
-leftPanel = Instance.new("Frame")
-leftPanel.Size = UDim2.fromOffset(228, 510)
-leftPanel.Position = UDim2.new(0, 14, 0.5, -255)
-leftPanel.BackgroundColor3 = Color3.fromRGB(20, 24, 34)
-leftPanel.BackgroundTransparency = 0.14
-leftPanel.BorderSizePixel = 0
-leftPanel.Parent = gui
-local lpCorner = Instance.new("UICorner")
-lpCorner.CornerRadius = UDim.new(0, 12)
-lpCorner.Parent = leftPanel
-local lpStroke = Instance.new("UIStroke")
-lpStroke.Color = Color3.fromRGB(64, 74, 96)
-lpStroke.Thickness = 1.5
-lpStroke.Parent = leftPanel
+-- Left Draggable Inspector Window (Species, Scale, Mutations, VFX Test)
+leftWin = makeFloatingWindow({
+	id = "Inspector",
+	title = "PET INSPECTOR",
+	width = 224,
+	bodyHeight = math.clamp(initVp.Y - 42, 180, 440),
+	pos = Vector2.new(12, 8),
+	accent = Color3.fromRGB(68, 146, 232),
+	parent = gui,
+	onVisibilityChanged = refreshButtonHighlights,
+})
 
 local lpScroll = Instance.new("ScrollingFrame")
-lpScroll.Size = UDim2.new(1, -12, 1, -12)
-lpScroll.Position = UDim2.fromOffset(6, 6)
+lpScroll.Size = UDim2.new(1, -10, 1, -8)
+lpScroll.Position = UDim2.fromOffset(5, 4)
 lpScroll.BackgroundTransparency = 1
 lpScroll.BorderSizePixel = 0
 lpScroll.ScrollBarThickness = 4
 lpScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 lpScroll.CanvasSize = UDim2.new()
-lpScroll.Parent = leftPanel
+lpScroll.Parent = leftWin.body
 
 local lpLayout = Instance.new("UIListLayout")
 lpLayout.Padding = UDim.new(0, 6)
@@ -604,6 +1022,7 @@ local function addSpeciesSection(headerTitle: string, ids: { string }, baseOrder
 		btn.MouseButton1Click:Connect(function()
 			previewCrateMode = false
 			selectedSpecies = id
+			selectedScale = if mod and mod.DefaultScale then mod.DefaultScale else 1.35
 			if cameraPreset == "Lineup" then
 				applyCameraPreset("Orbit34")
 			end
@@ -619,7 +1038,11 @@ addSpeciesSection("ASSIGNED BIOME VOXELS", assignedBiomeIds, 50)
 
 crateToggleBtn = makeButton(lpScroll, "Preview Crate (Click to Cycle)", UDim2.new(1, -6, 0, 28), nil, 11)
 crateToggleBtn.LayoutOrder = 72
-local CRATE_RARITIES: { Types.AnimalRarity } = { "Common", "Epic", "Legendary", "Mythic", "Cosmic", "Secret", "Astral", "Infinity", "Primordial" }
+local CRATE_RARITIES: { Types.AnimalRarity } = {
+	"Common", "Uncommon", "Rare", "Epic", "Legendary",
+	"Mythic", "Cosmic", "Secret", "Eternal", "Divine",
+	"Infinity", "Astral", "Omega", "Singularity", "Primordial"
+}
 crateToggleBtn.MouseButton1Click:Connect(function()
 	if not previewCrateMode then
 		previewCrateMode = true
@@ -683,8 +1106,8 @@ local VFX_BIOME_LABELS: { [string]: string } = {
 	PineWoods = "Biome A: PineWoods",
 }
 local VFX_RARITIES: { string } = { "Singularity", "Primordial", "Omega", "Astral", "Infinity", "Divine", "Cosmic", "Mythic", "Legendary", "Common" }
-local vfxBiomeIdx = 1
-local vfxRarityIdx = 1
+local vfxBiomeIdx = 2
+local vfxRarityIdx = 2
 
 local vfxBiomeBtn = makeButton(lpScroll, VFX_BIOME_LABELS[VFX_BIOMES[vfxBiomeIdx]], UDim2.new(1, -6, 0, 26), nil, 11)
 vfxBiomeBtn.LayoutOrder = 110
@@ -772,45 +1195,43 @@ playMergeBtn.MouseButton1Click:Connect(function()
 	)
 end)
 
--- Bottom Control Bar (Animation Modes, Stress Test, Spin, Pivots, Placeholders, Camera Presets)
-bottomBar = Instance.new("Frame")
-bottomBar.Size = UDim2.fromOffset(968, 86)
-bottomBar.Position = UDim2.new(0.5, -484, 1, -98)
-bottomBar.BackgroundColor3 = Color3.fromRGB(20, 24, 34)
-bottomBar.BackgroundTransparency = 0.14
-bottomBar.BorderSizePixel = 0
-bottomBar.Parent = gui
-local bbCorner = Instance.new("UICorner")
-bbCorner.CornerRadius = UDim.new(0, 12)
-bbCorner.Parent = bottomBar
-local bbStroke = Instance.new("UIStroke")
-bbStroke.Color = Color3.fromRGB(64, 74, 96)
-bbStroke.Thickness = 1.5
-bbStroke.Parent = bottomBar
+-- Bottom Draggable Control Window (3 Compact Rows: Poses, Debug/Aura, Camera Presets)
+ctrlWin = makeFloatingWindow({
+	id = "Controls",
+	title = "POSE, AURA & CAMERA",
+	width = 608,
+	bodyHeight = 98,
+	pos = Vector2.new(math.clamp(math.floor((initVp.X - 608) * 0.5), 244, math.max(244, initVp.X - 616)), math.max(138, initVp.Y - 132)),
+	accent = Color3.fromRGB(148, 108, 232),
+	parent = gui,
+	onVisibilityChanged = refreshButtonHighlights,
+})
 
 -- Row 1: Animation Modes + Stress Test
 local modeRow = Instance.new("Frame")
-modeRow.Size = UDim2.new(1, -16, 0, 34)
-modeRow.Position = UDim2.fromOffset(8, 8)
+modeRow.Size = UDim2.new(1, -16, 0, 28)
+modeRow.Position = UDim2.fromOffset(8, 4)
 modeRow.BackgroundTransparency = 1
-modeRow.Parent = bottomBar
+modeRow.Parent = ctrlWin.body
 local mrLayout = Instance.new("UIListLayout")
 mrLayout.FillDirection = Enum.FillDirection.Horizontal
-mrLayout.Padding = UDim.new(0, 6)
+mrLayout.Padding = UDim.new(0, 5)
+mrLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 mrLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 mrLayout.Parent = modeRow
 
-local modeSpecs: { { id: InspectorMode, label: string, w: number } } = {
-	{ id = "Idle", label = "Idle", w = 74 },
-	{ id = "Walk", label = "Walk", w = 74 },
-	{ id = "Fly", label = "Fly", w = 74 },
-	{ id = "Ride", label = "Ride", w = 74 },
-	{ id = "StressTest", label = "Stress Test", w = 112 },
-	{ id = "BaseC0", label = "BaseC0 (Bind)", w = 104 },
-	{ id = "Pause", label = "Pause", w = 74 },
+local modeSpecs: { { id: InspectorMode, label: string, w: number, fs: number? } } = {
+	{ id = "Idle", label = "Idle", w = 64 },
+	{ id = "Walk", label = "Walk", w = 64 },
+	{ id = "Fly", label = "Fly", w = 64 },
+	{ id = "Ride", label = "Ride", w = 64 },
+	{ id = "StressTest", label = "Stress Test", w = 96 },
+	{ id = "BaseC0", label = "BaseC0 (Bind)", w = 88, fs = 10 },
+	{ id = "Pause", label = "Pause", w = 64 },
 }
 for _, ms in ipairs(modeSpecs) do
-	local btn = makeButton(modeRow, ms.label, UDim2.fromOffset(ms.w, 28), nil, 12)
+	local btn = makeButton(modeRow, ms.label, UDim2.fromOffset(ms.w, 24), nil, ms.fs or 11)
+	btn.TextWrapped = false
 	btn.MouseButton1Click:Connect(function()
 		selectedMode = ms.id
 		if activeModel and not previewCrateMode and activeModel:GetAttribute("VoxelRig") == true then
@@ -825,64 +1246,145 @@ for _, ms in ipairs(modeSpecs) do
 	modeButtons[ms.id] = btn
 end
 
--- Row 2: Turntable, Debug Toggles, Placeholder Toggle, Camera Presets
+-- Row 2: Turntable Spin, Debug Overlays, Placeholders, Aura VFX
 local utilRow = Instance.new("Frame")
-utilRow.Size = UDim2.new(1, -16, 0, 34)
-utilRow.Position = UDim2.fromOffset(8, 46)
+utilRow.Size = UDim2.new(1, -16, 0, 28)
+utilRow.Position = UDim2.fromOffset(8, 35)
 utilRow.BackgroundTransparency = 1
-utilRow.Parent = bottomBar
+utilRow.Parent = ctrlWin.body
 local urLayout = Instance.new("UIListLayout")
 urLayout.FillDirection = Enum.FillDirection.Horizontal
 urLayout.Padding = UDim.new(0, 6)
+urLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 urLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 urLayout.Parent = utilRow
 
-spinBtn = makeButton(utilRow, SPIN_LABELS[1], UDim2.fromOffset(90, 26), nil, 11)
+spinBtn = makeButton(utilRow, SPIN_LABELS[1], UDim2.fromOffset(84, 24), nil, 10)
+spinBtn.TextWrapped = false
 spinBtn.MouseButton1Click:Connect(function()
 	spinSpeedIndex = (spinSpeedIndex % #SPIN_RATES) + 1
 	refreshButtonHighlights()
 end)
 
-pivotsBtn = makeButton(utilRow, "Joint Pivots", UDim2.fromOffset(92, 26), nil, 11)
+pivotsBtn = makeButton(utilRow, "Joint Pivots", UDim2.fromOffset(88, 24), nil, 10)
+pivotsBtn.TextWrapped = false
 pivotsBtn.MouseButton1Click:Connect(function()
 	showPivots = not showPivots
 	rebuildPivotOverlay()
 	refreshButtonHighlights()
 end)
 
-dummyBtn = makeButton(utilRow, "Scale Dummy", UDim2.fromOffset(92, 26), nil, 11)
+dummyBtn = makeButton(utilRow, "Scale Dummy", UDim2.fromOffset(90, 24), nil, 10)
+dummyBtn.TextWrapped = false
 dummyBtn.MouseButton1Click:Connect(function()
 	showScaleDummy = not showScaleDummy
 	applyDummyVisibility()
 	refreshButtonHighlights()
 end)
 
-placeholdersBtn = makeButton(utilRow, "TODO Models: ON [P]", UDim2.fromOffset(128, 26), nil, 11)
+placeholdersBtn = makeButton(utilRow, "TODO: ON [P]", UDim2.fromOffset(104, 24), nil, 10)
+placeholdersBtn.TextWrapped = false
 placeholdersBtn.MouseButton1Click:Connect(function()
 	showPlaceholders = not showPlaceholders
 	applyPlaceholderVisibility()
 	refreshButtonHighlights()
 end)
 
+auraBtn = makeButton(utilRow, "Aura: ON [G]", UDim2.fromOffset(94, 24), nil, 10)
+auraBtn.TextWrapped = false
+auraBtn.MouseButton1Click:Connect(function()
+	showAuraVFX = not showAuraVFX
+	applyAuraVisibility()
+	refreshButtonHighlights()
+end)
+
+-- Row 3: Camera Presets + Free Walk
+camRow = Instance.new("Frame")
+camRow.Size = UDim2.new(1, -16, 0, 28)
+camRow.Position = UDim2.fromOffset(8, 66)
+camRow.BackgroundTransparency = 1
+camRow.Parent = ctrlWin.body
+local crLayout = Instance.new("UIListLayout")
+crLayout.FillDirection = Enum.FillDirection.Horizontal
+crLayout.Padding = UDim.new(0, 6)
+crLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+crLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+crLayout.Parent = camRow
+
 local camSpecs: { { id: CameraPreset, label: string, w: number } } = {
-	{ id = "Lineup", label = "Lineup Row", w = 88 },
-	{ id = "Orbit34", label = "Orbit 3/4", w = 80 },
-	{ id = "Head", label = "Head Close", w = 86 },
-	{ id = "Side", label = "Side", w = 60 },
-	{ id = "Top", label = "Top", w = 56 },
-	{ id = "Player", label = "Free Walk [V]", w = 102 },
+	{ id = "Lineup", label = "Lineup Row", w = 84 },
+	{ id = "Orbit34", label = "Orbit 3/4", w = 76 },
+	{ id = "Head", label = "Head Close", w = 82 },
+	{ id = "Side", label = "Side", w = 56 },
+	{ id = "Top", label = "Top", w = 52 },
+	{ id = "Player", label = "Free Walk [V]", w = 98 },
 }
 for _, cs in ipairs(camSpecs) do
-	local btn = makeButton(utilRow, cs.label, UDim2.fromOffset(cs.w, 26), nil, 11)
+	local btn = makeButton(camRow, cs.label, UDim2.fromOffset(cs.w, 24), nil, 10)
+	btn.TextWrapped = false
 	btn.MouseButton1Click:Connect(function()
 		applyCameraPreset(cs.id)
 	end)
 	camButtons[cs.id] = btn
 end
 
--- [E] ProximityPrompt: Voxel Pets cycle poses, TODO placeholders open on turntable
+local function relayoutForViewport()
+	local curVp = getCanvasSize()
+	if curVp.X <= 100 or curVp.Y <= 100 then
+		return
+	end
+	leftWin.setBodyHeight(math.clamp(curVp.Y - 42, 180, 440))
+	if not userMovedWindow[launcherBar] then
+		local lw = launcherBar.Size.X.Offset
+		launcherBar.Position = UDim2.fromOffset(math.max(8, curVp.X - lw - 8), 8)
+	end
+	if not userMovedWindow[leftWin.root] then
+		leftWin.root.Position = UDim2.fromOffset(12, 8)
+	end
+	if not userMovedWindow[topWin.root] then
+		topWin.root.Position = UDim2.fromOffset(
+			math.clamp(math.floor((curVp.X - 536) * 0.5), 244, math.max(244, curVp.X - 544)),
+			44
+		)
+	end
+	if not userMovedWindow[ctrlWin.root] then
+		ctrlWin.root.Position = UDim2.fromOffset(
+			math.clamp(math.floor((curVp.X - 608) * 0.5), 244, math.max(244, curVp.X - 616)),
+			math.max(138, curVp.Y - 132)
+		)
+	end
+	leftWin.clamp()
+	topWin.clamp()
+	ctrlWin.clamp()
+	local lc = clampWindowPos(launcherBar, launcherBar.Position.X.Offset, launcherBar.Position.Y.Offset)
+	launcherBar.Position = UDim2.fromOffset(lc.X, lc.Y)
+end
+
+gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(relayoutForViewport)
+if camera then
+	camera:GetPropertyChangedSignal("ViewportSize"):Connect(relayoutForViewport)
+end
+task.defer(relayoutForViewport)
+
+-- [E] ProximityPrompt: Primordial Crate showcase or Voxel Pets cycle poses, TODO placeholders open on turntable
 ProximityPromptService.PromptTriggered:Connect(function(prompt, player)
-	if player ~= localPlayer or prompt.Name ~= "PetPosePrompt" then
+	if player ~= localPlayer then
+		return
+	end
+	if prompt.Name == "InspectCrateShowcasePrompt" then
+		previewCrateMode = true
+		local targetModel = prompt:FindFirstAncestorWhichIsA("Model")
+		local r = (targetModel and targetModel:GetAttribute("ShowcaseRarity")) or "Primordial"
+		local b = (targetModel and targetModel:GetAttribute("ShowcaseBiome")) or "VolcanicJungle"
+		selectedCrateRarity = r :: Types.AnimalRarity
+		selectedCrateBiome = tostring(b)
+		selectedScale = 1.35
+		crateToggleBtn.Text = "Crate: " .. r
+		rebuildActiveModel()
+		applyCameraPreset("Orbit34")
+		return
+	end
+	if prompt.Name ~= "PetPosePrompt" then
 		return
 	end
 	local slot = prompt:FindFirstAncestorWhichIsA("Model")
@@ -912,7 +1414,7 @@ ProximityPromptService.PromptTriggered:Connect(function(prompt, player)
 	end
 end)
 
--- Studio Mouse Orbit + Scroll Zoom + Showroom Hotkeys (0 Staging, 1-5 Biomes, T Turntable, P TODOs, Tab UI, V Free Walk, Shift Sprint)
+-- Studio Mouse Orbit + Scroll Zoom + Window Drag + Showroom Hotkeys (0 Staging, 1-5 Biomes, T Turntable, P TODOs, G Aura, Tab/H UI, V Free Walk, Shift Sprint)
 local KEY_TO_BIOME = {
 	[Enum.KeyCode.Zero] = 0,
 	[Enum.KeyCode.One] = 1,
@@ -929,7 +1431,7 @@ UserInputService.InputBegan:Connect(function(input, gp)
 	if UserInputService:GetFocusedTextBox() then
 		return
 	end
-	if input.KeyCode == Enum.KeyCode.Tab then
+	if input.KeyCode == Enum.KeyCode.Tab or (not gp and input.KeyCode == Enum.KeyCode.H) then
 		setUiVisible(not uiVisible)
 		return
 	end
@@ -945,6 +1447,10 @@ UserInputService.InputBegan:Connect(function(input, gp)
 		showPlaceholders = not showPlaceholders
 		applyPlaceholderVisibility()
 		refreshButtonHighlights()
+	elseif input.KeyCode == Enum.KeyCode.G then
+		showAuraVFX = not showAuraVFX
+		applyAuraVisibility()
+		refreshButtonHighlights()
 	elseif input.KeyCode == Enum.KeyCode.V then
 		applyCameraPreset("Player")
 	elseif input.UserInputType == Enum.UserInputType.MouseButton2 and cameraPreset ~= "Player" then
@@ -956,9 +1462,21 @@ UserInputService.InputEnded:Connect(function(input)
 		isSprinting = false
 	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
 		isDraggingCam = false
+	elseif input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		activeDrag = nil
 	end
 end)
 UserInputService.InputChanged:Connect(function(input, gp)
+	if activeDrag and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		local mousePos = Vector2.new(input.Position.X, input.Position.Y)
+		local delta = mousePos - activeDrag.startMouse
+		if delta.Magnitude >= 2 then
+			userMovedWindow[activeDrag.target] = true
+		end
+		local clamped = clampWindowPos(activeDrag.target, activeDrag.startPos.X + delta.X, activeDrag.startPos.Y + delta.Y)
+		activeDrag.target.Position = UDim2.fromOffset(clamped.X, clamped.Y)
+		return
+	end
 	if cameraPreset == "Player" then
 		return
 	end
@@ -983,8 +1501,12 @@ local function onCharacterAdded(char: Model)
 	if hrp and hrp:IsA("BasePart") then
 		task.defer(function()
 			if hrp.Parent then
-				local targetZ = if hrp.Position.X > 60 then -12 else PetLabStageBuilder.LINEUP_Z
-				hrp.CFrame = CFrame.lookAt(hrp.Position, Vector3.new(hrp.Position.X, hrp.Position.Y, targetZ))
+				if math.abs(hrp.Position.X) < 30 and hrp.Position.Z > 22 then
+					hrp.CFrame = CFrame.lookAt(hrp.Position, Vector3.new(TURNTABLE_POS.X, hrp.Position.Y, TURNTABLE_POS.Z))
+				else
+					local targetZ = if hrp.Position.X > 60 then -12 else PetLabStageBuilder.LINEUP_Z
+					hrp.CFrame = CFrame.lookAt(hrp.Position, Vector3.new(hrp.Position.X, hrp.Position.Y, targetZ))
+				end
 			end
 		end)
 	end
@@ -995,10 +1517,25 @@ if localPlayer.Character then
 	onCharacterAdded(localPlayer.Character)
 end
 
--- Init Workbench (Default: Free Walk facing Biome 1 Arch & 5-Biome Promenade)
+-- Remove Edit-mode turntable preview before Client mounts live animated activeModel
+do
+	local stg = Workspace:FindFirstChild("PetLabStage")
+	local tt = if stg then stg:FindFirstChild("CenterTurntable") else nil
+	if tt then
+		for _, prevName in ipairs({ "VFXStudioShowcase_Turntable", "VFXStudioShowcase_FaeLaceDragon" }) do
+			local editPreview = tt:FindFirstChild(prevName)
+			if editPreview then
+				editPreview:Destroy()
+			end
+		end
+	end
+end
+
+-- Init Workbench (Default: Free Walk facing VHARAZHUL VFX Studio Aura Showcase on Turntable)
 rebuildActiveModel()
 applyDummyVisibility()
 applyPlaceholderVisibility()
+applyAuraVisibility()
 applyCameraPreset("Player")
 
 RunService.RenderStepped:Connect(function(dt: number)
@@ -1095,14 +1632,17 @@ RunService.RenderStepped:Connect(function(dt: number)
 				baseDist = 42 * camZoom
 			end
 		else
-			lookTarget = TURNTABLE_POS + Vector3.new(0, 1.5 * selectedScale, 0)
+			local spMod = if previewCrateMode then nil else VoxelPets.GetSpeciesModule(selectedSpecies)
+			local hOff = if spMod and spMod.CameraHeightOffset then spMod.CameraHeightOffset else 1.5
+			local dMult = if spMod and spMod.CameraDistMult then spMod.CameraDistMult else 1.0
+			lookTarget = TURNTABLE_POS + Vector3.new(0, hOff * selectedScale, 0)
 			if activeModel and cameraPreset == "Head" then
 				local hp = activeModel:FindFirstChild("Head")
 				if hp and hp:IsA("BasePart") then
 					lookTarget = hp.Position
 				end
 			end
-			baseDist = (if cameraPreset == "Head" then 5.4 else 8.8) * math.max(0.75, selectedScale * 0.85) * camZoom
+			baseDist = (if cameraPreset == "Head" then 5.4 else 8.8) * math.max(0.75, selectedScale * 0.85) * dMult * camZoom
 		end
 		local offset = CFrame.Angles(0, camYaw, 0) * CFrame.Angles(-camPitch, 0, 0) * Vector3.new(0, 0, baseDist)
 		camera.CFrame = CFrame.lookAt(lookTarget + offset, lookTarget)
