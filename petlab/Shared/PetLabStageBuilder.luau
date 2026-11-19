@@ -813,8 +813,8 @@ function PetLabStageBuilder.BuildStage(): Folder
 	-- 1. Neutral Studio Floor spanning all 5 Biome Zones + East Candidate Staging Wing
 	makePart({
 		name = "StudioFloor",
-		size = Vector3.new(440, 2, 320),
-		cframe = CFrame.new(64, -1, -60),
+		size = Vector3.new(540, 2, 380),
+		cframe = CFrame.new(30, -1, -80),
 		color = Color3.fromRGB(40, 46, 58),
 		parent = stage,
 	})
@@ -1423,7 +1423,7 @@ function PetLabStageBuilder.BuildStage(): Folder
 		end
 	end
 
-	ClassicStudBiomeBuilder.BuildBiome1Showroom(stage)
+	ClassicStudBiomeBuilder.BuildAllBiomesShowroom(stage)
 
 	return stage
 end
