@@ -166,26 +166,7 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 		})
 	end
 
-	-- 2. Spawn Plaza (Z = -110)
-	makePart({
-		name = "SpawnPlaza",
-		size = Vector3.new(36, 0.8, 36),
-		cframe = CFrame.new(0, 0.4, -110),
-		color = Color3.fromRGB(76, 156, 224),
-		studded = true,
-		parent = hub,
-	})
-	local spawnLoc = Instance.new("SpawnLocation")
-	spawnLoc.Name = "RangerSpawn"
-	spawnLoc.Size = Vector3.new(12, 1, 12)
-	spawnLoc.CFrame = CFrame.new(0, 0.85, -110)
-	spawnLoc.Anchored = true
-	spawnLoc.Neutral = true
-	spawnLoc.Color = Color3.fromRGB(255, 206, 56)
-	spawnLoc.Material = Enum.Material.SmoothPlastic
-	spawnLoc.TopSurface = Enum.SurfaceType.Studs
-	spawnLoc.Duration = 0
-	spawnLoc.Parent = hub
+	-- SpawnPlaza & RangerSpawn removed: players spawn/teleport directly onto their Sanctuary Plot
 
 	-- 3-Board Global Leaderboard Wall at Front-Right Plaza (Top Money/s | Top Speed | Top Playtime — Image 7 style)
 	local lbWall = Instance.new("Model")
