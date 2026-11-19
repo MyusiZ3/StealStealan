@@ -15,6 +15,7 @@ local FormatUtil = require(ReplicatedStorage.Modules.FormatUtil)
 local VoxelPets = require(ReplicatedStorage.Modules.VoxelPets)
 local AnimalVisualBuilder = require(ReplicatedStorage.Modules.AnimalVisualBuilder)
 local VoxelCrateBuilder = require(ReplicatedStorage.Modules.VoxelCrateBuilder)
+local ClassicStudBiomeBuilder = require(ReplicatedStorage.Modules.ClassicStudBiomeBuilder)
 
 local PetLabStageBuilder = {}
 
@@ -1421,6 +1422,8 @@ function PetLabStageBuilder.BuildStage(): Folder
 			end
 		end
 	end
+
+	ClassicStudBiomeBuilder.BuildBiome1Showroom(stage)
 
 	return stage
 end
