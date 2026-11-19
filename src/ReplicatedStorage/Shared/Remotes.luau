@@ -20,6 +20,7 @@ local EVENT_NAMES = {
 	"DeliverCrateToPen",
 	"CrateDelivered",
 	"PlayerKnockback",
+	"PlayerTouchedPoacher",
 	-- Open-Pen Zoo & Upgrades
 	"ClaimPenCoins",
 	"UpgradePen",

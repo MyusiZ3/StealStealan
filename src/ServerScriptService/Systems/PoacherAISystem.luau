@@ -53,6 +53,7 @@ function PoacherAISystem.ResetShieldsForPlayer(player: Player)
 		end
 	end
 	playerShields[player.UserId] = hits
+	player:SetAttribute("ArmorShields", hits)
 end
 
 function PoacherAISystem.TriggerBiomeAggro(biomeId: string, player: Player)
@@ -116,7 +117,7 @@ local function buildPoacherModel(name: string, isBoss: boolean, biomeId: string,
 	local hitbox = Instance.new("Part")
 	hitbox.Name = "HitboxTrigger"
 	hitbox.Shape = Enum.PartType.Block
-	hitbox.Size = if isBoss then Vector3.new(9.5, 9.0, 9.5) else Vector3.new(6.8, 7.2, 6.8)
+	hitbox.Size = if isBoss then Vector3.new(12.0, 10.0, 12.0) else Vector3.new(9.2, 8.5, 9.2)
 	hitbox.Transparency = 1
 	hitbox.Anchored = true
 	hitbox.CanCollide = false
@@ -136,6 +137,7 @@ local function buildPoacherModel(name: string, isBoss: boolean, biomeId: string,
 			if d:IsA("BasePart") then
 				d.Anchored = true
 				d.CanCollide = false
+				d.CanTouch = true
 			elseif d:IsA("BaseScript") then
 				d:Destroy()
 			end
@@ -149,6 +151,7 @@ local function buildPoacherModel(name: string, isBoss: boolean, biomeId: string,
 		body.Color = if isBoss then Color3.fromRGB(168, 36, 36) else accentColor
 		body.Anchored = true
 		body.CanCollide = false
+		body.CanTouch = true
 		body.CFrame = CFrame.new(pos)
 		body.Parent = m
 	end
@@ -200,21 +203,23 @@ function PoacherAISystem.Init()
 	local lastCatchTick: { [number]: number } = {}
 
 	local function tryCatchPlayer(ag: PoacherAgent, player: Player, now: number)
-		if not hasAggroInBiome(player.UserId, ag.biomeId) or AdminService.HasGodMode(player) then
+		if AdminService.HasGodMode(player) then
 			return
 		end
 		local char = player.Character
 		local pRoot = if char then char:FindFirstChild("HumanoidRootPart") else nil
-		if not pRoot or not pRoot:IsA("BasePart") or pRoot.Position.Z <= GameConfig.WORLD.SAFE_ZONE_Z_MAX + 3 then
+		if not pRoot or not pRoot:IsA("BasePart") or pRoot.Position.Z <= GameConfig.WORLD.SAFE_ZONE_Z_MAX + 2 then
 			return
 		end
-		if (now - (lastCatchTick[player.UserId] or 0)) <= 2.2 then
+		if (now - (lastCatchTick[player.UserId] or 0)) <= 1.1 then
 			return
 		end
 		lastCatchTick[player.UserId] = now
 		local shields = playerShields[player.UserId] or 0
 		if shields > 0 then
-			playerShields[player.UserId] = shields - 1
+			local rem = shields - 1
+			playerShields[player.UserId] = rem
+			player:SetAttribute("ArmorShields", rem)
 			Remotes.Get("NotifyClient"):FireClient(player, "Armor Shield absorbed Poacher tackle!", Color3.fromRGB(255, 206, 62))
 		else
 			local away = Vector3.new(pRoot.Position.X - ag.root.Position.X, 0, pRoot.Position.Z - ag.root.Position.Z)
@@ -238,15 +243,39 @@ function PoacherAISystem.Init()
 	end
 
 	local function bindHitboxTouch(ag: PoacherAgent)
-		ag.hitbox.Touched:Connect(function(hit)
+		local function onTouch(hit: BasePart)
 			local char = hit and hit.Parent
 			if not char or not char:IsA("Model") then return end
 			local p = Players:GetPlayerFromCharacter(char)
 			if p then
 				tryCatchPlayer(ag, p, os.clock())
 			end
-		end)
+		end
+		for _, d in ipairs(ag.model:GetDescendants()) do
+			if d:IsA("BasePart") and d.CanTouch then
+				d.Touched:Connect(onTouch)
+			end
+		end
 	end
+
+	Remotes.Get("PlayerTouchedPoacher").OnServerEvent:Connect(function(player, poacherName)
+		if typeof(poacherName) ~= "string" or AdminService.HasGodMode(player) then
+			return
+		end
+		local char = player.Character
+		local pRoot = if char then char:FindFirstChild("HumanoidRootPart") else nil
+		if not pRoot or not pRoot:IsA("BasePart") or pRoot.Position.Z <= GameConfig.WORLD.SAFE_ZONE_Z_MAX + 2 then
+			return
+		end
+		for _, ag in ipairs(agents) do
+			if ag.model.Name == poacherName then
+				if (pRoot.Position - ag.root.Position).Magnitude <= 16 then
+					tryCatchPlayer(ag, player, os.clock())
+				end
+				break
+			end
+		end
+	end)
 
 	for _, biome in ipairs(BiomeConfig) do
 		local bFolder = biomesFolder:FindFirstChild(biome.id)
@@ -349,18 +378,21 @@ function PoacherAISystem.Init()
 			local chasingPlayer: Player? = nil
 			local bestDistSq = math.huge
 
-			-- Find closest thief who stole from THIS agent's biome and is outside Safe Zone
+			-- Find closest thief (aggroed OR encroaching within close personal range inside this biome) outside Safe Zone
 			for _, candidate in ipairs(Players:GetPlayers()) do
-				if hasAggroInBiome(candidate.UserId, ag.biomeId) and not AdminService.HasGodMode(candidate) then
+				if not AdminService.HasGodMode(candidate) then
 					local cChar = candidate.Character
 					local cHum = if cChar then cChar:FindFirstChildOfClass("Humanoid") else nil
 					local cRoot = if cChar then cChar:FindFirstChild("HumanoidRootPart") else nil
 					if cHum and cHum.Health > 0 and cRoot and cRoot:IsA("BasePart") and cRoot.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX + 2 then
 						local d = (cRoot.Position - currPos)
 						local distSq = d.X * d.X + d.Z * d.Z
-						if distSq < bestDistSq then
-							bestDistSq = distSq
-							chasingPlayer = candidate
+						local inBiomeBounds = (cRoot.Position.Z >= ag.zMin - 4 and cRoot.Position.Z <= ag.zMax + 4)
+						if hasAggroInBiome(candidate.UserId, ag.biomeId) or (inBiomeBounds and distSq <= 22 * 22) then
+							if distSq < bestDistSq then
+								bestDistSq = distSq
+								chasingPlayer = candidate
+							end
 						end
 					end
 				end
@@ -379,10 +411,13 @@ function PoacherAISystem.Init()
 			local dist = delta.Magnitude
 			local isReturningHome = (not chasingPlayer) and (currPos.Z < ag.zMin - 4 or currPos.Z > ag.zMax + 4)
 			local recWalkSpeed = GameConfig.SPEED.BASE_WALK_SPEED + math.log10(1 + math.max(10, ag.recommendedSpeed)) * GameConfig.SPEED.STAT_TO_WALKSPEED_LOG_SCALE
-			local alertChaseSpeed = math.max(ag.baseSpeed, recWalkSpeed * (if ag.isBoss then 1.12 else 0.98))
+			local alertChaseSpeed = math.max(ag.baseSpeed * 1.15, recWalkSpeed * (if ag.isBoss then 1.24 else 1.10))
 			local moveSpeed = if chasingPlayer
 				then (alertChaseSpeed * speedMult)
 				else (ag.baseSpeed * speedMult * (if isReturningHome then 1.65 else 0.65))
+			if chasingPlayer and dist < 16 then
+				moveSpeed *= 1.22 -- Close-range tackle lunge
+			end
 
 			if dist > 1.5 then
 				local step = math.min(dist, moveSpeed * dt)
@@ -394,20 +429,26 @@ function PoacherAISystem.Init()
 				ag.wpIndex = (ag.wpIndex % #ag.waypoints) + 1
 			end
 
-			-- Instant HitboxTrigger overlap + radial proximity detection
+			-- Instant HitboxTrigger overlap + velocity-compensated radial proximity detection (no aggro gate)
 			for _, player in ipairs(Players:GetPlayers()) do
-				if hasAggroInBiome(player.UserId, ag.biomeId) and not AdminService.HasGodMode(player) then
+				if not AdminService.HasGodMode(player) then
 					local char = player.Character
 					local pRoot = if char then char:FindFirstChild("HumanoidRootPart") else nil
-					if pRoot and pRoot:IsA("BasePart") and pRoot.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX + 3 then
-						local localHit = ag.hitbox.CFrame:PointToObjectSpace(pRoot.Position)
-						local inBox = math.abs(localHit.X) <= (ag.hitbox.Size.X * 0.5 + 1.2)
-							and math.abs(localHit.Z) <= (ag.hitbox.Size.Z * 0.5 + 1.2)
-							and math.abs(localHit.Y) <= (ag.hitbox.Size.Y * 0.5 + 2.0)
-						local xzDist = Vector2.new(pRoot.Position.X - ag.root.Position.X, pRoot.Position.Z - ag.root.Position.Z).Magnitude
-						local catchRadius = if ag.isBoss then 8.2 else 6.2
-						if inBox or xzDist <= catchRadius then
-							tryCatchPlayer(ag, player, now)
+					if pRoot and pRoot:IsA("BasePart") and pRoot.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX + 2 then
+						local dy = math.abs(pRoot.Position.Y - ag.root.Position.Y)
+						if dy <= 8.5 then
+							local localHit = ag.hitbox.CFrame:PointToObjectSpace(pRoot.Position)
+							local inBox = math.abs(localHit.X) <= (ag.hitbox.Size.X * 0.5 + 1.5)
+								and math.abs(localHit.Z) <= (ag.hitbox.Size.Z * 0.5 + 1.5)
+								and math.abs(localHit.Y) <= (ag.hitbox.Size.Y * 0.5 + 2.0)
+							local xzDist = Vector2.new(pRoot.Position.X - ag.root.Position.X, pRoot.Position.Z - ag.root.Position.Z).Magnitude
+							local pVel = pRoot.AssemblyLinearVelocity
+							local predPos = pRoot.Position + Vector3.new(pVel.X, 0, pVel.Z) * 0.12
+							local predXzDist = Vector2.new(predPos.X - ag.root.Position.X, predPos.Z - ag.root.Position.Z).Magnitude
+							local catchRadius = if ag.isBoss then 10.5 else 8.2
+							if inBox or xzDist <= catchRadius or predXzDist <= catchRadius then
+								tryCatchPlayer(ag, player, now)
+							end
 						end
 					end
 				end

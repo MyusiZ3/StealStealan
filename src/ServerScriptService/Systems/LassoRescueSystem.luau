@@ -444,6 +444,7 @@ function LassoRescueSystem.StartPull(player: Player, crateId: string)
 	if not crate.pullStartedAt then
 		crate.pullStartedAt = now
 	end
+	PoacherAISystem.TriggerBiomeAggro(crate.biomeId, player)
 	Remotes.Get("PullProgressSync"):FireClient(player, {
 		active = true,
 		crateId = crateId,

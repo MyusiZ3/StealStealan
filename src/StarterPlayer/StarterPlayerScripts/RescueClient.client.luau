@@ -432,14 +432,21 @@ localPlayer.AttributeChanged:Connect(function(attr)
 end)
 
 -- Smooth long parabolic Ragdoll / Knockback handler when tackled by Poacher or Boss
-Remotes.Get("PlayerKnockback").OnClientEvent:Connect(function(knockVel: Vector3, stunDuration: number)
+local lastKnockbackTick = 0
+
+local function executeKnockback(knockVel: Vector3, stunDuration: number, isFromServer: boolean)
+	local now = os.clock()
+	if isFromServer and (now - lastKnockbackTick) < 0.55 then
+		return
+	end
 	local char = localPlayer.Character
 	local hum = if char then char:FindFirstChildOfClass("Humanoid") else nil
 	local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
-	if not hum or not root or not root:IsA("BasePart") then
+	if not hum or hum.Health <= 0 or not root or not root:IsA("BasePart") then
 		return
 	end
 
+	lastKnockbackTick = now
 	hum.PlatformStand = true
 	pcall(function()
 		hum:ChangeState(Enum.HumanoidStateType.Physics)
@@ -470,4 +477,67 @@ Remotes.Get("PlayerKnockback").OnClientEvent:Connect(function(knockVel: Vector3,
 			end)
 		end
 	end)
+end
+
+Remotes.Get("PlayerKnockback").OnClientEvent:Connect(function(knockVel: Vector3, stunDuration: number)
+	executeKnockback(knockVel, stunDuration, true)
+end)
+
+-- Zero-latency local contact detection so enemies launch the player immediately upon touching
+RunService.Heartbeat:Connect(function()
+	local now = os.clock()
+	if (now - lastKnockbackTick) <= 1.15 then
+		return
+	end
+	if localPlayer:GetAttribute("GodMode") == true or localPlayer:GetAttribute("AdminGodMode") == true then
+		return
+	end
+	local char = localPlayer.Character
+	local hum = if char then char:FindFirstChildOfClass("Humanoid") else nil
+	local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
+	if not hum or hum.Health <= 0 or not root or not root:IsA("BasePart") then
+		return
+	end
+	if root.Position.Z <= GameConfig.WORLD.SAFE_ZONE_Z_MAX + 2 then
+		return
+	end
+
+	local gw = Workspace:FindFirstChild("GameWorld")
+	local activePoachers = if gw then gw:FindFirstChild("ActivePoachers") else nil
+	if not activePoachers then
+		return
+	end
+
+	for _, poacherModel in ipairs(activePoachers:GetChildren()) do
+		if poacherModel:IsA("Model") then
+			local pRoot = poacherModel:FindFirstChild("HumanoidRootPart") or poacherModel:FindFirstChild("HitboxTrigger")
+			if pRoot and pRoot:IsA("BasePart") then
+				local dy = math.abs(root.Position.Y - pRoot.Position.Y)
+				if dy <= 8.5 then
+					local hitbox = poacherModel:FindFirstChild("HitboxTrigger")
+					local isBoss = (hitbox and hitbox:GetAttribute("IsBoss") == true) == true
+					local catchRadius = if isBoss then 10.0 else 7.8
+					local xzDist = Vector2.new(root.Position.X - pRoot.Position.X, root.Position.Z - pRoot.Position.Z).Magnitude
+					if xzDist <= catchRadius then
+						Remotes.Get("PlayerTouchedPoacher"):FireServer(poacherModel.Name)
+						if (localPlayer:GetAttribute("ArmorShields") or 0) <= 0 then
+							local away = Vector3.new(root.Position.X - pRoot.Position.X, 0, root.Position.Z - pRoot.Position.Z)
+							if away.Magnitude < 0.1 then
+								away = Vector3.new(0, 0, -1)
+							else
+								away = away.Unit
+							end
+							local horizSpeed = if isBoss then 118 else 98
+							local liftY = if isBoss then 66 else 56
+							local knockDir = Vector3.new(away.X * horizSpeed, liftY, (away.Z - 0.35) * horizSpeed)
+							executeKnockback(knockDir, 1.55, false)
+						else
+							lastKnockbackTick = now
+						end
+						break
+					end
+				end
+			end
+		end
+	end
 end)
