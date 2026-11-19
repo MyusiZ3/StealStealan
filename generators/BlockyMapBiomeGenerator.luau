@@ -957,6 +957,38 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder, builderOverride: any
 			addBiomeDividerLine(biome.zStart, biome, biomeModel)
 		end
 
+		-- Invisible Side Perimeter Barriers so players cannot climb off the low terraces or leave the map
+		for _, sideSign in ipairs({ -1, 1 }) do
+			makeBlock({
+				name = "BiomeSideWall_" .. tostring(sideSign),
+				size = Vector3.new(4, 72, lenZ + 4),
+				cframe = CFrame.new(sideSign * 70, 34, centerZ),
+				color = Color3.fromRGB(32, 32, 32),
+				material = Enum.Material.SmoothPlastic,
+				studded = false,
+				canCollide = true,
+				canQuery = false,
+				canTouch = false,
+				castShadow = false,
+				transparency = 1,
+				parent = terrainGroup,
+			})
+			makeBlock({
+				name = "BiomeOuterSideWall_" .. tostring(sideSign),
+				size = Vector3.new(4, 72, lenZ + 4),
+				cframe = CFrame.new(sideSign * 112, 34, centerZ),
+				color = Color3.fromRGB(32, 32, 32),
+				material = Enum.Material.SmoothPlastic,
+				studded = false,
+				canCollide = true,
+				canQuery = false,
+				canTouch = false,
+				castShadow = false,
+				transparency = 1,
+				parent = terrainGroup,
+			})
+		end
+
 		local propsFolder = Instance.new("Folder")
 		propsFolder.Name = "CuratedDecor"
 		propsFolder.Parent = biomeModel
@@ -1060,19 +1092,40 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder, builderOverride: any
 		task.wait()
 	end
 
+	-- Seal SanctuaryHub-to-Biome 1 corner transition wings (Z = 150, |X| = 68..136)
+	for _, sideSign in ipairs({ -1, 1 }) do
+		makeBlock({
+			name = "HubToBiomeWingWall_" .. tostring(sideSign),
+			size = Vector3.new(68, 72, 4),
+			cframe = CFrame.new(sideSign * 102, 34, BiomeConfig[1].zStart),
+			color = Color3.fromRGB(32, 32, 32),
+			material = Enum.Material.SmoothPlastic,
+			studded = false,
+			canCollide = true,
+			canQuery = false,
+			canTouch = false,
+			castShadow = false,
+			transparency = 1,
+			parent = biomesFolder,
+		})
+	end
+
 	-- Invisible Abyss Barrier at end of Biome 5 + Colossal Horizon Volcano backdrop!
 	local endZ = BiomeConfig[#BiomeConfig].zEnd + 6
-	local endBarrier = makeBlock({
+	makeBlock({
 		name = "EndOfWorldWall",
-		size = Vector3.new(mapWidth + 24, 42, 8),
-		cframe = CFrame.new(0, 21, endZ),
+		size = Vector3.new(mapWidth + 28, 72, 8),
+		cframe = CFrame.new(0, 34, endZ),
 		color = Color3.fromRGB(32, 24, 34),
+		material = Enum.Material.SmoothPlastic,
+		studded = false,
 		canCollide = true,
 		canQuery = false,
+		canTouch = false,
+		castShadow = false,
 		transparency = 1,
 		parent = biomesFolder,
 	})
-	endBarrier.CastShadow = false
 
 	makeBlock({
 		name = "EndOfWorldCurb",
