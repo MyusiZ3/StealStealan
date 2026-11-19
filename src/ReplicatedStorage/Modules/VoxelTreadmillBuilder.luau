@@ -194,6 +194,67 @@ local DEFS: { TreadmillDef } = {
 
 VoxelTreadmillBuilder.DEFS = DEFS
 
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local function findVFXTemplate(pathParts: { string }): Instance?
+	for _, root in ipairs({ Workspace, ReplicatedStorage:FindFirstChild("TreadmillVFXAssets") }) do
+		if root then
+			local cur: Instance? = root
+			for _, part in ipairs(pathParts) do
+				cur = if cur then cur:FindFirstChild(part) else nil
+				if not cur then
+					break
+				end
+			end
+			if cur then
+				return cur
+			end
+		end
+	end
+	return nil
+end
+
+local function scaleNumberSequence(ns: NumberSequence, mult: number): NumberSequence
+	local kps = {}
+	for _, kp in ipairs(ns.Keypoints) do
+		table.insert(kps, NumberSequenceKeypoint.new(kp.Time, kp.Value * mult, kp.Envelope * mult))
+	end
+	return NumberSequence.new(kps)
+end
+
+local function cloneAssetVFX(
+	targetHost: Instance,
+	pathParts: { string },
+	sizeScale: number?,
+	maxRate: number?,
+	tintCol: ColorSequence?
+): number
+	local tpl = findVFXTemplate(pathParts)
+	if not tpl then
+		return 0
+	end
+	local sScale = sizeScale or 0.45
+	local rCap = maxRate or 14
+	local cloned = 0
+	for _, desc in ipairs(tpl:GetDescendants()) do
+		if desc:IsA("ParticleEmitter") then
+			local pe = desc:Clone()
+			pe.Enabled = true
+			pe.Rate = math.clamp(pe.Rate * 0.45, 2, rCap)
+			pe.Size = scaleNumberSequence(pe.Size, sScale)
+			pe.Speed = NumberRange.new(pe.Speed.Min * sScale, pe.Speed.Max * sScale)
+			if tintCol then
+				pe.Color = tintCol
+			end
+			pe:SetAttribute("AssetVFX", true)
+			pe.Parent = targetHost
+			cloned += 1
+		end
+	end
+	return cloned
+end
+
 local function mkPart(
 	parent: Instance,
 	name: string,
@@ -659,16 +720,20 @@ function VoxelTreadmillBuilder.Build(level: number, originCF: CFrame?): Model
 				orb.CastShadow = false
 			end
 			local emitterHost = mkPart(specialEffects, "CosmicEmitterHost", Vector3.new(0.5, 0.5, 0.5), CFrame.new(0, consoleY + 1.0, consoleZ), def.neonCol, Enum.Material.SmoothPlastic, false, 1)
-			local pe = Instance.new("ParticleEmitter")
-			pe.Name = "CosmicParticles"
-			pe.Rate = 10
-			pe.Lifetime = NumberRange.new(1.2, 2.2)
-			pe.Speed = NumberRange.new(1.2, 2.8)
-			pe.SpreadAngle = Vector2.new(180, 180)
-			pe.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.32), NumberSequenceKeypoint.new(1, 0) })
-			pe.Color = ColorSequence.new(def.neonCol, def.neonSec)
-			pe.LightEmission = 0.6
-			pe.Parent = emitterHost
+			local cCount = cloneAssetVFX(emitterHost, { "Particle effects", "Portals", "08 - PORTAL [B]" }, 0.38, 12, nil)
+			cCount += cloneAssetVFX(emitterHost, { "VFX1", "Anime", "Charge-01" }, 0.35, 10, ColorSequence.new(def.neonCol, def.neonSec))
+			if cCount == 0 then
+				local pe = Instance.new("ParticleEmitter")
+				pe.Name = "CosmicParticles"
+				pe.Rate = 10
+				pe.Lifetime = NumberRange.new(1.2, 2.2)
+				pe.Speed = NumberRange.new(1.2, 2.8)
+				pe.SpreadAngle = Vector2.new(180, 180)
+				pe.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.32), NumberSequenceKeypoint.new(1, 0) })
+				pe.Color = ColorSequence.new(def.neonCol, def.neonSec)
+				pe.LightEmission = 0.6
+				pe.Parent = emitterHost
+			end
 		end
 	elseif lv == 9 then
 		-- LV 9 Divine: White & Gold frame, decorative voxel wings, golden halo & soft sparkles
@@ -694,6 +759,8 @@ function VoxelTreadmillBuilder.Build(level: number, originCF: CFrame?): Model
 				seg.CastShadow = false
 			end
 			local spHost = mkPart(specialEffects, "DivineSparkleHost", Vector3.new(6.2, 2.0, 2.0), CFrame.new(0, consoleY + 0.8, consoleZ), def.neonCol, Enum.Material.SmoothPlastic, false, 1)
+			local dCount = cloneAssetVFX(spHost, { "VFX1", "Anime", "Shiny-01" }, 0.42, 12, ColorSequence.new(def.neonCol, def.neonSec))
+			dCount += cloneAssetVFX(spHost, { "Particle effects", "Other", "Heal Part (*)" }, 0.42, 8, ColorSequence.new(def.neonCol, def.neonSec))
 			local pe = Instance.new("ParticleEmitter")
 			pe.Name = "DivineSparkles"
 			pe.Rate = 12
@@ -741,6 +808,8 @@ function VoxelTreadmillBuilder.Build(level: number, originCF: CFrame?): Model
 				end
 			end
 			local infHost = mkPart(specialEffects, "InfinityParticleHost", Vector3.new(4.0, 2.0, 2.0), CFrame.new(0, consoleY + 0.9, consoleZ), def.neonCol, Enum.Material.SmoothPlastic, false, 1)
+			cloneAssetVFX(infHost, { "Particle effects", "Portals", "Magic Ting5" }, 0.50, 6, ColorSequence.new(def.neonCol, def.neonSec))
+			cloneAssetVFX(infHost, { "Particle effects", "Lightning", "A - ELECTRICITY 01" }, 0.38, 10, ColorSequence.new(def.neonCol, def.neonSec))
 			local pe = Instance.new("ParticleEmitter")
 			pe.Name = "InfinityParticles"
 			pe.Rate = 12
@@ -801,16 +870,20 @@ function VoxelTreadmillBuilder.Build(level: number, originCF: CFrame?): Model
 			end
 			-- Inward suction particles around portal
 			local pHost = mkPart(specialEffects, "SingularityParticleHost", Vector3.new(0.5, 0.5, 0.5), CFrame.new(0, portalY, consoleZ), def.neonCol, Enum.Material.SmoothPlastic, false, 1)
-			local pe = Instance.new("ParticleEmitter")
-			pe.Name = "PortalPullParticles"
-			pe.Rate = 16
-			pe.Lifetime = NumberRange.new(0.7, 1.3)
-			pe.Speed = NumberRange.new(-4.5, -2.0)
-			pe.SpreadAngle = Vector2.new(180, 180)
-			pe.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.36), NumberSequenceKeypoint.new(1, 0) })
-			pe.Color = ColorSequence.new(def.neonSec, Color3.fromRGB(24, 10, 42))
-			pe.LightEmission = 0.6
-			pe.Parent = pHost
+			local sCount = cloneAssetVFX(pHost, { "VFX1", "Anime", "Portal-01" }, 0.45, 10, ColorSequence.new(def.neonSec, def.neonCol))
+			sCount += cloneAssetVFX(pHost, { "Particle effects", "Portals", "07 - PORTAL [A]" }, 0.38, 10, nil)
+			if sCount == 0 then
+				local pe = Instance.new("ParticleEmitter")
+				pe.Name = "PortalPullParticles"
+				pe.Rate = 16
+				pe.Lifetime = NumberRange.new(0.7, 1.3)
+				pe.Speed = NumberRange.new(-4.5, -2.0)
+				pe.SpreadAngle = Vector2.new(180, 180)
+				pe.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.36), NumberSequenceKeypoint.new(1, 0) })
+				pe.Color = ColorSequence.new(def.neonSec, Color3.fromRGB(24, 10, 42))
+				pe.LightEmission = 0.6
+				pe.Parent = pHost
+			end
 		end
 	elseif lv == 12 then
 		-- LV 12 Primordial: Black, crimson & gold frame, massive horns, ancient spikes, chains, pulsing red core, embers & smoke
@@ -865,6 +938,8 @@ function VoxelTreadmillBuilder.Build(level: number, originCF: CFrame?): Model
 
 			-- Embers + Dark Smoke + Fire Particles (built-in Roblox properties only)
 			local baseVfxHost = mkPart(specialEffects, "PrimordialBaseVFX", Vector3.new(7.5, 0.4, 13.0), CFrame.new(0, footH + 0.4, 0), def.neonCol, Enum.Material.SmoothPlastic, false, 1)
+			cloneAssetVFX(baseVfxHost, { "VFX1", "Anime", "Crack-01" }, 0.50, 5, ColorSequence.new(def.neonCol, def.neonSec))
+			cloneAssetVFX(baseVfxHost, { "VFX1", "Anime", "Fire-01" }, 0.40, 14, ColorSequence.new(def.neonCol, def.neonSec))
 			local embers = Instance.new("ParticleEmitter")
 			embers.Name = "PrimordialEmbers"
 			embers.Rate = 18
