@@ -127,35 +127,85 @@ local function placeCuratedProp(template: Instance?, pos: Vector3, yawRad: numbe
 end
 
 -- ============================================================================
+-- DYNAMIC SIZE SCALE VARIATION GENERATORS
+-- ============================================================================
+
+local function getRandomTreeScale(rng: Random): number
+	local roll = rng:NextNumber()
+	if roll < 0.28 then
+		return rng:NextNumber(0.68, 0.85) -- Young / sapling
+	elseif roll < 0.76 then
+		return rng:NextNumber(0.96, 1.25) -- Mature standard
+	else
+		return rng:NextNumber(1.42, 1.88) -- Ancient grand giant
+	end
+end
+
+local function getRandomFloraScale(rng: Random): number
+	local roll = rng:NextNumber()
+	if roll < 0.32 then
+		return rng:NextNumber(0.65, 0.82) -- Compact patch / small tuft
+	elseif roll < 0.80 then
+		return rng:NextNumber(0.95, 1.22) -- Full cluster
+	else
+		return rng:NextNumber(1.35, 1.72) -- Overgrown lush specimen
+	end
+end
+
+local function getRandomRockScale(rng: Random): number
+	local roll = rng:NextNumber()
+	if roll < 0.30 then
+		return rng:NextNumber(0.62, 0.82) -- Small stone / pebble cluster
+	elseif roll < 0.75 then
+		return rng:NextNumber(0.95, 1.25) -- Standard boulder / log
+	else
+		return rng:NextNumber(1.45, 1.92) -- Mega-boulder / giant ancient rock
+	end
+end
+
+local function getRandomSkylineScale(rng: Random): number
+	local roll = rng:NextNumber()
+	if roll < 0.30 then
+		return rng:NextNumber(0.85, 1.10)
+	elseif roll < 0.75 then
+		return rng:NextNumber(1.18, 1.55)
+	else
+		return rng:NextNumber(1.65, 2.05)
+	end
+end
+
+-- ============================================================================
 -- BIOME-SPECIFIC PROCEDURAL ENVIRONMENT POPULATION (CLASSIC STUDS)
 -- ============================================================================
 
 local function populatePineWoodsDecor(propsFolder: Folder, biome: any, plateauTopY: number, rng: Random)
 	local lenZ = biome.zEnd - biome.zStart
 
-	-- 1. Hero Campsite Clearing (Floor, Left)
+	-- 1. Hero Campsite Clearing (Floor, Left) with varied seat & log sizes
 	local campZ = biome.zStart + lenZ * 0.38
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildTreeStump, CFrame.new(-44, 0, campZ), 1.1, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildTreeStump, CFrame.new(-48, 0, campZ + 4), 0.95, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildTreeStump, CFrame.new(-41, 0, campZ + 3.5), 0.95, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildFallenHollowLog, CFrame.new(-45, 0, campZ - 5) * CFrame.Angles(0, 0.4, 0), 1.0, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildRangerLanternPost, CFrame.new(-38, 0, campZ + 1), 1.05, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildRangerLanternPost, CFrame.new(-50, 0, campZ - 2) * CFrame.Angles(0, math.pi, 0), 1.05, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildMushroomCluster, CFrame.new(-40, 0, campZ - 4), 1.1, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildBerryBush, CFrame.new(-52, 0, campZ + 3), 1.1, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildTreeStump, CFrame.new(-44, 0, campZ), 1.35, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildTreeStump, CFrame.new(-48, 0, campZ + 4), 0.82, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildTreeStump, CFrame.new(-41, 0, campZ + 3.5), 1.05, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildFallenHollowLog, CFrame.new(-45, 0, campZ - 5) * CFrame.Angles(0, 0.4, 0), 1.25, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildRangerLanternPost, CFrame.new(-38, 0, campZ + 1), 1.12, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildRangerLanternPost, CFrame.new(-50, 0, campZ - 2) * CFrame.Angles(0, math.pi, 0), 0.95, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildMushroomCluster, CFrame.new(-40, 0, campZ - 4), 1.45, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildBerryBush, CFrame.new(-52, 0, campZ + 3), 1.25, propsFolder)
 
-	-- 2. Scenic Grove Clearing (Floor, Right)
+	-- 2. Scenic Grove Clearing (Floor, Right) with grand towering trees & lush undergrowth
 	local groveZ = biome.zStart + lenZ * 0.68
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildPineTreeTwin, CFrame.new(50, 0, groveZ), 1.15, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildOakTreeBroad, CFrame.new(58, 0, groveZ - 8), 1.05, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildMossyBoulder, CFrame.new(42, 0, groveZ + 3), 1.1, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildWildflowerPatch, CFrame.new(45, 0, groveZ - 6), 1.2, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildFernCluster, CFrame.new(54, 0, groveZ + 6), 1.1, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildPineTreeTwin, CFrame.new(50, 0, groveZ), 1.72, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildOakTreeBroad, CFrame.new(58, 0, groveZ - 8), 1.55, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildMossyBoulder, CFrame.new(42, 0, groveZ + 3), 1.65, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildWildflowerPatch, CFrame.new(45, 0, groveZ - 6), 1.4, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildFernCluster, CFrame.new(54, 0, groveZ + 6), 1.35, propsFolder)
 
 	-- 3. Trailside Ranger Lanterns along Central Road Borders
 	for z = biome.zStart + 35, biome.zEnd - 35, 65 do
-		placeClassicAsset(ClassicStudBiomeBuilder.BuildRangerLanternPost, CFrame.new(-19, 0.45, z), 0.95, propsFolder)
-		placeClassicAsset(ClassicStudBiomeBuilder.BuildRangerLanternPost, CFrame.new(19, 0.45, z + 32) * CFrame.Angles(0, math.pi, 0), 0.95, propsFolder)
+		local lampScaleL = rng:NextNumber(0.9, 1.1)
+		local lampScaleR = rng:NextNumber(0.9, 1.1)
+		placeClassicAsset(ClassicStudBiomeBuilder.BuildRangerLanternPost, CFrame.new(-19, 0.45, z), lampScaleL, propsFolder)
+		placeClassicAsset(ClassicStudBiomeBuilder.BuildRangerLanternPost, CFrame.new(19, 0.45, z + 32) * CFrame.Angles(0, math.pi, 0), lampScaleR, propsFolder)
 	end
 
 	-- 4. Floor Foliage & Woodland Trees (Left & Right Flanks)
@@ -171,6 +221,8 @@ local function populatePineWoodsDecor(propsFolder: Folder, biome: any, plateauTo
 		ClassicStudBiomeBuilder.BuildFernCluster,
 		ClassicStudBiomeBuilder.BuildGrassTuftCluster,
 		ClassicStudBiomeBuilder.BuildMushroomCluster,
+	}
+	local floorRocks = {
 		ClassicStudBiomeBuilder.BuildMossyBoulder,
 		ClassicStudBiomeBuilder.BuildTreeStump,
 		ClassicStudBiomeBuilder.BuildFallenHollowLog,
@@ -182,23 +234,29 @@ local function populatePineWoodsDecor(propsFolder: Folder, biome: any, plateauTo
 			local z = biome.zStart + 25 + ((step - 1) / 11) * (lenZ - 50) + rng:NextNumber(-8, 8)
 			local treeFn = floorTrees[rng:NextInteger(1, #floorTrees)]
 			local tx = sign * rng:NextNumber(28, 74)
-			placeClassicAsset(treeFn, CFrame.new(tx, 0, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), rng:NextNumber(0.9, 1.25), propsFolder)
+			placeClassicAsset(treeFn, CFrame.new(tx, 0, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomTreeScale(rng), propsFolder)
 
-			local floraFn = floorFlora[rng:NextInteger(1, #floorFlora)]
-			local fx = sign * rng:NextNumber(22, 70)
-			placeClassicAsset(floraFn, CFrame.new(fx, 0, z + rng:NextNumber(-10, 10)) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), rng:NextNumber(0.95, 1.2), propsFolder)
+			if step % 2 == 0 then
+				local rockFn = floorRocks[rng:NextInteger(1, #floorRocks)]
+				local rx = sign * rng:NextNumber(24, 70)
+				placeClassicAsset(rockFn, CFrame.new(rx, 0, z + rng:NextNumber(-10, 10)) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomRockScale(rng), propsFolder)
+			else
+				local floraFn = floorFlora[rng:NextInteger(1, #floorFlora)]
+				local fx = sign * rng:NextNumber(22, 68)
+				placeClassicAsset(floraFn, CFrame.new(fx, 0, z + rng:NextNumber(-10, 10)) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomFloraScale(rng), propsFolder)
+			end
 		end
 	end
 
-	-- 5. Upper Cliff Plateau Skyline (Dense Forest Horizon)
+	-- 5. Upper Cliff Plateau Skyline (Dense Forest Horizon with wide dynamic scales)
 	for _, sideSign in { -1, 1 } do
 		for idx = 1, 13 do
 			local z = biome.zStart + 20 + ((idx - 1) / 12) * (lenZ - 40) + rng:NextNumber(-8, 8)
 			local px = sideSign * rng:NextNumber(104, 148)
 			local tFn = floorTrees[rng:NextInteger(1, #floorTrees)]
-			placeClassicAsset(tFn, CFrame.new(px, plateauTopY, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), rng:NextNumber(1.05, 1.45), propsFolder)
+			placeClassicAsset(tFn, CFrame.new(px, plateauTopY, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomSkylineScale(rng), propsFolder)
 			if idx % 2 == 0 then
-				placeClassicAsset(ClassicStudBiomeBuilder.BuildMossyBoulder, CFrame.new(px + sideSign * 4, plateauTopY, z - 3), rng:NextNumber(1.0, 1.3), propsFolder)
+				placeClassicAsset(ClassicStudBiomeBuilder.BuildMossyBoulder, CFrame.new(px + sideSign * 4, plateauTopY, z - 3), getRandomRockScale(rng), propsFolder)
 			end
 		end
 	end
@@ -207,25 +265,25 @@ end
 local function populateMangroveSwampDecor(propsFolder: Folder, biome: any, plateauTopY: number, rng: Random)
 	local lenZ = biome.zEnd - biome.zStart
 
-	-- 1. Hero Swamp Totem Shrine (Floor, Left)
+	-- 1. Hero Swamp Totem Shrine (Floor, Left) - Imposing ancient relic
 	local shrineZ = biome.zStart + lenZ * 0.35
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildSwampTotemShrine, CFrame.new(-50, 0, shrineZ) * CFrame.Angles(0, math.rad(20), 0), 1.1, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildSwampLanternTotem, CFrame.new(-38, 0, shrineZ + 6), 1.05, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildGiantGlowMushroom, CFrame.new(-58, 0, shrineZ - 6), 1.1, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildGlowSporeTrio, CFrame.new(-42, 0, shrineZ - 5), 1.2, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildSwampTotemShrine, CFrame.new(-50, 0, shrineZ) * CFrame.Angles(0, math.rad(20), 0), 1.35, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildSwampLanternTotem, CFrame.new(-38, 0, shrineZ + 6), 1.15, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildGiantGlowMushroom, CFrame.new(-58, 0, shrineZ - 6), 1.45, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildGlowSporeTrio, CFrame.new(-42, 0, shrineZ - 5), 1.5, propsFolder)
 
 	-- 2. Hero Wooden Swamp Dock over Lagoon (Floor, Right)
 	local dockZ = biome.zStart + lenZ * 0.65
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildWoodenSwampDock, CFrame.new(46, 0.15, dockZ) * CFrame.Angles(0, math.rad(90), 0), 1.15, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildSwampLanternTotem, CFrame.new(38, 0, dockZ - 5), 1.0, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildSwampLilyPadCluster, CFrame.new(54, 0.22, dockZ + 4), 1.15, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildCattailReedCluster, CFrame.new(40, 0, dockZ + 7), 1.2, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildSunkenHollowLog, CFrame.new(55, 0, dockZ - 7) * CFrame.Angles(0, -0.5, 0), 1.1, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildWoodenSwampDock, CFrame.new(46, 0.15, dockZ) * CFrame.Angles(0, math.rad(90), 0), 1.25, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildSwampLanternTotem, CFrame.new(38, 0, dockZ - 5), 1.05, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildSwampLilyPadCluster, CFrame.new(54, 0.22, dockZ + 4), 1.45, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildCattailReedCluster, CFrame.new(40, 0, dockZ + 7), 1.5, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildSunkenHollowLog, CFrame.new(55, 0, dockZ - 7) * CFrame.Angles(0, -0.5, 0), 1.35, propsFolder)
 
 	-- 3. Trailside Swamp Lantern Totems
 	for z = biome.zStart + 40, biome.zEnd - 40, 75 do
-		placeClassicAsset(ClassicStudBiomeBuilder.BuildSwampLanternTotem, CFrame.new(-19, 0.45, z), 0.95, propsFolder)
-		placeClassicAsset(ClassicStudBiomeBuilder.BuildSwampLanternTotem, CFrame.new(19, 0.45, z + 38) * CFrame.Angles(0, math.pi, 0), 0.95, propsFolder)
+		placeClassicAsset(ClassicStudBiomeBuilder.BuildSwampLanternTotem, CFrame.new(-19, 0.45, z), rng:NextNumber(0.9, 1.12), propsFolder)
+		placeClassicAsset(ClassicStudBiomeBuilder.BuildSwampLanternTotem, CFrame.new(19, 0.45, z + 38) * CFrame.Angles(0, math.pi, 0), rng:NextNumber(0.9, 1.12), propsFolder)
 	end
 
 	-- 4. Floor Foliage & Sprawling Mangrove Trees
@@ -238,6 +296,8 @@ local function populateMangroveSwampDecor(propsFolder: Folder, biome: any, plate
 		ClassicStudBiomeBuilder.BuildSwampLilyPadCluster,
 		ClassicStudBiomeBuilder.BuildCattailReedCluster,
 		ClassicStudBiomeBuilder.BuildGlowSporeTrio,
+	}
+	local swampRocks = {
 		ClassicStudBiomeBuilder.BuildSunkenHollowLog,
 		ClassicStudBiomeBuilder.BuildMossySwampBoulder,
 	}
@@ -248,26 +308,32 @@ local function populateMangroveSwampDecor(propsFolder: Folder, biome: any, plate
 			local z = biome.zStart + 25 + ((step - 1) / 11) * (lenZ - 50) + rng:NextNumber(-8, 8)
 			local treeFn = swampTrees[rng:NextInteger(1, #swampTrees)]
 			local tx = sign * rng:NextNumber(30, 72)
-			placeClassicAsset(treeFn, CFrame.new(tx, 0, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), rng:NextNumber(0.9, 1.2), propsFolder)
+			placeClassicAsset(treeFn, CFrame.new(tx, 0, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomTreeScale(rng), propsFolder)
 
-			local floraFn = swampFlora[rng:NextInteger(1, #swampFlora)]
-			local fx = sign * rng:NextNumber(22, 68)
-			placeClassicAsset(floraFn, CFrame.new(fx, 0, z + rng:NextNumber(-9, 9)) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), rng:NextNumber(0.95, 1.25), propsFolder)
+			if step % 2 == 0 then
+				local rockFn = swampRocks[rng:NextInteger(1, #swampRocks)]
+				local rx = sign * rng:NextNumber(24, 68)
+				placeClassicAsset(rockFn, CFrame.new(rx, 0, z + rng:NextNumber(-9, 9)) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomRockScale(rng), propsFolder)
+			else
+				local floraFn = swampFlora[rng:NextInteger(1, #swampFlora)]
+				local fx = sign * rng:NextNumber(22, 68)
+				placeClassicAsset(floraFn, CFrame.new(fx, 0, z + rng:NextNumber(-9, 9)) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomFloraScale(rng), propsFolder)
+			end
 		end
 	end
 
-	-- 5. Upper Cliff Plateau Skyline (Mushroom & Gnarled Willow Ridge)
+	-- 5. Upper Cliff Plateau Skyline (Glow Mushroom & Gnarled Willow Ridge with varied scales)
 	for _, sideSign in { -1, 1 } do
 		for idx = 1, 12 do
 			local z = biome.zStart + 22 + ((idx - 1) / 11) * (lenZ - 44) + rng:NextNumber(-8, 8)
 			local px = sideSign * rng:NextNumber(104, 146)
 			if idx % 2 == 0 then
-				placeClassicAsset(ClassicStudBiomeBuilder.BuildGiantGlowMushroom, CFrame.new(px, plateauTopY, z), rng:NextNumber(1.05, 1.35), propsFolder)
+				placeClassicAsset(ClassicStudBiomeBuilder.BuildGiantGlowMushroom, CFrame.new(px, plateauTopY, z), getRandomSkylineScale(rng), propsFolder)
 			else
-				placeClassicAsset(ClassicStudBiomeBuilder.BuildDeadSwampWillow, CFrame.new(px, plateauTopY, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), rng:NextNumber(1.0, 1.3), propsFolder)
+				placeClassicAsset(ClassicStudBiomeBuilder.BuildDeadSwampWillow, CFrame.new(px, plateauTopY, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomSkylineScale(rng), propsFolder)
 			end
 			if idx % 3 == 0 then
-				placeClassicAsset(ClassicStudBiomeBuilder.BuildSwampLanternTotem, CFrame.new(px + sideSign * 4, plateauTopY, z + 3), 1.0, propsFolder)
+				placeClassicAsset(ClassicStudBiomeBuilder.BuildSwampLanternTotem, CFrame.new(px + sideSign * 4, plateauTopY, z + 3), rng:NextNumber(0.95, 1.25), propsFolder)
 			end
 		end
 	end
@@ -276,29 +342,29 @@ end
 local function populateSavannaCampDecor(propsFolder: Folder, biome: any, plateauTopY: number, rng: Random)
 	local lenZ = biome.zEnd - biome.zStart
 
-	-- 1. Hero Desert Step Pyramid (Floor, Left Clearing)
+	-- 1. Hero Desert Step Pyramid (Floor, Left Clearing) - Majestic Colossus
 	local pyrZ = biome.zStart + lenZ * 0.42
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertStepPyramid, CFrame.new(-54, 0, pyrZ), 1.15, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertBrazierTorch, CFrame.new(-38, 0, pyrZ + 8), 1.1, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertBrazierTorch, CFrame.new(-38, 0, pyrZ - 8), 1.1, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertSkullBone, CFrame.new(-42, 0, pyrZ), 1.2, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertStepPyramid, CFrame.new(-54, 0, pyrZ), 1.35, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertBrazierTorch, CFrame.new(-38, 0, pyrZ + 8), 1.2, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertBrazierTorch, CFrame.new(-38, 0, pyrZ - 8), 1.2, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertSkullBone, CFrame.new(-42, 0, pyrZ), 1.5, propsFolder)
 
 	-- 2. Hero Oasis Water Pool & Palm Grove (Floor, Right Clearing)
 	local oasisZ = biome.zStart + lenZ * 0.70
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildOasisWaterPool, CFrame.new(50, 0, oasisZ), 1.1, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertPalmTree, CFrame.new(58, 0, oasisZ + 6) * CFrame.Angles(0, 0.4, 0), 1.15, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertPalmTree, CFrame.new(42, 0, oasisZ - 6) * CFrame.Angles(0, -0.5, 0), 1.05, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildSavannaGrassTuft, CFrame.new(46, 0, oasisZ + 8), 1.2, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildOasisWaterPool, CFrame.new(50, 0, oasisZ), 1.25, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertPalmTree, CFrame.new(58, 0, oasisZ + 6) * CFrame.Angles(0, 0.4, 0), 1.65, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertPalmTree, CFrame.new(42, 0, oasisZ - 6) * CFrame.Angles(0, -0.5, 0), 0.88, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildSavannaGrassTuft, CFrame.new(46, 0, oasisZ + 8), 1.45, propsFolder)
 
-	-- 3. Hero Sandstone Mesa Arch
+	-- 3. Hero Sandstone Mesa Arch - Towering Canyon Gateway
 	local archZ = biome.zStart + lenZ * 0.86
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildSandstoneMesaArch, CFrame.new(-50, 0, archZ) * CFrame.Angles(0, math.rad(15), 0), 1.1, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildSandstoneRuinedPillar, CFrame.new(-38, 0, archZ - 6), 1.1, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildSandstoneMesaArch, CFrame.new(-50, 0, archZ) * CFrame.Angles(0, math.rad(15), 0), 1.32, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildSandstoneRuinedPillar, CFrame.new(-38, 0, archZ - 6), 1.35, propsFolder)
 
 	-- 4. Trailside Desert Brazier Torches
 	for z = biome.zStart + 40, biome.zEnd - 40, 75 do
-		placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertBrazierTorch, CFrame.new(-19, 0.45, z), 0.95, propsFolder)
-		placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertBrazierTorch, CFrame.new(19, 0.45, z + 38) * CFrame.Angles(0, math.pi, 0), 0.95, propsFolder)
+		placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertBrazierTorch, CFrame.new(-19, 0.45, z), rng:NextNumber(0.9, 1.15), propsFolder)
+		placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertBrazierTorch, CFrame.new(19, 0.45, z + 38) * CFrame.Angles(0, math.pi, 0), rng:NextNumber(0.9, 1.15), propsFolder)
 	end
 
 	-- 5. Floor Trees, Giant Cacti & Desert Props
@@ -310,6 +376,8 @@ local function populateSavannaCampDecor(propsFolder: Folder, biome: any, plateau
 		ClassicStudBiomeBuilder.BuildSaguaroCactusGiant,
 		ClassicStudBiomeBuilder.BuildBarrelCactusCluster,
 		ClassicStudBiomeBuilder.BuildSavannaGrassTuft,
+	}
+	local savannaProps = {
 		ClassicStudBiomeBuilder.BuildSandstoneRuinedPillar,
 		ClassicStudBiomeBuilder.BuildDesertSkullBone,
 	}
@@ -320,26 +388,32 @@ local function populateSavannaCampDecor(propsFolder: Folder, biome: any, plateau
 			local z = biome.zStart + 25 + ((step - 1) / 11) * (lenZ - 50) + rng:NextNumber(-8, 8)
 			local treeFn = savannaTrees[rng:NextInteger(1, #savannaTrees)]
 			local tx = sign * rng:NextNumber(28, 72)
-			placeClassicAsset(treeFn, CFrame.new(tx, 0, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), rng:NextNumber(0.9, 1.2), propsFolder)
+			placeClassicAsset(treeFn, CFrame.new(tx, 0, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomTreeScale(rng), propsFolder)
 
-			local floraFn = savannaFlora[rng:NextInteger(1, #savannaFlora)]
-			local fx = sign * rng:NextNumber(22, 68)
-			placeClassicAsset(floraFn, CFrame.new(fx, 0, z + rng:NextNumber(-8, 8)) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), rng:NextNumber(0.95, 1.25), propsFolder)
+			if step % 2 == 0 then
+				local propFn = savannaProps[rng:NextInteger(1, #savannaProps)]
+				local px = sign * rng:NextNumber(24, 68)
+				placeClassicAsset(propFn, CFrame.new(px, 0, z + rng:NextNumber(-8, 8)) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomRockScale(rng), propsFolder)
+			else
+				local floraFn = savannaFlora[rng:NextInteger(1, #savannaFlora)]
+				local fx = sign * rng:NextNumber(22, 68)
+				placeClassicAsset(floraFn, CFrame.new(fx, 0, z + rng:NextNumber(-8, 8)) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomFloraScale(rng), propsFolder)
+			end
 		end
 	end
 
 	-- 6. Upper Cliff Plateau Skyline (Secondary Step Pyramid + Giant Cacti + Acacias)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertStepPyramid, CFrame.new(128, plateauTopY, biome.zStart + lenZ * 0.5), 1.15, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildSandstoneMesaArch, CFrame.new(-128, plateauTopY, biome.zStart + lenZ * 0.5) * CFrame.Angles(0, math.rad(90), 0), 1.1, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildDesertStepPyramid, CFrame.new(128, plateauTopY, biome.zStart + lenZ * 0.5), 1.28, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildSandstoneMesaArch, CFrame.new(-128, plateauTopY, biome.zStart + lenZ * 0.5) * CFrame.Angles(0, math.rad(90), 0), 1.25, propsFolder)
 
 	for _, sideSign in { -1, 1 } do
 		for idx = 1, 11 do
 			local z = biome.zStart + 25 + ((idx - 1) / 10) * (lenZ - 50) + rng:NextNumber(-8, 8)
 			local px = sideSign * rng:NextNumber(104, 146)
 			if idx % 2 == 0 then
-				placeClassicAsset(ClassicStudBiomeBuilder.BuildAcaciaTreeFlat, CFrame.new(px, plateauTopY, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), rng:NextNumber(1.0, 1.3), propsFolder)
+				placeClassicAsset(ClassicStudBiomeBuilder.BuildAcaciaTreeFlat, CFrame.new(px, plateauTopY, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomSkylineScale(rng), propsFolder)
 			else
-				placeClassicAsset(ClassicStudBiomeBuilder.BuildSaguaroCactusGiant, CFrame.new(px, plateauTopY, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), rng:NextNumber(1.05, 1.35), propsFolder)
+				placeClassicAsset(ClassicStudBiomeBuilder.BuildSaguaroCactusGiant, CFrame.new(px, plateauTopY, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomSkylineScale(rng), propsFolder)
 			end
 		end
 	end
@@ -348,24 +422,24 @@ end
 local function populateAlpinePeaksDecor(propsFolder: Folder, biome: any, plateauTopY: number, rng: Random)
 	local lenZ = biome.zEnd - biome.zStart
 
-	-- 1. Hero Giant Ice Crystal Spire (Floor, Right Clearing)
+	-- 1. Hero Giant Ice Crystal Spire (Floor, Right Clearing) - Towering crystalline monument
 	local spireZ = biome.zStart + lenZ * 0.40
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildGiantIceCrystalSpire, CFrame.new(52, 0, spireZ), 1.15, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildIceCrystalCluster, CFrame.new(42, 0, spireZ + 6), 1.2, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildIceCrystalCluster, CFrame.new(42, 0, spireZ - 6), 1.2, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildAlpineStoneCairn, CFrame.new(38, 0, spireZ), 1.15, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildGiantIceCrystalSpire, CFrame.new(52, 0, spireZ), 1.45, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildIceCrystalCluster, CFrame.new(42, 0, spireZ + 6), 1.55, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildIceCrystalCluster, CFrame.new(42, 0, spireZ - 6), 0.85, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildAlpineStoneCairn, CFrame.new(38, 0, spireZ), 1.4, propsFolder)
 
 	-- 2. Hero Frozen Ice Archway (Floor, Left Clearing)
 	local archZ = biome.zStart + lenZ * 0.68
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildFrozenIceArchway, CFrame.new(-48, 0, archZ) * CFrame.Angles(0, math.rad(15), 0), 1.2, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildSnowyPineTreeTall, CFrame.new(-58, 0, archZ + 6), 1.1, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildGlacierBoulderSnowy, CFrame.new(-40, 0, archZ - 5), 1.15, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildIceBerryBush, CFrame.new(-42, 0, archZ + 6), 1.1, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildFrozenIceArchway, CFrame.new(-48, 0, archZ) * CFrame.Angles(0, math.rad(15), 0), 1.35, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildSnowyPineTreeTall, CFrame.new(-58, 0, archZ + 6), 1.65, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildGlacierBoulderSnowy, CFrame.new(-40, 0, archZ - 5), 1.5, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildIceBerryBush, CFrame.new(-42, 0, archZ + 6), 1.35, propsFolder)
 
 	-- 3. Trailside Alpine Stone Cairns
 	for z = biome.zStart + 40, biome.zEnd - 40, 75 do
-		placeClassicAsset(ClassicStudBiomeBuilder.BuildAlpineStoneCairn, CFrame.new(-19, 0.45, z), 0.95, propsFolder)
-		placeClassicAsset(ClassicStudBiomeBuilder.BuildAlpineStoneCairn, CFrame.new(19, 0.45, z + 38) * CFrame.Angles(0, math.pi, 0), 0.95, propsFolder)
+		placeClassicAsset(ClassicStudBiomeBuilder.BuildAlpineStoneCairn, CFrame.new(-19, 0.45, z), rng:NextNumber(0.88, 1.15), propsFolder)
+		placeClassicAsset(ClassicStudBiomeBuilder.BuildAlpineStoneCairn, CFrame.new(19, 0.45, z + 38) * CFrame.Angles(0, math.pi, 0), rng:NextNumber(0.88, 1.15), propsFolder)
 	end
 
 	-- 4. Floor Foliage & Frosted Pines
@@ -377,8 +451,10 @@ local function populateAlpinePeaksDecor(propsFolder: Folder, biome: any, plateau
 	local alpineFlora = {
 		ClassicStudBiomeBuilder.BuildIceBerryBush,
 		ClassicStudBiomeBuilder.BuildFrostGrassTuft,
-		ClassicStudBiomeBuilder.BuildGlacierBoulderSnowy,
 		ClassicStudBiomeBuilder.BuildIceCrystalCluster,
+	}
+	local alpineRocks = {
+		ClassicStudBiomeBuilder.BuildGlacierBoulderSnowy,
 		ClassicStudBiomeBuilder.BuildFrozenHollowLog,
 		ClassicStudBiomeBuilder.BuildAlpineStoneCairn,
 	}
@@ -389,26 +465,32 @@ local function populateAlpinePeaksDecor(propsFolder: Folder, biome: any, plateau
 			local z = biome.zStart + 25 + ((step - 1) / 11) * (lenZ - 50) + rng:NextNumber(-8, 8)
 			local treeFn = alpineTrees[rng:NextInteger(1, #alpineTrees)]
 			local tx = sign * rng:NextNumber(28, 72)
-			placeClassicAsset(treeFn, CFrame.new(tx, 0, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), rng:NextNumber(0.9, 1.25), propsFolder)
+			placeClassicAsset(treeFn, CFrame.new(tx, 0, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomTreeScale(rng), propsFolder)
 
-			local floraFn = alpineFlora[rng:NextInteger(1, #alpineFlora)]
-			local fx = sign * rng:NextNumber(22, 68)
-			placeClassicAsset(floraFn, CFrame.new(fx, 0, z + rng:NextNumber(-8, 8)) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), rng:NextNumber(0.95, 1.25), propsFolder)
+			if step % 2 == 0 then
+				local rockFn = alpineRocks[rng:NextInteger(1, #alpineRocks)]
+				local rx = sign * rng:NextNumber(24, 68)
+				placeClassicAsset(rockFn, CFrame.new(rx, 0, z + rng:NextNumber(-8, 8)) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomRockScale(rng), propsFolder)
+			else
+				local floraFn = alpineFlora[rng:NextInteger(1, #alpineFlora)]
+				local fx = sign * rng:NextNumber(22, 68)
+				placeClassicAsset(floraFn, CFrame.new(fx, 0, z + rng:NextNumber(-8, 8)) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomFloraScale(rng), propsFolder)
+			end
 		end
 	end
 
 	-- 5. Upper Cliff Plateau Skyline (Giant Ice Spires + Snowy Pines on Ridges)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildGiantIceCrystalSpire, CFrame.new(-126, plateauTopY, biome.zStart + lenZ * 0.35), 1.25, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildGiantIceCrystalSpire, CFrame.new(128, plateauTopY, biome.zStart + lenZ * 0.72), 1.25, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildGiantIceCrystalSpire, CFrame.new(-126, plateauTopY, biome.zStart + lenZ * 0.35), 1.55, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildGiantIceCrystalSpire, CFrame.new(128, plateauTopY, biome.zStart + lenZ * 0.72), 1.35, propsFolder)
 
 	for _, sideSign in { -1, 1 } do
 		for idx = 1, 12 do
 			local z = biome.zStart + 22 + ((idx - 1) / 11) * (lenZ - 44) + rng:NextNumber(-8, 8)
 			local px = sideSign * rng:NextNumber(104, 146)
 			local tFn = alpineTrees[rng:NextInteger(1, #alpineTrees)]
-			placeClassicAsset(tFn, CFrame.new(px, plateauTopY, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), rng:NextNumber(1.05, 1.45), propsFolder)
+			placeClassicAsset(tFn, CFrame.new(px, plateauTopY, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomSkylineScale(rng), propsFolder)
 			if idx % 3 == 0 then
-				placeClassicAsset(ClassicStudBiomeBuilder.BuildIceCrystalCluster, CFrame.new(px + sideSign * 4, plateauTopY, z + 2), 1.2, propsFolder)
+				placeClassicAsset(ClassicStudBiomeBuilder.BuildIceCrystalCluster, CFrame.new(px + sideSign * 4, plateauTopY, z + 2), getRandomFloraScale(rng), propsFolder)
 			end
 		end
 	end
@@ -417,25 +499,25 @@ end
 local function populateVolcanicJungleDecor(propsFolder: Folder, biome: any, plateauTopY: number, rng: Random)
 	local lenZ = biome.zEnd - biome.zStart
 
-	-- 1. Hero Volcano Crater Landmark (Floor, Left Clearing)
+	-- 1. Hero Volcano Crater Landmark (Floor, Left Clearing) - Massive smoking caldera
 	local craterZ = biome.zStart + lenZ * 0.40
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildVolcanoCraterLandmark, CFrame.new(-52, 0, craterZ), 1.2, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildMagmaVentGeyser, CFrame.new(-38, 0, craterZ + 8), 1.1, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildMagmaVentGeyser, CFrame.new(-38, 0, craterZ - 8), 1.1, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildCrimsonCrystalCluster, CFrame.new(-42, 0, craterZ), 1.2, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildVolcanoCraterLandmark, CFrame.new(-52, 0, craterZ), 1.4, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildMagmaVentGeyser, CFrame.new(-38, 0, craterZ + 8), 1.35, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildMagmaVentGeyser, CFrame.new(-38, 0, craterZ - 8), 0.85, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildCrimsonCrystalCluster, CFrame.new(-42, 0, craterZ), 1.5, propsFolder)
 
 	-- 2. Hero Obsidian Monolith Ruins (Floor, Right Clearing)
 	local monolithZ = biome.zStart + lenZ * 0.72
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildObsidianMonolithRuins, CFrame.new(50, 0, monolithZ) * CFrame.Angles(0, math.rad(25), 0), 1.2, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildVolcanicSkullBrazier, CFrame.new(38, 0, monolithZ + 6), 1.1, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildVolcanicSkullBrazier, CFrame.new(38, 0, monolithZ - 6), 1.1, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildLavaCrackedBoulder, CFrame.new(58, 0, monolithZ), 1.15, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildFirebloomFlowerPatch, CFrame.new(44, 0, monolithZ + 7), 1.2, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildObsidianMonolithRuins, CFrame.new(50, 0, monolithZ) * CFrame.Angles(0, math.rad(25), 0), 1.35, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildVolcanicSkullBrazier, CFrame.new(38, 0, monolithZ + 6), 1.25, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildVolcanicSkullBrazier, CFrame.new(38, 0, monolithZ - 6), 1.25, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildLavaCrackedBoulder, CFrame.new(58, 0, monolithZ), 1.6, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildFirebloomFlowerPatch, CFrame.new(44, 0, monolithZ + 7), 1.45, propsFolder)
 
 	-- 3. Trailside Volcanic Skull Braziers
 	for z = biome.zStart + 40, biome.zEnd - 40, 75 do
-		placeClassicAsset(ClassicStudBiomeBuilder.BuildVolcanicSkullBrazier, CFrame.new(-19, 0.45, z), 0.95, propsFolder)
-		placeClassicAsset(ClassicStudBiomeBuilder.BuildVolcanicSkullBrazier, CFrame.new(19, 0.45, z + 38) * CFrame.Angles(0, math.pi, 0), 0.95, propsFolder)
+		placeClassicAsset(ClassicStudBiomeBuilder.BuildVolcanicSkullBrazier, CFrame.new(-19, 0.45, z), rng:NextNumber(0.9, 1.15), propsFolder)
+		placeClassicAsset(ClassicStudBiomeBuilder.BuildVolcanicSkullBrazier, CFrame.new(19, 0.45, z + 38) * CFrame.Angles(0, math.pi, 0), rng:NextNumber(0.9, 1.15), propsFolder)
 	end
 
 	-- 4. Floor Foliage & Charred Trees
@@ -447,9 +529,11 @@ local function populateVolcanicJungleDecor(propsFolder: Folder, biome: any, plat
 	local volcanicFlora = {
 		ClassicStudBiomeBuilder.BuildFirebloomFlowerPatch,
 		ClassicStudBiomeBuilder.BuildAshEmberGrassTuft,
+		ClassicStudBiomeBuilder.BuildCrimsonCrystalCluster,
+	}
+	local volcanicRocks = {
 		ClassicStudBiomeBuilder.BuildMagmaVentGeyser,
 		ClassicStudBiomeBuilder.BuildLavaCrackedBoulder,
-		ClassicStudBiomeBuilder.BuildCrimsonCrystalCluster,
 		ClassicStudBiomeBuilder.BuildVolcanicSkullBrazier,
 	}
 
@@ -459,26 +543,32 @@ local function populateVolcanicJungleDecor(propsFolder: Folder, biome: any, plat
 			local z = biome.zStart + 25 + ((step - 1) / 11) * (lenZ - 50) + rng:NextNumber(-8, 8)
 			local treeFn = volcanicTrees[rng:NextInteger(1, #volcanicTrees)]
 			local tx = sign * rng:NextNumber(28, 72)
-			placeClassicAsset(treeFn, CFrame.new(tx, 0, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), rng:NextNumber(0.9, 1.25), propsFolder)
+			placeClassicAsset(treeFn, CFrame.new(tx, 0, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomTreeScale(rng), propsFolder)
 
-			local floraFn = volcanicFlora[rng:NextInteger(1, #volcanicFlora)]
-			local fx = sign * rng:NextNumber(22, 68)
-			placeClassicAsset(floraFn, CFrame.new(fx, 0, z + rng:NextNumber(-8, 8)) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), rng:NextNumber(0.95, 1.25), propsFolder)
+			if step % 2 == 0 then
+				local rockFn = volcanicRocks[rng:NextInteger(1, #volcanicRocks)]
+				local rx = sign * rng:NextNumber(24, 68)
+				placeClassicAsset(rockFn, CFrame.new(rx, 0, z + rng:NextNumber(-8, 8)) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomRockScale(rng), propsFolder)
+			else
+				local floraFn = volcanicFlora[rng:NextInteger(1, #volcanicFlora)]
+				local fx = sign * rng:NextNumber(22, 68)
+				placeClassicAsset(floraFn, CFrame.new(fx, 0, z + rng:NextNumber(-8, 8)) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomFloraScale(rng), propsFolder)
+			end
 		end
 	end
 
 	-- 5. Upper Cliff Plateau Skyline (Secondary Volcano Crater + Monoliths + Geysers)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildVolcanoCraterLandmark, CFrame.new(128, plateauTopY, biome.zStart + lenZ * 0.45), 1.25, propsFolder)
-	placeClassicAsset(ClassicStudBiomeBuilder.BuildObsidianMonolithRuins, CFrame.new(-128, plateauTopY, biome.zStart + lenZ * 0.65) * CFrame.Angles(0, math.rad(90), 0), 1.2, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildVolcanoCraterLandmark, CFrame.new(128, plateauTopY, biome.zStart + lenZ * 0.45), 1.35, propsFolder)
+	placeClassicAsset(ClassicStudBiomeBuilder.BuildObsidianMonolithRuins, CFrame.new(-128, plateauTopY, biome.zStart + lenZ * 0.65) * CFrame.Angles(0, math.rad(90), 0), 1.3, propsFolder)
 
 	for _, sideSign in { -1, 1 } do
 		for idx = 1, 12 do
 			local z = biome.zStart + 22 + ((idx - 1) / 11) * (lenZ - 44) + rng:NextNumber(-8, 8)
 			local px = sideSign * rng:NextNumber(104, 146)
 			local tFn = volcanicTrees[rng:NextInteger(1, #volcanicTrees)]
-			placeClassicAsset(tFn, CFrame.new(px, plateauTopY, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), rng:NextNumber(1.05, 1.45), propsFolder)
+			placeClassicAsset(tFn, CFrame.new(px, plateauTopY, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0), getRandomSkylineScale(rng), propsFolder)
 			if idx % 2 == 0 then
-				placeClassicAsset(ClassicStudBiomeBuilder.BuildMagmaVentGeyser, CFrame.new(px + sideSign * 4, plateauTopY, z + 2), 1.15, propsFolder)
+				placeClassicAsset(ClassicStudBiomeBuilder.BuildMagmaVentGeyser, CFrame.new(px + sideSign * 4, plateauTopY, z + 2), getRandomRockScale(rng), propsFolder)
 			end
 		end
 	end
