@@ -1,5 +1,5 @@
 --!strict
--- XuanwuBlackTortoise.luau (Voxel)
+-- OmegaObsidianColossus.luau (Promoted Voxel; legacy alias: XuanwuBlackTortoise)
 -- Candidate #5: Mythical Black Tortoise-Dragon (Xuanwu) with Massive Obsidian Carapace,
 -- Pale Ice-Blue Spectral Shell Mist, Heavy Pillar Legs, Tall Dragon Neck & Azure Flame Maw.
 
@@ -15,18 +15,17 @@ local C_SLATE = Color3.fromRGB(142, 152, 184)
 local C_MIST = Color3.fromRGB(204, 232, 255)
 local C_AZURE = Color3.fromRGB(68, 158, 255)
 
-local XuanwuBlackTortoise = {
-	Id = "XuanwuBlackTortoise",
+local OmegaObsidianColossus = {
+	Id = "OmegaObsidianColossus",
 	DisplayName = "Xuanwu Black Tortoise",
 	Archetype = "QuadrupedBeast" :: RigCore.ArchetypeId,
 	VisualStyle = "Voxel" :: "Voxel",
-	StagingSlot = 5,
-	BaseConceptId = "XuanwuBlackTortoise",
+	Aliases = { "XuanwuBlackTortoise" },
 	DefaultScale = 1.30,
 	AccentColor = C_AZURE,
 }
 
-function XuanwuBlackTortoise.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
+function OmegaObsidianColossus.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
 	local session = RigCore.CreateSession(model, s, ctx, isStatic, Vector3.new(2.10, 1.30, 2.36), C_OBSIDIAN)
 
 	local torsoVoxels: { VoxelSpec } = {
@@ -117,4 +116,4 @@ function XuanwuBlackTortoise.Build(s: number, ctx: RigCore.MutContext, isStatic:
 	return session
 end
 
-return XuanwuBlackTortoise
+return OmegaObsidianColossus

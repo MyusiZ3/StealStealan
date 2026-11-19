@@ -97,7 +97,7 @@ local BiomeConfig: { Types.BiomeDefinition } = {
 		id = "VolcanicJungle",
 		order = 5,
 		name = "Volcanic Obsidian Jungle",
-		subtitle = "24 Index | Max: Primordial | Apex Stronghold",
+		subtitle = "25 Index | Max: Primordial | Apex Stronghold",
 		zStart = 1650,
 		zEnd = 2150,
 		groundColor = Color3.fromRGB(54, 46, 58),
@@ -111,7 +111,7 @@ local BiomeConfig: { Types.BiomeDefinition } = {
 		poacherSpeed = 68,
 		crateBaseResistance = 15000000000000000, -- 15Qa
 		recommendedSpeed = 500000000000, -- 500B
-		indexCount = 24,
+		indexCount = 25,
 		maxRarity = "Primordial",
 		bannerAssetId = "rbxassetid://94880558012667",
 	},

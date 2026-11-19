@@ -1,5 +1,5 @@
 --!strict
--- AzureFlameMechaBeast.luau (Voxel)
+-- AstralStarDragon.luau (Promoted Voxel; legacy alias: AzureFlameMechaBeast)
 -- Candidate #2: White-Silver Angular Mecha Dragon-Wolf with Electric-Blue Plasma Wing Flames,
 -- Diamond Shoulder Cores, Forearm Arm-Blades & Segmented Scorpion-Whip Tail.
 
@@ -15,18 +15,17 @@ local C_STEEL = Color3.fromRGB(58, 76, 114)
 local C_PLASMA = Color3.fromRGB(28, 162, 255)
 local C_CORE = Color3.fromRGB(112, 232, 255)
 
-local AzureFlameMechaBeast = {
-	Id = "AzureFlameMechaBeast",
+local AstralStarDragon = {
+	Id = "AstralStarDragon",
 	DisplayName = "Azure Flame Mecha",
 	Archetype = "WingedDrake" :: RigCore.ArchetypeId,
 	VisualStyle = "Voxel" :: "Voxel",
-	StagingSlot = 2,
-	BaseConceptId = "AzureFlameMechaBeast",
+	Aliases = { "AzureFlameMechaBeast" },
 	DefaultScale = 1.30,
 	AccentColor = C_PLASMA,
 }
 
-function AzureFlameMechaBeast.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
+function AstralStarDragon.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
 	local session = RigCore.CreateSession(model, s, ctx, isStatic, Vector3.new(1.36, 1.18, 2.24), C_WHITE)
 
 	local torsoVoxels: { VoxelSpec } = {
@@ -153,4 +152,4 @@ function AzureFlameMechaBeast.Build(s: number, ctx: RigCore.MutContext, isStatic
 	return session
 end
 
-return AzureFlameMechaBeast
+return AstralStarDragon

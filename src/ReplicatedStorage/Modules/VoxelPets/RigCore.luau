@@ -19,6 +19,7 @@ export type ArchetypeId =
 	| "EasternSerpent"
 	| "ArachnidScorpion"
 	| "AquaticPlesiosaur"
+	| "CataclysmColossus"
 
 export type PartShapeKind = "Block" | "Sphere" | "Cylinder" | "Wedge" | "CornerWedge"
 
@@ -75,7 +76,10 @@ export type SpeciesModule = {
 	VisualStyle: ("Voxel" | "Realistic")?,
 	StagingSlot: number?,
 	BaseConceptId: string?,
+	Aliases: { string }?,
 	DefaultScale: number?,
+	CameraHeightOffset: number?,
+	CameraDistMult: number?,
 	BaseMeshScale: number?,
 	PublishedAssetId: string?,
 	MeshParts: { MeshPartSpec }?,

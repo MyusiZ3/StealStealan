@@ -18,6 +18,7 @@ local BONE_PARENTS: { [string]: string } = {
 	Torso = "Root",
 	Neck = "Torso",
 	Head = "Neck",
+	Jaw = "Head",
 	EarL = "Head",
 	EarR = "Head",
 	BowRibbon = "Torso",
@@ -38,6 +39,7 @@ local JOINT_TO_BONE: { [string]: string } = {
 	RootJoint = "Torso",
 	NeckJoint = "Neck",
 	HeadJoint = "Head",
+	JawJoint = "Jaw",
 	EarLJoint = "EarL",
 	EarRJoint = "EarR",
 	BowJoint = "BowRibbon",
@@ -91,6 +93,100 @@ function AnimArchetypes.SamplePoseDeltas(mode: AnimMode, u: number, s: number, a
 	local isSerpent = (archetype == "EasternSerpent")
 	local isScorpion = (archetype == "ArachnidScorpion")
 	local isPlesio = (archetype == "AquaticPlesiosaur")
+	local isColossus = (archetype == "CataclysmColossus")
+
+	if isColossus then
+		local heave = math.sin(u)
+		local sway = math.sin(u * 0.5)
+		if mode == "Idle" then
+			local chestY = (0.015 + heave * 0.015) * s
+			local roar = math.max(0, math.sin(u * 0.75)) * 0.16
+			local wingMantle = heave * 0.08
+			out.RootJoint = CFrame.new(0, chestY, 0) * CFrame.Angles(heave * 0.025, sway * 0.035, 0)
+			out.NeckJoint = CFrame.Angles(-0.04 + math.sin(u - 0.5) * 0.05, sway * 0.08, 0)
+			out.HeadJoint = CFrame.Angles(0.03 + math.sin(u - 1.0) * 0.04, sway * 0.11, sway * 0.03)
+			out.JawJoint = CFrame.Angles(-roar, 0, 0)
+			out.WingLJoint = CFrame.Angles(0.05, -0.06 - wingMantle * 0.4, -(0.04 + wingMantle))
+			out.WingRJoint = CFrame.Angles(0.05, 0.06 + wingMantle * 0.4, 0.04 + wingMantle)
+			out.WingTipLJoint = CFrame.Angles(0, -0.04, -math.sin(u - 0.65) * 0.10)
+			out.WingTipRJoint = CFrame.Angles(0, 0.04, math.sin(u - 0.65) * 0.10)
+			out.LegFLJoint = CFrame.Angles(math.sin(u) * 0.07, -0.08, -0.06 - math.sin(u) * 0.04)
+			out.LegFRJoint = CFrame.Angles(math.sin(u) * 0.07, 0.08, 0.06 + math.sin(u) * 0.04)
+			out.LegBLJoint = CFrame.new(0, -chestY * 0.85, 0) * CFrame.Angles(-heave * 0.02, 0, 0)
+			out.LegBRJoint = CFrame.new(0, -chestY * 0.85, 0) * CFrame.Angles(-heave * 0.02, 0, 0)
+			out.Tail1Joint = CFrame.Angles(0.04 + heave * 0.04, math.sin(u * 0.8) * 0.12, 0)
+			out.Tail2Joint = CFrame.Angles(0.03 + math.sin(u - 0.7) * 0.05, math.sin(u * 0.8 - 0.7) * 0.18, 0)
+			out.Tail3Joint = CFrame.Angles(math.sin(u - 1.3) * 0.06, math.sin(u * 0.8 - 1.4) * 0.24, 0)
+			return out
+		elseif mode == "Walk" or mode == "Ride" then
+			local isRide = (mode == "Ride")
+			local strideAmp = if isRide then 0.50 else 0.38
+			local liftAmp = if isRide then 0.22 else 0.16
+			local strideL = math.sin(u) * strideAmp
+			local strideR = math.sin(u + math.pi) * strideAmp
+			local liftL = math.max(0, math.cos(u)) * liftAmp * s
+			local liftR = math.max(0, math.cos(u + math.pi)) * liftAmp * s
+			local stompBob = math.abs(math.sin(u)) * (if isRide then 0.16 else 0.11) * s
+			local hipRoll = math.sin(u) * 0.05
+			local hipYaw = math.cos(u) * 0.06
+			local flap = 0.08 + math.sin(u * 2) * 0.16
+			out.RootJoint = CFrame.new(0, stompBob, 0) * CFrame.Angles(0.08 + math.sin(u * 2) * 0.04, hipYaw, hipRoll)
+			out.NeckJoint = CFrame.Angles(-0.08 + math.sin(u * 2 - 0.4) * 0.05, -hipYaw * 0.6, 0)
+			out.HeadJoint = CFrame.Angles(-0.04 + math.sin(u * 2 - 0.8) * 0.04, -hipYaw * 0.5, 0)
+			out.JawJoint = CFrame.Angles(-(0.08 + math.abs(math.sin(u)) * 0.10), 0, 0)
+			out.WingLJoint = CFrame.Angles(0.08, -0.06, -flap)
+			out.WingRJoint = CFrame.Angles(0.08, 0.06, flap)
+			out.WingTipLJoint = CFrame.Angles(0, 0, -math.sin(u * 2 - 0.6) * 0.18)
+			out.WingTipRJoint = CFrame.Angles(0, 0, math.sin(u * 2 - 0.6) * 0.18)
+			-- Counter-swing clawed forelimbs opposite to hind legs
+			out.LegFLJoint = CFrame.Angles(-strideL * 0.65, 0, -0.06)
+			out.LegFRJoint = CFrame.Angles(-strideR * 0.65, 0, 0.06)
+			out.LegBLJoint = CFrame.new(0, liftL, 0) * CFrame.Angles(strideL, 0, 0)
+			out.LegBRJoint = CFrame.new(0, liftR, 0) * CFrame.Angles(strideR, 0, 0)
+			out.Tail1Joint = CFrame.Angles(0.06 + math.sin(u * 2) * 0.05, -math.sin(u) * 0.18, 0)
+			out.Tail2Joint = CFrame.Angles(0.04, -math.sin(u - 0.7) * 0.24, 0)
+			out.Tail3Joint = CFrame.Angles(0.04, -math.sin(u - 1.4) * 0.30, 0)
+			return out
+		elseif mode == "StressTest" then
+			local s1, c1 = math.sin(u), math.cos(u)
+			out.RootJoint = CFrame.new(0, 0.08 * s + s1 * 0.08 * s, 0) * CFrame.Angles(s1 * 0.08, c1 * 0.08, 0)
+			out.NeckJoint = CFrame.Angles(s1 * 0.16, c1 * 0.22, 0)
+			out.HeadJoint = CFrame.Angles(c1 * 0.14, s1 * 0.26, c1 * 0.10)
+			out.JawJoint = CFrame.Angles(-math.abs(s1) * 0.30, 0, 0)
+			out.WingLJoint = CFrame.Angles(0.10, -0.10, -(0.22 + s1 * 0.48))
+			out.WingRJoint = CFrame.Angles(0.10, 0.10, 0.22 + s1 * 0.48)
+			out.WingTipLJoint = CFrame.Angles(0, 0, -c1 * 0.38)
+			out.WingTipRJoint = CFrame.Angles(0, 0, c1 * 0.38)
+			out.LegFLJoint = CFrame.Angles(s1 * 0.38, 0, -0.14)
+			out.LegFRJoint = CFrame.Angles(-s1 * 0.38, 0, 0.14)
+			out.LegBLJoint = CFrame.Angles(-s1 * 0.36, 0, 0)
+			out.LegBRJoint = CFrame.Angles(s1 * 0.36, 0, 0)
+			out.Tail1Joint = CFrame.Angles(s1 * 0.16, c1 * 0.22, 0)
+			out.Tail2Joint = CFrame.Angles(c1 * 0.18, s1 * 0.28, 0)
+			out.Tail3Joint = CFrame.Angles(s1 * 0.20, c1 * 0.34, 0)
+			return out
+		else -- "Fly" (Sky-God Cataclysm Hover + Wing Beat + Roar)
+			local hover = math.sin(u) * 0.28 * s
+			local beat = math.sin(u * 2)
+			local tipLag = math.sin(u * 2 - 0.7)
+			out.RootJoint = CFrame.new(0, (0.95 * s) + hover, 0) * CFrame.Angles(0.10 + math.sin(u) * 0.07, sway * 0.06, 0)
+			out.NeckJoint = CFrame.Angles(-0.08 + math.sin(u * 2 - 0.4) * 0.06, 0, 0)
+			out.HeadJoint = CFrame.Angles(-0.06 + math.sin(u - 0.8) * 0.05, sway * 0.10, 0)
+			out.JawJoint = CFrame.Angles(-(0.18 + math.max(0, beat) * 0.12), 0, 0)
+			out.WingLJoint = CFrame.Angles(0.08, -0.06, -(0.22 + beat * 0.52))
+			out.WingRJoint = CFrame.Angles(0.08, 0.06, 0.22 + beat * 0.52)
+			out.WingTipLJoint = CFrame.Angles(0, 0, -tipLag * 0.40)
+			out.WingTipRJoint = CFrame.Angles(0, 0, tipLag * 0.40)
+			out.LegFLJoint = CFrame.Angles(-0.22 + beat * 0.08, 0, -0.18)
+			out.LegFRJoint = CFrame.Angles(-0.22 + beat * 0.08, 0, 0.18)
+			out.LegBLJoint = CFrame.Angles(-0.28 - beat * 0.08, 0, 0)
+			out.LegBRJoint = CFrame.Angles(-0.28 - beat * 0.08, 0, 0)
+			out.Tail1Joint = CFrame.Angles(0.08 + beat * 0.10, sway * 0.16, 0)
+			out.Tail2Joint = CFrame.Angles(0.08 + math.sin(u * 2 - 0.7) * 0.14, math.sin(u * 0.5 - 0.6) * 0.22, 0)
+			out.Tail3Joint = CFrame.Angles(0.10 + math.sin(u * 2 - 1.3) * 0.18, math.sin(u * 0.5 - 1.2) * 0.28, 0)
+			return out
+		end
+	end
 
 	if isScorpion then
 		local breath = math.sin(u)

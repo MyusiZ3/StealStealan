@@ -192,8 +192,21 @@ function FaeLaceDragon.Build(s: number, ctx: RigCore.MutContext, isStatic: boole
 		session:AttachMotor("Tail2Joint", tail1, tail2, Vector3.new(0, 0.88, 1.82))
 		session:AttachMotor("Tail3Joint", tail2, tail3, Vector3.new(0, 0.66, 2.72))
 
-		VFXPresets.AttachWingTrails(wingTipL, wingTipR, s, Vector3.new(-0.48, 1.2, 0.8), Vector3.new(0.48, 1.2, 0.8), 0.18, C_MAGENTA, C_BLUE, 0.60, "FaeLaceTrail")
-		VFXPresets.AttachBodyAura(torso, s, Vector3.new(0, 0.4, 0.2), "FaeSporeVFX", { C_PINK_FLUFF, C_BLUE, C_WHITE }, 11, 0.34)
+		VFXPresets.AttachWingTrails(wingTipL, wingTipR, s, Vector3.new(-0.48, 1.2, 0.8), Vector3.new(0.48, 1.2, 0.8), 0.24, C_MAGENTA, C_BLUE, 0.65, "FaeLaceTrail", "rbxassetid://80274190343663")
+		VFXPresets.AttachTailTrail(tail3, s, Vector3.new(0, 0.34, 1.55), Vector3.new(0, 0.04, 1.55), C_PINK_FLUFF, C_WHITE, 0.55, "FaePlumeTrail", "rbxassetid://80274190343663")
+		VFXPresets.AttachVFXStudioAura({
+			root = session.Root,
+			torso = torso,
+			head = head,
+			wingTipL = wingTipL,
+			wingTipR = wingTipR,
+		}, s, {
+			primaryColor = C_MAGENTA,
+			secondaryColor = C_BLUE,
+			accentColor = C_PINK_FLUFF,
+			flareColor = C_AMBER,
+			sigilRadiusScale = 1.08,
+		})
 	end
 
 	return session

@@ -1,6 +1,6 @@
 --!strict
 -- AnimalConfig.luau
--- Complete 83 Exclusive Animal Index across 5 Zones with Tiered Max-Rarity Ceilings, Size Ratio & Mutation Rolls
+-- Complete 84 Exclusive Animal Index across 5 Zones with Tiered Max-Rarity Ceilings, Size Ratio & Mutation Rolls
 
 local Types = require(script.Parent.Parent.Shared.Types)
 local GameConfig = require(script.Parent.GameConfig)
@@ -122,14 +122,14 @@ local LIST: { Types.AnimalSpeciesDefinition } = {
 	makeSpec(60, "SilverbackTitan", "Obsidian Silverback Titan", "VolcanicJungle", "Epic", 58000000000000, 320.0, Color3.fromRGB(48, 44, 58), Color3.fromRGB(192, 198, 212), Color3.fromRGB(255, 114, 44), "Bear"),
 	makeSpec(61, "MoltenCerberus", "Molten Cerberus", "VolcanicJungle", "Epic", 96000000000000, 190.0, Color3.fromRGB(142, 42, 44), Color3.fromRGB(255, 178, 48), Color3.fromRGB(255, 245, 110), "Canine"),
 	makeSpec(62, "InfernoPhoenix", "Inferno Phoenix", "VolcanicJungle", "Legendary", 480000000000000, 42.0, Color3.fromRGB(255, 112, 36), Color3.fromRGB(255, 232, 72), Color3.fromRGB(255, 255, 255), "Bird"),
-	makeSpec(63, "MythicWhiteTiger", "Mythic White Tiger", "VolcanicJungle", "Mythic", 3200000000000000, 260.0, Color3.fromRGB(248, 250, 255), Color3.fromRGB(42, 48, 68), Color3.fromRGB(0, 245, 255), "Feline"),
+	makeSpec(63, "MythicWhiteTiger", "Byakko Ink Tiger", "VolcanicJungle", "Mythic", 3200000000000000, 260.0, Color3.fromRGB(248, 250, 252), Color3.fromRGB(24, 20, 22), Color3.fromRGB(248, 168, 38), "Feline"),
 
 	-- Exclusive Biome Ceiling & Cosmic+ Extensions (#64 - #83)
 	-- PineWoods (+1 Epic -> 11 total, Max: Legendary)
 	makeSpec(64, "MossbackGrizzly", "Mossback Grizzly", "PineWoods", "Epic", 1150, 310.0, Color3.fromRGB(102, 78, 56), Color3.fromRGB(84, 178, 72), Color3.fromRGB(255, 220, 74), "Bear"),
 
 	-- MangroveSwamp (+1 Mythic -> 13 total, Max: Mythic)
-	makeSpec(65, "SwampLeviathan", "Tidewater Leviathan", "MangroveSwamp", "Mythic", 2600000, 460.0, Color3.fromRGB(42, 178, 148), Color3.fromRGB(118, 255, 186), Color3.fromRGB(255, 244, 110), "Reptile"),
+	makeSpec(65, "SwampLeviathan", "Abyss Tide Leviathan", "MangroveSwamp", "Mythic", 2600000, 460.0, Color3.fromRGB(16, 30, 66), Color3.fromRGB(196, 218, 236), Color3.fromRGB(44, 244, 228), "Reptile"),
 
 	-- SavannaCamp (+1 Mythic, +1 Cosmic, +1 Secret -> 15 total, Max: Secret)
 	makeSpec(66, "SunfireRoc", "Sunfire Roc", "SavannaCamp", "Mythic", 780000000, 140.0, Color3.fromRGB(255, 142, 38), Color3.fromRGB(255, 242, 92), Color3.fromRGB(255, 68, 68), "Bird"),
@@ -138,22 +138,23 @@ local LIST: { Types.AnimalSpeciesDefinition } = {
 
 	-- AlpinePeaks (+1 Mythic..Infinity -> 20 total, Max: Infinity)
 	makeSpec(69, "BlizzardGriffin", "Blizzard Sky Griffin", "AlpinePeaks", "Mythic", 720000000000, 320.0, Color3.fromRGB(238, 248, 255), Color3.fromRGB(78, 174, 255), Color3.fromRGB(255, 236, 112), "Bird"),
-	makeSpec(70, "AuroraPegasus", "Aurora Star Pegasus", "AlpinePeaks", "Cosmic", 3600000000000, 280.0, Color3.fromRGB(128, 112, 255), Color3.fromRGB(92, 255, 222), Color3.fromRGB(255, 255, 255), "Hooved"),
-	makeSpec(71, "SubzeroKraken", "Subzero Cryptic Owl", "AlpinePeaks", "Secret", 18000000000000, 95.0, Color3.fromRGB(38, 112, 164), Color3.fromRGB(82, 248, 224), Color3.fromRGB(212, 255, 255), "Bird"),
+	makeSpec(70, "AuroraPegasus", "Celestial Antler Stag", "AlpinePeaks", "Cosmic", 3600000000000, 280.0, Color3.fromRGB(248, 250, 255), Color3.fromRGB(132, 234, 248), Color3.fromRGB(238, 98, 48), "Hooved"),
+	makeSpec(71, "SubzeroKraken", "Runic Hydro Plesiosaur", "AlpinePeaks", "Secret", 18000000000000, 95.0, Color3.fromRGB(22, 74, 168), Color3.fromRGB(82, 168, 236), Color3.fromRGB(68, 240, 255), "Reptile"),
 	makeSpec(72, "ObsidianNightmare", "Obsidian Moonhorn Steed", "AlpinePeaks", "Eternal", 135000000000000, 295.0, Color3.fromRGB(26, 24, 38), Color3.fromRGB(168, 192, 255), Color3.fromRGB(255, 118, 36), "Hooved"),
 	makeSpec(73, "JadeKirinSteed", "Jade Kirin Steed", "AlpinePeaks", "Divine", 680000000000000, 320.0, Color3.fromRGB(34, 178, 112), Color3.fromRGB(226, 236, 248), Color3.fromRGB(255, 214, 62), "Hooved"),
 	makeSpec(74, "ZephyrSpiritDragon", "Zephyr River Dragon", "AlpinePeaks", "Infinity", 5400000000000000, 210.0, Color3.fromRGB(248, 250, 252), Color3.fromRGB(46, 178, 112), Color3.fromRGB(224, 182, 162), "Reptile"),
 
-	-- VolcanicJungle (+9 Cosmic..Primordial -> 24 total, Max: Primordial)
+	-- VolcanicJungle (+10 Cosmic..Primordial -> 25 total, Max: Primordial)
 	makeSpec(75, "CosmicPyroRaptor", "Cosmic PyroDrake", "VolcanicJungle", "Cosmic", 18000000000000000, 180.0, Color3.fromRGB(108, 72, 255), Color3.fromRGB(255, 118, 56), Color3.fromRGB(112, 248, 255), "Reptile"),
 	makeSpec(76, "SecretShadowWyrm", "Secret Onyx Fox", "VolcanicJungle", "Secret", 95000000000000000, 76.0, Color3.fromRGB(28, 34, 48), Color3.fromRGB(36, 242, 198), Color3.fromRGB(82, 255, 224), "Canine"),
-	makeSpec(77, "EternalAshenKitsune", "Eternal Ember Wolf", "VolcanicJungle", "Eternal", 520000000000000000, 145.0, Color3.fromRGB(255, 212, 102), Color3.fromRGB(255, 88, 38), Color3.fromRGB(255, 252, 210), "Canine"),
-	makeSpec(78, "DivineSolarSeraph", "Divine Solar Griffin", "VolcanicJungle", "Divine", 2900000000000000000, 290.0, Color3.fromRGB(255, 246, 210), Color3.fromRGB(255, 196, 52), Color3.fromRGB(255, 255, 255), "Bird"),
-	makeSpec(79, "InfinityVoidHydra", "Infinity Abyss Panther", "VolcanicJungle", "Infinity", 16000000000000000000, 310.0, Color3.fromRGB(46, 174, 255), Color3.fromRGB(168, 72, 255), Color3.fromRGB(172, 248, 255), "Feline"),
-	makeSpec(80, "AstralStarDragon", "Astral Starry Lynx", "VolcanicJungle", "Astral", 92000000000000000000, 215.0, Color3.fromRGB(174, 102, 255), Color3.fromRGB(98, 206, 255), Color3.fromRGB(255, 224, 255), "Feline"),
-	makeSpec(81, "OmegaObsidianColossus", "Omega Basalt Titan", "VolcanicJungle", "Omega", 540000000000000000000, 950.0, Color3.fromRGB(224, 38, 76), Color3.fromRGB(255, 168, 44), Color3.fromRGB(255, 244, 140), "Bear"),
+	makeSpec(77, "EternalAshenKitsune", "Imperial Gold Qilin", "VolcanicJungle", "Eternal", 520000000000000000, 145.0, Color3.fromRGB(244, 198, 48), Color3.fromRGB(244, 248, 255), Color3.fromRGB(228, 48, 42), "Hooved"),
+	makeSpec(78, "DivineSolarSeraph", "Seraphic Ring Dragon", "VolcanicJungle", "Divine", 2900000000000000000, 290.0, Color3.fromRGB(242, 246, 255), Color3.fromRGB(162, 180, 236), Color3.fromRGB(64, 224, 248), "Reptile"),
+	makeSpec(79, "InfinityVoidHydra", "Void Singularity Scorpion", "VolcanicJungle", "Infinity", 16000000000000000000, 310.0, Color3.fromRGB(34, 20, 50), Color3.fromRGB(186, 72, 255), Color3.fromRGB(236, 148, 255), "Critter"),
+	makeSpec(80, "AstralStarDragon", "Azure Flame Mecha", "VolcanicJungle", "Astral", 92000000000000000000, 215.0, Color3.fromRGB(238, 244, 254), Color3.fromRGB(174, 192, 224), Color3.fromRGB(28, 162, 255), "Reptile"),
+	makeSpec(81, "OmegaObsidianColossus", "Xuanwu Black Tortoise", "VolcanicJungle", "Omega", 540000000000000000000, 950.0, Color3.fromRGB(20, 24, 34), Color3.fromRGB(204, 232, 255), Color3.fromRGB(68, 158, 255), "Reptile"),
 	makeSpec(82, "AstralNebulaLynx", "Astral Nebula Lynx", "VolcanicJungle", "Singularity", 4500000000000000000000, 46.0, Color3.fromRGB(28, 34, 78), Color3.fromRGB(48, 214, 255), Color3.fromRGB(248, 148, 232), "Feline"),
 	makeSpec(83, "FaeLaceDragon", "Fae Lacewing Dragon", "VolcanicJungle", "Primordial", 28000000000000000000000, 240.0, Color3.fromRGB(232, 52, 162), Color3.fromRGB(52, 92, 232), Color3.fromRGB(245, 192, 68), "Reptile"),
+	makeSpec(84, "VharazhulCataclysm", "VHARAZHUL, God of the First Cataclysm", "VolcanicJungle", "Primordial", 95000000000000000000000, 1850.0, Color3.fromRGB(188, 24, 34), Color3.fromRGB(238, 192, 68), Color3.fromRGB(92, 255, 72), "Reptile"),
 }
 
 AnimalConfig.ALL = LIST

@@ -978,7 +978,9 @@ function CinematicVFX.PlayCrateHatchSequence(params: HatchSequenceParams)
 		end
 
 		-- PHASE 3: Hatched Pet Erupts & Swoops Toward Opener
-		local petScale = math.clamp((tonumber(params.sizeRatio) or 1.0) * 0.92, 0.85, 1.8)
+		local vpMod = VoxelPets.GetSpeciesModule(params.speciesId)
+		local bossMult = if vpMod and vpMod.Archetype == "CataclysmColossus" then 1.35 else 1.0
+		local petScale = math.clamp((tonumber(params.sizeRatio) or 1.0) * 0.92 * bossMult, 0.85, 2.25)
 		local animPet = AnimalVisualBuilder.BuildAnimalModel(params.speciesId, petScale, (params.mutation or "None") :: any, false)
 		animPet.Name = "ClientHatchLeapAnimal"
 		local originPos = (baseCF * CFrame.new(0, 1.8 * sc, 0)).Position
@@ -997,9 +999,10 @@ function CinematicVFX.PlayCrateHatchSequence(params: HatchSequenceParams)
 				locked = false,
 				acquiredAt = 0,
 			})
+			local _, boxSz = animPet:GetBoundingBox()
 			local bb = Instance.new("BillboardGui")
 			bb.Size = UDim2.fromOffset(200, 62)
-			bb.StudsOffset = Vector3.new(0, 3.8 * petScale + 1.2, 0)
+			bb.StudsOffset = Vector3.new(0, math.max(3.8 * petScale + 1.2, (boxSz.Y - pRoot.Size.Y * 0.5) + 1.2), 0)
 			bb.AlwaysOnTop = true
 			bb.Parent = pRoot
 

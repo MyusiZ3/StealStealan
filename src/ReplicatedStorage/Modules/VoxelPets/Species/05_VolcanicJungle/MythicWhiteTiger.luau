@@ -1,5 +1,5 @@
 --!strict
--- ByakkoInkTiger.luau (Voxel)
+-- MythicWhiteTiger.luau (Promoted Voxel; legacy alias: ByakkoInkTiger)
 -- Candidate #4: Mythical White Tiger (Baihu) with Bold Swirling Black Sumi-e Ink Stripes,
 -- Twin Forehead Horns, Golden Cheek Wisps, Spiked Black Back Crest & Amber Eyes.
 
@@ -16,18 +16,17 @@ local C_AMBER = Color3.fromRGB(248, 168, 38)
 local C_MAW = Color3.fromRGB(172, 58, 68)
 local C_EAR_PINK = Color3.fromRGB(224, 152, 156)
 
-local ByakkoInkTiger = {
-	Id = "ByakkoInkTiger",
+local MythicWhiteTiger = {
+	Id = "MythicWhiteTiger",
 	DisplayName = "Byakko Ink Tiger",
 	Archetype = "QuadrupedFeline" :: RigCore.ArchetypeId,
 	VisualStyle = "Voxel" :: "Voxel",
-	StagingSlot = 4,
-	BaseConceptId = "ByakkoInkTiger",
+	Aliases = { "ByakkoInkTiger" },
 	DefaultScale = 1.30,
 	AccentColor = C_AMBER,
 }
 
-function ByakkoInkTiger.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
+function MythicWhiteTiger.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
 	local session = RigCore.CreateSession(model, s, ctx, isStatic, Vector3.new(1.32, 1.18, 2.28), C_WHITE)
 
 	local torsoVoxels: { VoxelSpec } = {
@@ -139,4 +138,4 @@ function ByakkoInkTiger.Build(s: number, ctx: RigCore.MutContext, isStatic: bool
 	return session
 end
 
-return ByakkoInkTiger
+return MythicWhiteTiger

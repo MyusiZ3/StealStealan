@@ -1,5 +1,5 @@
 --!strict
--- CelestialAntlerStag.luau (Voxel)
+-- AuroraPegasus.luau (Promoted Voxel; legacy alias: CelestialAntlerStag)
 -- Candidate #8: Noble Pure-White Spirit Stag with Fluffy Chest Ruff, Cyan Flank Swirls,
 -- Sweeping Bronze-Ember Antlers & Radiant Floating 4-Point Celestial Star.
 
@@ -18,18 +18,17 @@ local C_STAR = Color3.fromRGB(255, 252, 220)
 local C_ROSE = Color3.fromRGB(232, 152, 158)
 local C_CLAW = Color3.fromRGB(48, 44, 52)
 
-local CelestialAntlerStag = {
-	Id = "CelestialAntlerStag",
+local AuroraPegasus = {
+	Id = "AuroraPegasus",
 	DisplayName = "Celestial Antler Stag",
 	Archetype = "QuadrupedBeast" :: RigCore.ArchetypeId,
 	VisualStyle = "Voxel" :: "Voxel",
-	StagingSlot = 8,
-	BaseConceptId = "CelestialAntlerStag",
+	Aliases = { "CelestialAntlerStag" },
 	DefaultScale = 1.35,
 	AccentColor = C_CYAN,
 }
 
-function CelestialAntlerStag.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
+function AuroraPegasus.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
 	local session = RigCore.CreateSession(model, s, ctx, isStatic, Vector3.new(1.26, 1.48, 2.24), C_WHITE)
 
 	local torsoVoxels: { VoxelSpec } = {
@@ -127,4 +126,4 @@ function CelestialAntlerStag.Build(s: number, ctx: RigCore.MutContext, isStatic:
 	return session
 end
 
-return CelestialAntlerStag
+return AuroraPegasus

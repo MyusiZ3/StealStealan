@@ -95,6 +95,24 @@ local function loadSpeciesRegistry()
 		end
 		return a < b
 	end)
+
+	-- Register legacy staging/alias IDs after building orderedIds so aliases resolve without duplicating UI/lineup entries
+	local loadedMods: { SpeciesModule } = {}
+	for _, id in ipairs(orderedIds) do
+		local m = registry[id]
+		if m then
+			table.insert(loadedMods, m)
+		end
+	end
+	for _, m in ipairs(loadedMods) do
+		if m.Aliases then
+			for _, aliasId in ipairs(m.Aliases) do
+				if not registry[aliasId] then
+					registry[aliasId] = m
+				end
+			end
+		end
+	end
 end
 
 loadSpeciesRegistry()
@@ -254,6 +272,7 @@ function VoxelPets.StepRig(model: Model, mode: AnimMode, now: number, phase: num
 		or archAttr == "EasternSerpent"
 		or archAttr == "ArachnidScorpion"
 		or archAttr == "AquaticPlesiosaur"
+		or archAttr == "CataclysmColossus"
 	then
 		archetype = archAttr :: ArchetypeId
 	else
@@ -263,12 +282,22 @@ function VoxelPets.StepRig(model: Model, mode: AnimMode, now: number, phase: num
 	end
 
 	local ph = phase or 0
-	local freq = if mode == "Ride"
-		then 11.5
-		elseif mode == "Walk" then 7.8
-		elseif mode == "Fly" then 4.2
-		elseif mode == "StressTest" then 2.2
-		else 2.6
+	local freq: number
+	if archetype == "CataclysmColossus" then
+		freq = if mode == "Ride"
+			then 8.2
+			elseif mode == "Walk" then 5.4
+			elseif mode == "Fly" then 3.2
+			elseif mode == "StressTest" then 2.0
+			else 1.85
+	else
+		freq = if mode == "Ride"
+			then 11.5
+			elseif mode == "Walk" then 7.8
+			elseif mode == "Fly" then 4.2
+			elseif mode == "StressTest" then 2.2
+			else 2.6
+	end
 	local u = now * freq + ph
 
 	local deltas = AnimArchetypes.SamplePoseDeltas(mode, u, s, archetype)

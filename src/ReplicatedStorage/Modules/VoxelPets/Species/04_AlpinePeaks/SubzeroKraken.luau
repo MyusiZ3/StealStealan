@@ -1,5 +1,5 @@
 --!strict
--- RunicHydroPlesiosaur.luau (Voxel)
+-- SubzeroKraken.luau (Promoted Voxel; legacy alias: RunicHydroPlesiosaur)
 -- Candidate #9: Sapphire Runic Hydro Plesiosaur with Glowing Cyan Circuit Markings,
 -- Ornate Champagne-Gold Chest Collar, Pearl Horns w/ Water Halos & 4 Sweeping Flippers.
 
@@ -15,18 +15,17 @@ local C_RUNE = Color3.fromRGB(68, 240, 255)
 local C_GOLD = Color3.fromRGB(198, 182, 134)
 local C_PEARL = Color3.fromRGB(226, 236, 252)
 
-local RunicHydroPlesiosaur = {
-	Id = "RunicHydroPlesiosaur",
+local SubzeroKraken = {
+	Id = "SubzeroKraken",
 	DisplayName = "Runic Hydro Plesiosaur",
 	Archetype = "AquaticPlesiosaur" :: RigCore.ArchetypeId,
 	VisualStyle = "Voxel" :: "Voxel",
-	StagingSlot = 9,
-	BaseConceptId = "RunicHydroPlesiosaur",
+	Aliases = { "RunicHydroPlesiosaur" },
 	DefaultScale = 1.30,
 	AccentColor = C_RUNE,
 }
 
-function RunicHydroPlesiosaur.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
+function SubzeroKraken.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
 	local session = RigCore.CreateSession(model, s, ctx, isStatic, Vector3.new(1.56, 1.04, 2.36), C_SAPPHIRE)
 
 	-- Torso hub at Y = 0.62 -> unrotated belly keel minV.Y = 0.62 - 0.46 - 0.16 = 0.00
@@ -124,4 +123,4 @@ function RunicHydroPlesiosaur.Build(s: number, ctx: RigCore.MutContext, isStatic
 	return session
 end
 
-return RunicHydroPlesiosaur
+return SubzeroKraken

@@ -1,5 +1,5 @@
 --!strict
--- ImperialGoldQilin.luau (Voxel)
+-- EternalAshenKitsune.luau (Promoted Voxel; legacy alias: ImperialGoldQilin)
 -- Candidate #7: Radiant Golden-Scaled Imperial Qilin with Flowing Silver-White Cloud Mane,
 -- Tall Branched Amber Antlers, Crimson Whisker Tendrils & Clawed Dragon Paws.
 
@@ -16,18 +16,17 @@ local C_SILVER = Color3.fromRGB(192, 204, 222)
 local C_CRIMSON = Color3.fromRGB(228, 48, 42)
 local C_ANTLER = Color3.fromRGB(118, 76, 38)
 
-local ImperialGoldQilin = {
-	Id = "ImperialGoldQilin",
+local EternalAshenKitsune = {
+	Id = "EternalAshenKitsune",
 	DisplayName = "Imperial Gold Qilin",
 	Archetype = "QuadrupedBeast" :: RigCore.ArchetypeId,
 	VisualStyle = "Voxel" :: "Voxel",
-	StagingSlot = 7,
-	BaseConceptId = "ImperialGoldQilin",
+	Aliases = { "ImperialGoldQilin" },
 	DefaultScale = 1.35,
 	AccentColor = C_GOLD,
 }
 
-function ImperialGoldQilin.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
+function EternalAshenKitsune.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
 	local session = RigCore.CreateSession(model, s, ctx, isStatic, Vector3.new(1.34, 1.28, 2.22), C_GOLD)
 
 	local torsoVoxels: { VoxelSpec } = {
@@ -138,4 +137,4 @@ function ImperialGoldQilin.Build(s: number, ctx: RigCore.MutContext, isStatic: b
 	return session
 end
 
-return ImperialGoldQilin
+return EternalAshenKitsune

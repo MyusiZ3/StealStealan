@@ -1,5 +1,5 @@
 --!strict
--- AbyssTideLeviathan.luau (Voxel)
+-- SwampLeviathan.luau (Promoted Voxel; legacy alias: AbyssTideLeviathan)
 -- Candidate #1: Midnight-Navy Armored Abyssal Leviathan Serpent with Bioluminescent Aqua Maw,
 -- Twin Swept Head Horns, Jagged Dorsal Fins, Pale Belly Plates & Cyan Clawed Forelimbs.
 
@@ -17,18 +17,17 @@ local C_SLATE = Color3.fromRGB(58, 70, 88)
 local C_TEAL = Color3.fromRGB(24, 158, 172)
 local C_AQUA = Color3.fromRGB(44, 244, 228)
 
-local AbyssTideLeviathan = {
-	Id = "AbyssTideLeviathan",
+local SwampLeviathan = {
+	Id = "SwampLeviathan",
 	DisplayName = "Abyss Tide Leviathan",
 	Archetype = "EasternSerpent" :: RigCore.ArchetypeId,
 	VisualStyle = "Voxel" :: "Voxel",
-	StagingSlot = 1,
-	BaseConceptId = "AbyssTideLeviathan",
+	Aliases = { "AbyssTideLeviathan" },
 	DefaultScale = 1.30,
 	AccentColor = C_AQUA,
 }
 
-function AbyssTideLeviathan.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
+function SwampLeviathan.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
 	local session = RigCore.CreateSession(model, s, ctx, isStatic, Vector3.new(1.24, 1.10, 2.50), C_NAVY)
 
 	local torsoVoxels: { VoxelSpec } = {
@@ -168,4 +167,4 @@ function AbyssTideLeviathan.Build(s: number, ctx: RigCore.MutContext, isStatic: 
 	return session
 end
 
-return AbyssTideLeviathan
+return SwampLeviathan

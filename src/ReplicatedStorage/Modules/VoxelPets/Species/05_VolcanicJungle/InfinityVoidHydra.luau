@@ -1,5 +1,5 @@
 --!strict
--- VoidSingularityScorpion.luau (Voxel)
+-- InfinityVoidHydra.luau (Promoted Voxel; legacy alias: VoidSingularityScorpion)
 -- Candidate #6: Purple-Obsidian Armored Void Scorpion with Glowing Amethyst Carapace Core,
 -- 8 Splayed Arachnid Legs, Giant Spiked Pincers & Overhead Black-Hole Accretion Stinger Tail.
 
@@ -15,18 +15,17 @@ local C_VIOLET = Color3.fromRGB(186, 72, 255)
 local C_ORCHID = Color3.fromRGB(236, 148, 255)
 local C_BLACK_HOLE = Color3.fromRGB(6, 2, 12)
 
-local VoidSingularityScorpion = {
-	Id = "VoidSingularityScorpion",
+local InfinityVoidHydra = {
+	Id = "InfinityVoidHydra",
 	DisplayName = "Void Singularity Scorpion",
 	Archetype = "ArachnidScorpion" :: RigCore.ArchetypeId,
 	VisualStyle = "Voxel" :: "Voxel",
-	StagingSlot = 6,
-	BaseConceptId = "VoidSingularityScorpion",
+	Aliases = { "VoidSingularityScorpion" },
 	DefaultScale = 1.25,
 	AccentColor = C_VIOLET,
 }
 
-function VoidSingularityScorpion.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
+function InfinityVoidHydra.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
 	local session = RigCore.CreateSession(model, s, ctx, isStatic, Vector3.new(1.56, 0.88, 1.96), C_CHITIN)
 
 	local torsoVoxels: { VoxelSpec } = {
@@ -134,4 +133,4 @@ function VoidSingularityScorpion.Build(s: number, ctx: RigCore.MutContext, isSta
 	return session
 end
 
-return VoidSingularityScorpion
+return InfinityVoidHydra

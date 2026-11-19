@@ -1,5 +1,5 @@
 --!strict
--- SeraphicRingDragon.luau (Voxel)
+-- DivineSolarSeraph.luau (Promoted Voxel; legacy alias: SeraphicRingDragon)
 -- Candidate #3: White & Periwinkle Celestial Dragon with Giant Sacred Halo Ring,
 -- Tall Top Spire Crest, 4 Crystal-Eyed Seraphic Wings, Cyan Chest Gems & Whip Spear Tail.
 
@@ -15,26 +15,25 @@ local C_COBALT_TRIM = Color3.fromRGB(88, 116, 208)
 local C_CYAN = Color3.fromRGB(64, 224, 248)
 local C_TEAL = Color3.fromRGB(78, 192, 226)
 
-local SeraphicRingDragon = {
-	Id = "SeraphicRingDragon",
+local DivineSolarSeraph = {
+	Id = "DivineSolarSeraph",
 	DisplayName = "Seraphic Ring Dragon",
 	Archetype = "WingedDrake" :: RigCore.ArchetypeId,
 	VisualStyle = "Voxel" :: "Voxel",
-	StagingSlot = 3,
-	BaseConceptId = "SeraphicRingDragon",
+	Aliases = { "SeraphicRingDragon" },
 	DefaultScale = 1.25,
 	AccentColor = C_CYAN,
 }
 
-function SeraphicRingDragon.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
+function DivineSolarSeraph.Build(s: number, ctx: RigCore.MutContext, isStatic: boolean, model: Model): RigCore.RigSession
 	local session = RigCore.CreateSession(model, s, ctx, isStatic, Vector3.new(1.16, 1.40, 1.90), C_PEARL)
 
 	local torsoVoxels: { VoxelSpec } = {
 		{ p = { 0, 0.08, -0.10 }, sz = { 0.88, 1.08, 1.18 }, c = C_PEARL, tint = "primary" },
 		{ p = { 0, 0.14, -0.72 }, sz = { 0.68, 0.88, 0.24 }, c = C_TEAL, tint = "secondary" },
 		-- Twin glowing cyan chest gems
-		{ p = { -0.22, 0.28, -0.86 }, sz = { 0.24, 0.30, 0.12 }, c = C_CYAN, m = Enum.Material.Neon, tint = "keep" },
-		{ p = { 0.22, 0.28, -0.86 }, sz = { 0.24, 0.30, 0.12 }, c = C_CYAN, m = Enum.Material.Neon, tint = "keep" },
+		{ p = { -0.18, 0.28, -0.86 }, sz = { 0.24, 0.30, 0.12 }, c = C_CYAN, m = Enum.Material.Neon, tint = "keep" },
+		{ p = { 0.18, 0.28, -0.86 }, sz = { 0.24, 0.30, 0.12 }, c = C_CYAN, m = Enum.Material.Neon, tint = "keep" },
 		-- Sacred Dorsal Halo Ring + Top Spire Crest anchored to upper back
 		{ p = { 0, 0.84, 0.44 }, sz = { 0.52, 0.60, 0.26 }, c = C_PERI, tint = "secondary" },
 		{ p = { -0.58, 1.26, 0.46 }, sz = { 0.24, 1.14, 0.22 }, c = C_PERI, r = { 0, 0, 34 }, tint = "secondary" },
@@ -155,4 +154,4 @@ function SeraphicRingDragon.Build(s: number, ctx: RigCore.MutContext, isStatic: 
 	return session
 end
 
-return SeraphicRingDragon
+return DivineSolarSeraph
