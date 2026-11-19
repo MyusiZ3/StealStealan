@@ -5,6 +5,8 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local VoxelTreadmillBuilder = require(ReplicatedStorage.Modules.VoxelTreadmillBuilder)
+
 local PlotVisualBuilder = {}
 
 local BELT_LOCAL_REL_Y = 1.24
@@ -244,29 +246,12 @@ function PlotVisualBuilder.AddPrompt(parent: Instance, actionText: string, objec
 end
 
 function PlotVisualBuilder.GetPenTier(penLevel: number): number
-	if penLevel >= 16 then
-		return 5
-	elseif penLevel >= 11 then
-		return 4
-	elseif penLevel >= 7 then
-		return 3
-	elseif penLevel >= 4 then
-		return 2
-	end
-	return 1
+	local lv = math.max(1, math.floor(tonumber(penLevel) or 1))
+	return math.clamp(math.floor((lv - 1) / 3) + 1, 1, 5)
 end
 
 function PlotVisualBuilder.GetTreadmillTier(treadLevel: number): number
-	if treadLevel >= 17 then
-		return 5
-	elseif treadLevel >= 11 then
-		return 4
-	elseif treadLevel >= 7 then
-		return 3
-	elseif treadLevel >= 4 then
-		return 2
-	end
-	return 1
+	return math.clamp(math.floor(tonumber(treadLevel) or 1), 1, 12)
 end
 
 function PlotVisualBuilder.GetPlotSurfaceY(plotCF: CFrame): number
@@ -552,6 +537,47 @@ local function buildFenceSegment(
 	end
 end
 
+local PEN_TIER_ACCENTS: { [number]: { post: Color3, glow: Color3, trim: Color3 } } = {
+	[1] = { post = Color3.fromRGB(112, 74, 42), glow = Color3.fromRGB(255, 198, 76), trim = Color3.fromRGB(142, 96, 54) },
+	[2] = { post = Color3.fromRGB(132, 86, 48), glow = Color3.fromRGB(255, 224, 128), trim = Color3.fromRGB(232, 236, 244) },
+	[3] = { post = Color3.fromRGB(48, 52, 62), glow = Color3.fromRGB(255, 174, 62), trim = Color3.fromRGB(118, 122, 134) },
+	[4] = { post = Color3.fromRGB(238, 192, 64), glow = Color3.fromRGB(128, 224, 255), trim = Color3.fromRGB(242, 242, 248) },
+	[5] = { post = Color3.fromRGB(28, 24, 38), glow = Color3.fromRGB(186, 88, 255), trim = Color3.fromRGB(58, 198, 235) },
+}
+
+local function buildCornerLanternPost(parent: Instance, worldPos: Vector3, pal: { post: Color3, glow: Color3, trim: Color3 }, tag: string)
+	makePart({
+		name = "CornerLanternPost_" .. tag,
+		size = Vector3.new(1.5, 5.4, 1.5),
+		cframe = CFrame.new(worldPos + Vector3.new(0, 2.7, 0)),
+		color = pal.post,
+		material = Enum.Material.Metal,
+		canCollide = false,
+		canQuery = false,
+		parent = parent,
+	})
+	makePart({
+		name = "CornerLanternCap_" .. tag,
+		size = Vector3.new(2.0, 0.55, 2.0),
+		cframe = CFrame.new(worldPos + Vector3.new(0, 5.65, 0)),
+		color = pal.trim,
+		material = Enum.Material.Metal,
+		canCollide = false,
+		canQuery = false,
+		parent = parent,
+	})
+	makePart({
+		name = "CornerLanternOrb_" .. tag,
+		size = Vector3.new(1.15, 1.15, 1.15),
+		cframe = CFrame.new(worldPos + Vector3.new(0, 6.45, 0)),
+		color = pal.glow,
+		material = Enum.Material.Neon,
+		canCollide = false,
+		canQuery = false,
+		parent = parent,
+	})
+end
+
 function PlotVisualBuilder.BuildPenFences(plotModel: Model, plotCF: CFrame, penLevel: number)
 	-- Clear old fence container & legacy single-part fences
 	local old = plotModel:FindFirstChild("PenFenceVisuals")
@@ -565,21 +591,24 @@ function PlotVisualBuilder.BuildPenFences(plotModel: Model, plotCF: CFrame, penL
 		end
 	end
 
-	local tier = PlotVisualBuilder.GetPenTier(penLevel)
+	local lv = math.max(1, math.floor(tonumber(penLevel) or 1))
+	local tier = PlotVisualBuilder.GetPenTier(lv)
+	local subLevel = (lv - 1) % 3
 	local folder = Instance.new("Model")
 	folder.Name = "PenFenceVisuals"
 	folder.Parent = plotModel
 
 	local surfaceY = PlotVisualBuilder.GetPlotSurfaceY(plotCF)
-	buildFenceSegment(folder, Vector3.new(-26.5, 0, 28.5), Vector3.new(26.5, 0, 28.5), plotCF, surfaceY, tier)
-	buildFenceSegment(folder, Vector3.new(-26.5, 0, -8.5), Vector3.new(-26.5, 0, 28.5), plotCF, surfaceY, tier)
-	buildFenceSegment(folder, Vector3.new(26.5, 0, -8.5), Vector3.new(26.5, 0, 28.5), plotCF, surfaceY, tier)
-	buildFenceSegment(folder, Vector3.new(-26.5, 0, -8.5), Vector3.new(-7.0, 0, -8.5), plotCF, surfaceY, tier)
-	buildFenceSegment(folder, Vector3.new(7.0, 0, -8.5), Vector3.new(26.5, 0, -8.5), plotCF, surfaceY, tier)
+	-- Fixed front gate at Z = -8.5; rear wall expands +3.5 studs backward (+Z) per level!
+	local zFront = -8.5
+	local penDepth = 24.0 + (lv - 1) * 3.5
+	local zBack = zFront + penDepth
+	local zCenter = (zFront + zBack) * 0.5
 
-	-- Match paddock border highlight trim subtly by tier
 	local paddock = plotModel:FindFirstChild("OpenPaddockFloor")
 	if paddock and paddock:IsA("BasePart") then
+		paddock.Size = Vector3.new(52, 0.08, penDepth)
+		paddock.CFrame = plotCF * CFrame.new(0, 1.00, zCenter)
 		if tier >= 5 then
 			paddock.Color = Color3.fromRGB(98, 212, 138)
 		elseif tier >= 3 then
@@ -588,7 +617,143 @@ function PlotVisualBuilder.BuildPenFences(plotModel: Model, plotCF: CFrame, penL
 			paddock.Color = Color3.fromRGB(122, 198, 94)
 		end
 	end
+
+	-- Extend PlotBase foundation seamlessly backward (+Z) when pen grows beyond default Z=+32
+	if zBack + 3.5 > 32.0 then
+		local extLen = (zBack + 3.5) - 32.0
+		local extMidZ = 32.0 + extLen * 0.5
+		makePart({
+			name = "PlotBaseRearExt",
+			size = Vector3.new(64, 2, extLen),
+			cframe = plotCF * CFrame.new(0, 0, extMidZ),
+			color = Color3.fromRGB(108, 184, 88),
+			material = Enum.Material.Plastic,
+			materialVariant = "Studs",
+			studded = true,
+			parent = folder,
+		})
+	end
+
+	buildFenceSegment(folder, Vector3.new(-26.5, 0, zBack), Vector3.new(26.5, 0, zBack), plotCF, surfaceY, tier)
+	buildFenceSegment(folder, Vector3.new(-26.5, 0, zFront), Vector3.new(-26.5, 0, zBack), plotCF, surfaceY, tier)
+	buildFenceSegment(folder, Vector3.new(26.5, 0, zFront), Vector3.new(26.5, 0, zBack), plotCF, surfaceY, tier)
+	buildFenceSegment(folder, Vector3.new(-26.5, 0, zFront), Vector3.new(-7.0, 0, zFront), plotCF, surfaceY, tier)
+	buildFenceSegment(folder, Vector3.new(7.0, 0, zFront), Vector3.new(26.5, 0, zFront), plotCF, surfaceY, tier)
+
+	-- Progressive Accessories: Sub-Level +1 (Lanterns + Gate Arch), Sub-Level +2 (Rear Totems + Planter Trim)
+	local pal = PEN_TIER_ACCENTS[tier] or PEN_TIER_ACCENTS[1]
+	if subLevel >= 1 or tier >= 2 then
+		for idx, cLocal in ipairs({
+			Vector3.new(-26.5, 0, zFront),
+			Vector3.new(26.5, 0, zFront),
+			Vector3.new(-26.5, 0, zBack),
+			Vector3.new(26.5, 0, zBack),
+		}) do
+			local wp = (plotCF * CFrame.new(cLocal)).Position
+			buildCornerLanternPost(folder, Vector3.new(wp.X, surfaceY, wp.Z), pal, tostring(idx))
+		end
+
+		-- Front Gate Archway (keeps entrance clear for player & pets)
+		local gateLeft = (plotCF * CFrame.new(-7.4, 0, zFront)).Position
+		local gateRight = (plotCF * CFrame.new(7.4, 0, zFront)).Position
+		local rotOnly = plotCF - plotCF.Position
+		for _, gp in ipairs({
+			{ tag = "L", p = gateLeft },
+			{ tag = "R", p = gateRight },
+		}) do
+			makePart({
+				name = "GateArchPillar_" .. gp.tag,
+				size = Vector3.new(1.5, 7.8, 1.5),
+				cframe = CFrame.new(gp.p.X, surfaceY + 3.9, gp.p.Z) * rotOnly,
+				color = pal.post,
+				material = Enum.Material.Metal,
+				canCollide = false,
+				canQuery = false,
+				parent = folder,
+			})
+		end
+		local gateMid = (gateLeft + gateRight) * 0.5
+		makePart({
+			name = "GateArchBeam",
+			size = Vector3.new(16.4, 1.15, 1.6),
+			cframe = CFrame.new(gateMid.X, surfaceY + 8.0, gateMid.Z) * rotOnly,
+			color = pal.trim,
+			material = Enum.Material.SmoothPlastic,
+			canCollide = false,
+			canQuery = false,
+			parent = folder,
+		})
+		makePart({
+			name = "GateArchCrestGlow",
+			size = Vector3.new(11.0, 0.35, 1.75),
+			cframe = CFrame.new(gateMid.X, surfaceY + 8.65, gateMid.Z) * rotOnly,
+			color = pal.glow,
+			material = Enum.Material.Neon,
+			canCollide = false,
+			canQuery = false,
+			parent = folder,
+		})
+	end
+
+	if subLevel >= 2 then
+		local rotOnly = plotCF - plotCF.Position
+		-- 2 Rear Corner Totem / Statue Ornaments + Planter Trim Boxes
+		for sideIdx, sx in ipairs({ -24.0, 24.0 }) do
+			local wp = (plotCF * CFrame.new(sx, 0, zBack - 2.2)).Position
+			makePart({
+				name = "RearTotemBase_" .. sideIdx,
+				size = Vector3.new(2.2, 4.4, 2.2),
+				cframe = CFrame.new(wp.X, surfaceY + 2.2, wp.Z) * rotOnly,
+				color = pal.post,
+				material = Enum.Material.Metal,
+				canCollide = false,
+				canQuery = false,
+				parent = folder,
+			})
+			makePart({
+				name = "RearTotemGem_" .. sideIdx,
+				size = Vector3.new(1.3, 1.3, 1.3),
+				cframe = CFrame.new(wp.X, surfaceY + 5.2, wp.Z) * rotOnly * CFrame.Angles(0, math.rad(45), math.rad(45)),
+				color = pal.glow,
+				material = Enum.Material.Neon,
+				canCollide = false,
+				canQuery = false,
+				parent = folder,
+			})
+		end
+
+		for boxIdx, bLocal in ipairs({
+			Vector3.new(-16.5, 0, zFront - 1.4),
+			Vector3.new(16.5, 0, zFront - 1.4),
+			Vector3.new(-27.8, 0, zCenter),
+			Vector3.new(27.8, 0, zCenter),
+		}) do
+			local bp = (plotCF * CFrame.new(bLocal)).Position
+			makePart({
+				name = "DecoPlanter_" .. boxIdx,
+				size = if math.abs(bLocal.X) > 27 then Vector3.new(1.5, 0.85, 6.0) else Vector3.new(5.6, 0.85, 1.4),
+				cframe = CFrame.new(bp.X, surfaceY + 0.42, bp.Z) * rotOnly,
+				color = pal.trim,
+				material = Enum.Material.SmoothPlastic,
+				canCollide = false,
+				canQuery = false,
+				parent = folder,
+			})
+			makePart({
+				name = "DecoFlora_" .. boxIdx,
+				size = if math.abs(bLocal.X) > 27 then Vector3.new(1.0, 0.5, 5.2) else Vector3.new(4.8, 0.5, 0.9),
+				cframe = CFrame.new(bp.X, surfaceY + 1.0, bp.Z) * rotOnly,
+				color = pal.glow,
+				material = Enum.Material.Grass,
+				canCollide = false,
+				canQuery = false,
+				parent = folder,
+			})
+		end
+	end
+
 	plotModel:SetAttribute("AppliedPenTier", tier)
+	plotModel:SetAttribute("AppliedPenLevel", lv)
 end
 
 function PlotVisualBuilder.BuildTreadmillTier(plotModel: Model, plotCF: CFrame, treadLevel: number)
@@ -600,201 +765,41 @@ function PlotVisualBuilder.BuildTreadmillTier(plotModel: Model, plotCF: CFrame, 
 		end
 	end
 
-	local tier = PlotVisualBuilder.GetTreadmillTier(treadLevel)
+	local lv = PlotVisualBuilder.GetTreadmillTier(treadLevel)
 	local surfaceY = PlotVisualBuilder.GetPlotSurfaceY(plotCF)
+	local treadScale = 0.84
 
 	-- Base CFrame at front-right of plot; local +Z points toward front road (where tall screen console sits)
 	-- Player stands at local -Z on the belt and faces +Z (toward the screen console!).
 	local treadBaseCF = plotCF * CFrame.new(12, 0, -23.5) * CFrame.Angles(0, math.pi, 0)
-	local treadModel = Instance.new("Model")
+	local rotOnly = treadBaseCF - treadBaseCF.Position
+	local groundedCF = CFrame.new(treadBaseCF.Position.X, surfaceY, treadBaseCF.Position.Z) * rotOnly
+
+	local treadModel = VoxelTreadmillBuilder.Build(lv, groundedCF)
 	treadModel.Name = "TreadmillVisual"
+	treadModel:SetAttribute("TreadScale", treadScale)
+	for _, d in ipairs(treadModel:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.Anchored = true
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+		end
+	end
 	treadModel.Parent = plotModel
+	pcall(function()
+		treadModel:ScaleTo(treadScale)
+	end)
 
-	local beltSurfaceY = surfaceY + BELT_LOCAL_REL_Y
-	local usedHero = false
+	local beltSurfaceY = surfaceY + 1.325 * treadScale
 
-	if tier == 1 then
-		local ca = ReplicatedStorage:FindFirstChild("CuratedAssets")
-		local tpl = if ca then (ca:FindFirstChild("Hero_Treadmill_AI") or ca:FindFirstChild("Hero_Treadmill")) else nil
-		if tpl and tpl:IsA("Model") then
-			local clone = tpl:Clone()
-			pcall(function()
-				clone:ScaleTo(clone:GetScale() * 1.35)
-			end)
-			for _, d in ipairs(clone:GetDescendants()) do
-				if d:IsA("BasePart") then
-					d.Anchored = true
-					d.CanCollide = false
-					d.CanQuery = false
-					d.CanTouch = false
-				elseif d:IsA("BaseScript") then
-					d:Destroy()
-				end
-			end
-			clone:PivotTo(treadBaseCF)
-			clone.Parent = treadModel
-			local cf, sz = clone:GetBoundingBox()
-			local currentBottomY = cf.Position.Y - sz.Y * 0.5
-			clone:PivotTo(clone:GetPivot() + Vector3.new(0, surfaceY - currentBottomY, 0))
-			beltSurfaceY = surfaceY + BELT_LOCAL_REL_Y
-			usedHero = true
-		end
-	end
-
-	if not usedHero then
-		-- Stylized Multi-Part Tiered Treadmills (Tier 2 Electric, Tier 3 Cyber, Tier 4 Jade Dragon like Image 8, Tier 5 Celestial)
-		local deckCol = Color3.fromRGB(36, 42, 54)
-		local trimCol = Color3.fromRGB(58, 178, 255)
-		local railCol = Color3.fromRGB(210, 224, 240)
-		local beltCol = Color3.fromRGB(48, 228, 255)
-		local archCol = trimCol
-
-		if tier == 3 then
-			deckCol = Color3.fromRGB(32, 26, 46)
-			trimCol = Color3.fromRGB(224, 72, 255)
-			railCol = Color3.fromRGB(58, 62, 78)
-			beltCol = Color3.fromRGB(255, 92, 220)
-			archCol = Color3.fromRGB(168, 54, 242)
-		elseif tier == 4 then
-			-- Jade & Gold Dragon Shrine Treadmill (Image 8 inspiration)
-			deckCol = Color3.fromRGB(52, 134, 78)
-			trimCol = Color3.fromRGB(244, 194, 52)
-			railCol = Color3.fromRGB(72, 178, 92)
-			beltCol = Color3.fromRGB(108, 248, 168)
-			archCol = Color3.fromRGB(246, 198, 54)
-		elseif tier >= 5 then
-			deckCol = Color3.fromRGB(26, 22, 36)
-			trimCol = Color3.fromRGB(0, 245, 224)
-			railCol = Color3.fromRGB(255, 206, 62)
-			beltCol = Color3.fromRGB(118, 248, 255)
-			archCol = Color3.fromRGB(255, 196, 52)
-		end
-
-		local groundedCF = CFrame.new(treadBaseCF.Position.X, surfaceY, treadBaseCF.Position.Z)
-			* (treadBaseCF - treadBaseCF.Position)
-
-		-- Main deck chassis
-		makePart({
-			name = "DeckChassis",
-			size = Vector3.new(5.6, 1.15, 8.8),
-			cframe = groundedCF * CFrame.new(0, 0.58, 0),
-			color = deckCol,
-			material = Enum.Material.Metal,
-			canCollide = false,
-			canQuery = false,
-			parent = treadModel,
-		})
-		-- Running belt strip (top surface = 1.24 studs above floor)
-		makePart({
-			name = "RunningBelt",
-			size = Vector3.new(3.8, 0.22, 7.6),
-			cframe = groundedCF * CFrame.new(0, 1.13, -0.35),
-			color = Color3.fromRGB(24, 28, 34),
-			material = Enum.Material.SmoothPlastic,
-			canCollide = false,
-			canQuery = false,
-			parent = treadModel,
-		})
-		-- Chevron speed stripes along the belt pointing toward +Z (console forward!)
-		for idx = -2, 2 do
-			makePart({
-				name = "BeltChevron_" .. idx,
-				size = Vector3.new(2.2, 0.06, 0.36),
-				cframe = groundedCF * CFrame.new(0, 1.25, idx * 1.25 - 0.35),
-				color = beltCol,
-				material = Enum.Material.SmoothPlastic,
-				canCollide = false,
-				canQuery = false,
-				parent = treadModel,
-			})
-		end
-		-- Side curb trim & handrails
-		for _, sx in { -2.4, 2.4 } do
-			makePart({
-				name = "SideCurb",
-				size = Vector3.new(0.85, 1.4, 8.8),
-				cframe = groundedCF * CFrame.new(sx, 0.7, 0),
-				color = trimCol,
-				material = Enum.Material.Metal,
-				canCollide = false,
-				canQuery = false,
-				parent = treadModel,
-			})
-			makePart({
-				name = "FrontPillar",
-				size = Vector3.new(1.05, 5.4, 1.05),
-				cframe = groundedCF * CFrame.new(sx, 2.7, 2.8),
-				color = railCol,
-				material = if tier == 4 then Enum.Material.Marble else Enum.Material.Metal,
-				canCollide = false,
-				canQuery = false,
-				parent = treadModel,
-			})
-			makePart({
-				name = "HandRail",
-				size = Vector3.new(0.45, 0.45, 4.6),
-				cframe = groundedCF * CFrame.new(sx, 3.2, 0.6) * CFrame.Angles(math.rad(14), 0, 0),
-				color = trimCol,
-				material = Enum.Material.Metal,
-				canCollide = false,
-				canQuery = false,
-				parent = treadModel,
-			})
-			if tier >= 4 then
-				-- Stylized Dragon / Zenith Pillar Crest atop each pillar
-				makePart({
-					name = "DragonCrest",
-					size = Vector3.new(1.4, 1.6, 1.8),
-					cframe = groundedCF * CFrame.new(sx, 5.9, 2.7),
-					color = if tier == 4 then Color3.fromRGB(78, 198, 86) else Color3.fromRGB(255, 214, 72),
-					material = Enum.Material.SmoothPlastic,
-					canCollide = false,
-					canQuery = false,
-					parent = treadModel,
-				})
-				makePart({
-					name = "DragonEyeGlow",
-					size = Vector3.new(1.48, 0.45, 0.55),
-					cframe = groundedCF * CFrame.new(sx, 6.15, 2.1),
-					color = beltCol,
-					material = Enum.Material.SmoothPlastic,
-					canCollide = false,
-					canQuery = false,
-					parent = treadModel,
-				})
-			end
-		end
-		-- Overhead Console Arch & Screen at local +Z = +2.8
-		makePart({
-			name = "ConsoleCrossbar",
-			size = Vector3.new(5.8, 0.9, 1.1),
-			cframe = groundedCF * CFrame.new(0, 5.1, 2.8),
-			color = archCol,
-			material = Enum.Material.Metal,
-			canCollide = false,
-			canQuery = false,
-			parent = treadModel,
-		})
-		makePart({
-			name = "ConsoleScreen",
-			size = Vector3.new(2.8, 1.6, 0.5),
-			cframe = groundedCF * CFrame.new(0, 4.3, 2.4) * CFrame.Angles(math.rad(-15), 0, 0),
-			color = beltCol,
-			material = Enum.Material.SmoothPlastic,
-			canCollide = false,
-			canQuery = false,
-			parent = treadModel,
-		})
-		beltSurfaceY = surfaceY + 1.26
-	end
-
-	-- Invisible solid floor at beltSurfaceY across all tiers so Humanoid never falls onto grass underneath
+	-- Invisible solid floor at beltSurfaceY so Humanoid never clips into decorative parts or grass
 	makePart({
 		name = "BeltFloorCollider",
-		size = Vector3.new(4.2, 0.3, 7.6),
+		size = Vector3.new(4.2, 0.3, 8.6),
 		cframe = CFrame.new(treadBaseCF.Position.X, beltSurfaceY - 0.15, treadBaseCF.Position.Z)
-			* (treadBaseCF - treadBaseCF.Position)
-			* CFrame.new(0, 0, -0.35),
+			* rotOnly
+			* CFrame.new(0, 0, -0.4),
 		color = Color3.fromRGB(24, 28, 34),
 		material = Enum.Material.SmoothPlastic,
 		transparency = 1,
@@ -806,21 +811,19 @@ function PlotVisualBuilder.BuildTreadmillTier(plotModel: Model, plotCF: CFrame, 
 	-- Keep invisible trigger zone for TrainingSystem (NO visible glowing slab on floor!)
 	local oldZone = plotModel:FindFirstChild("TreadmillPad")
 	if oldZone and oldZone:IsA("BasePart") then
-		oldZone.Size = Vector3.new(7.5, 6.0, 9.2)
-		oldZone.CFrame = CFrame.new(treadBaseCF.Position.X, surfaceY + 2.5, treadBaseCF.Position.Z)
-			* (treadBaseCF - treadBaseCF.Position)
+		oldZone.Size = Vector3.new(7.2, 6.0, 10.6)
+		oldZone.CFrame = CFrame.new(treadBaseCF.Position.X, surfaceY + 2.5, treadBaseCF.Position.Z) * rotOnly
 		oldZone.Transparency = 1
 		oldZone.CanCollide = false
 		oldZone.CanQuery = false
 		oldZone.CanTouch = false
 	end
 
-	-- Position TreadmillStandAnchor ON the belt (local z = -0.8) facing +Z (straight into the console screen!)
+	-- Position TreadmillStandAnchor ON the belt (local z = -0.7) facing +Z (straight into the console screen!)
 	local standAnchor = plotModel:FindFirstChild("TreadmillStandAnchor")
 	if standAnchor and standAnchor:IsA("BasePart") then
-		local rotOnly = treadBaseCF - treadBaseCF.Position
 		local standWorldPos = Vector3.new(treadBaseCF.Position.X, beltSurfaceY + 3.05, treadBaseCF.Position.Z)
-			+ (rotOnly * Vector3.new(0, 0, -0.8))
+			+ (rotOnly * Vector3.new(0, 0, -0.7))
 		local lookTargetPos = Vector3.new(treadBaseCF.Position.X, beltSurfaceY + 3.05, treadBaseCF.Position.Z)
 			+ (rotOnly * Vector3.new(0, 0, 3.0))
 		standAnchor.CFrame = CFrame.lookAt(standWorldPos, lookTargetPos)
@@ -843,7 +846,7 @@ function PlotVisualBuilder.BuildTreadmillTier(plotModel: Model, plotCF: CFrame, 
 		stepLbl.Name = "ValueLabel"
 		stepLbl.Size = UDim2.fromScale(1, 1)
 		stepLbl.BackgroundTransparency = 1
-		stepLbl.Text = "👟 +1/Step"
+		stepLbl.Text = "👟 +2/Step"
 		stepLbl.TextColor3 = Color3.fromRGB(96, 224, 255)
 		stepLbl.Font = Enum.Font.FredokaOne
 		stepLbl.TextScaled = true
@@ -854,7 +857,8 @@ function PlotVisualBuilder.BuildTreadmillTier(plotModel: Model, plotCF: CFrame, 
 		stepSt.Parent = stepLbl
 	end
 
-	plotModel:SetAttribute("AppliedTreadTier", tier)
+	plotModel:SetAttribute("AppliedTreadTier", lv)
+	plotModel:SetAttribute("AppliedTreadLevel", lv)
 end
 
 function PlotVisualBuilder.BuildUpgradeSignboard(opts: {
@@ -1023,6 +1027,76 @@ function PlotVisualBuilder.UpdateUpgradeBoardGui(board: Instance?, titleText: st
 	end
 end
 
+function PlotVisualBuilder.UpdateCashPileVisual(plotModel: Model, unclaimedCoins: number, incomePerSec: number): number
+	local cashPad = plotModel:FindFirstChild("CashCollectorPad")
+	if not cashPad or not cashPad:IsA("BasePart") then
+		return 0
+	end
+
+	local targetBundles = 0
+	if unclaimedCoins >= 1 then
+		local ratio = if incomePerSec > 0 then (unclaimedCoins / incomePerSec) else (math.log10(1 + unclaimedCoins) * 4)
+		targetBundles = math.clamp(math.ceil(ratio / 2.0), 1, 24)
+	end
+
+	local pileModel = plotModel:FindFirstChild("VoxelCashPile")
+	if not pileModel or not pileModel:IsA("Model") then
+		if pileModel then pileModel:Destroy() end
+		local nm = Instance.new("Model")
+		nm.Name = "VoxelCashPile"
+		nm.Parent = plotModel
+		pileModel = nm
+	end
+	local pm = pileModel :: Model
+	if pm:GetAttribute("BundleCount") == targetBundles then
+		return targetBundles
+	end
+
+	pm:ClearAllChildren()
+	pm:SetAttribute("BundleCount", targetBundles)
+
+	for i = 1, targetBundles do
+		local layer = math.floor((i - 1) / 12)
+		local idxInLayer = (i - 1) % 12
+		local col = idxInLayer % 4
+		local row = math.floor(idxInLayer / 4)
+		local ox = (col - 1.5) * 1.45
+		local oz = (row - 1.0) * 1.85
+		local oy = 0.38 + layer * 0.30
+		local isGold = (i > 20)
+		local yaw = ((i * 19) % 15 - 7) * 0.025
+		local billCF = cashPad.CFrame * CFrame.new(ox, oy, oz) * CFrame.Angles(0, yaw, 0)
+
+		local bill = makePart({
+			name = "CashBundle_" .. i,
+			size = Vector3.new(1.18, 0.26, 0.68),
+			cframe = billCF,
+			color = if isGold then Color3.fromRGB(255, 206, 54) else Color3.fromRGB(68, 204, 92),
+			material = if isGold then Enum.Material.Metal else Enum.Material.SmoothPlastic,
+			canCollide = false,
+			canQuery = false,
+			parent = pm,
+		})
+		bill.CastShadow = false
+
+		if not isGold then
+			local band = makePart({
+				name = "Band_" .. i,
+				size = Vector3.new(0.32, 0.28, 0.72),
+				cframe = billCF,
+				color = Color3.fromRGB(242, 246, 242),
+				material = Enum.Material.SmoothPlastic,
+				canCollide = false,
+				canQuery = false,
+				parent = pm,
+			})
+			band.CastShadow = false
+		end
+	end
+
+	return targetBundles
+end
+
 function PlotVisualBuilder.ApplyPlotEvolution(plotModel: Model, penLevel: number, treadmillLevel: number)
 	local base = plotModel.PrimaryPart or plotModel:FindFirstChild("PlotBase")
 	if not base or not base:IsA("BasePart") then
@@ -1030,14 +1104,14 @@ function PlotVisualBuilder.ApplyPlotEvolution(plotModel: Model, penLevel: number
 	end
 	local plotCF = base.CFrame
 
-	local targetPenTier = PlotVisualBuilder.GetPenTier(penLevel)
-	if plotModel:GetAttribute("AppliedPenTier") ~= targetPenTier then
-		PlotVisualBuilder.BuildPenFences(plotModel, plotCF, penLevel)
+	local cleanPenLv = math.max(1, math.floor(tonumber(penLevel) or 1))
+	if plotModel:GetAttribute("AppliedPenLevel") ~= cleanPenLv then
+		PlotVisualBuilder.BuildPenFences(plotModel, plotCF, cleanPenLv)
 	end
 
-	local targetTreadTier = PlotVisualBuilder.GetTreadmillTier(treadmillLevel)
-	if plotModel:GetAttribute("AppliedTreadTier") ~= targetTreadTier then
-		PlotVisualBuilder.BuildTreadmillTier(plotModel, plotCF, treadmillLevel)
+	local targetTreadLv = PlotVisualBuilder.GetTreadmillTier(treadmillLevel)
+	if plotModel:GetAttribute("AppliedTreadLevel") ~= targetTreadLv then
+		PlotVisualBuilder.BuildTreadmillTier(plotModel, plotCF, targetTreadLv)
 	end
 end
 

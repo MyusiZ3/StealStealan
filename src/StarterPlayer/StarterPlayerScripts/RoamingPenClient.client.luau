@@ -39,6 +39,7 @@ type RoamingEntity = {
 	phase: number,
 	paddockCF: CFrame,
 	topY: number,
+	halfZ: number,
 	footBotRel: number,
 }
 
@@ -98,9 +99,10 @@ local terrainGroundRayParams = RaycastParams.new()
 terrainGroundRayParams.FilterType = Enum.RaycastFilterType.Include
 terrainGroundRayParams.FilterDescendantsInstances = { Workspace.Terrain }
 
-local function randomLocalPaddockPos(paddockTopY: number?): Vector3
+local function randomLocalPaddockPos(paddockTopY: number?, halfZ: number?): Vector3
 	local topY = paddockTopY or 0.04
-	return Vector3.new(math.random(-20, 20), topY, math.random(-13, 13))
+	local hz = math.max(8, math.floor(halfZ or 10))
+	return Vector3.new(math.random(-20, 20), topY, math.random(-hz, hz))
 end
 
 local function computeEntityGroundCFrame(paddockCF: CFrame, localX: number, topY: number, localZ: number, hopY: number, yaw: number, footBotRel: number): CFrame
@@ -111,17 +113,19 @@ local function computeEntityGroundCFrame(paddockCF: CFrame, localX: number, topY
 	return CFrame.new(basePos.X, surfaceY + hopY - footBotRel, basePos.Z) * rotOnly * CFrame.Angles(0, yaw, 0)
 end
 
--- Deterministic 6x5 grid across the 52x36 OpenPaddockFloor supporting up to 30 hatching crates neatly
-local function computePenCrateSlotLocalPos(slotIndex: number, localX: number?, localZ: number?, paddockTopY: number?): Vector3
+-- Deterministic 6x5 grid across dynamic OpenPaddockFloor supporting up to 30 hatching crates neatly
+local function computePenCrateSlotLocalPos(slotIndex: number, localX: number?, localZ: number?, paddockTopY: number?, halfZ: number?): Vector3
 	local topY = paddockTopY or 0.04
+	local hz = math.max(9.5, halfZ or 14.5)
 	if type(localX) == "number" and type(localZ) == "number" then
-		return Vector3.new(math.clamp(localX, -22.5, 22.5), topY, math.clamp(localZ, -14.5, 14.5))
+		return Vector3.new(math.clamp(localX, -22.5, 22.5), topY, math.clamp(localZ, -hz, hz))
 	end
 	local idx0 = math.clamp(slotIndex - 1, 0, GameConfig.PEN.MAX_PLACED_CRATES - 1)
 	local col = idx0 % 6
 	local row = math.floor(idx0 / 6)
 	local x = -20 + col * 8.0
-	local z = -10 + row * 6.0
+	local zSpan = math.min(hz * 1.6, 28.0)
+	local z = -zSpan * 0.5 + row * (zSpan / 4.0)
 	return Vector3.new(x, topY, z)
 end
 
@@ -157,6 +161,7 @@ local function rebuildEntities(forceReset: boolean?)
 			if paddock and paddock:IsA("BasePart") then
 				local paddockCF = paddock.CFrame
 				local paddockTopY = paddock.Size.Y * 0.5
+				local paddockHalfZ = math.max(9.5, paddock.Size.Z * 0.5 - 2.5)
 
 				-- 1. Diff/Preserve Roaming Animals inside Paddock (Equip Best NEVER resets existing pets!)
 				if not shouldHideAnimals and type(plotData.roamingAnimals) == "table" then
@@ -167,6 +172,7 @@ local function rebuildEntities(forceReset: boolean?)
 							if existing and existing.model and existing.model.Parent and existing.plotIndex == plotData.plotIndex then
 								existing.paddockCF = paddockCF
 								existing.topY = paddockTopY
+								existing.halfZ = paddockHalfZ
 							else
 								if existing and existing.model then
 									existing.model:Destroy()
@@ -208,7 +214,7 @@ local function rebuildEntities(forceReset: boolean?)
 								end
 
 								local footBotRel = AnimalVisualBuilder.GetModelVerticalBounds(model)
-								local startLocal = randomLocalPaddockPos(paddockTopY)
+								local startLocal = randomLocalPaddockPos(paddockTopY, paddockHalfZ)
 								local initYaw = math.random() * math.pi * 2
 								model:PivotTo(computeEntityGroundCFrame(paddockCF, startLocal.X, paddockTopY, startLocal.Z, 0, initYaw, footBotRel))
 								model.Parent = entitiesRoot
@@ -238,13 +244,14 @@ local function rebuildEntities(forceReset: boolean?)
 									isScrambled = (animal.mutation == "Scrambled"),
 									orbitParts = entOrbits,
 									pos = startLocal,
-									targetPos = randomLocalPaddockPos(paddockTopY),
+									targetPos = randomLocalPaddockPos(paddockTopY, paddockHalfZ),
 									yaw = initYaw,
 									speed = math.random(4, 7),
 									waitUntil = os.clock() + (idx * 0.2),
 									phase = idx * 0.9,
 									paddockCF = paddockCF,
 									topY = paddockTopY,
+									halfZ = paddockHalfZ,
 									footBotRel = footBotRel,
 								}
 								activeEntitiesByUid[animal.uid] = newEnt
@@ -279,7 +286,7 @@ local function rebuildEntities(forceReset: boolean?)
 							})
 							crateModel.Name = string.format("PenCrate_%d_%s", slotIdx, string.sub(crate.uid, 1, 6))
 
-							local localPos = computePenCrateSlotLocalPos(slotIdx, crate.localX, crate.localZ, paddockTopY)
+							local localPos = computePenCrateSlotLocalPos(slotIdx, crate.localX, crate.localZ, paddockTopY, paddockHalfZ)
 							local yaw = ((slotIdx * 37) % 360) * math.pi / 180
 							local baseCF = paddockCF * CFrame.new(localPos) * CFrame.Angles(0, yaw, 0)
 							crateModel:PivotTo(baseCF)
@@ -476,6 +483,7 @@ local function updatePlotPrivacyVisuals()
 				"CashCollectorPad", "CashCollectorPad_Plinth", "CashCollectorPad_NeonRim", "CashCollectorPad_Halo",
 				"CashCollectorPad_Corner_1", "CashCollectorPad_Corner_2", "CashCollectorPad_Corner_3", "CashCollectorPad_Corner_4",
 				"CashCollectorPad_CornerGlow_1", "CashCollectorPad_CornerGlow_2", "CashCollectorPad_CornerGlow_3", "CashCollectorPad_CornerGlow_4",
+				"VoxelCashPile",
 			}) do
 				setInstSubtreeVisible(plotModel:FindFirstChild(boardName), isMine, isMine)
 			end
@@ -615,7 +623,7 @@ Remotes.Get("CrateHatchReveal").OnClientEvent:Connect(function(data)
 
 	local sc = tonumber(data.sizeScale) or GameConfig.ComputeCrateScale(tostring(data.rarity or "Common"))
 	local slotIdx = tonumber(data.placedSlot) or 1
-	local localPos = computePenCrateSlotLocalPos(slotIdx, data.localX, data.localZ, paddock.Size.Y * 0.5)
+	local localPos = computePenCrateSlotLocalPos(slotIdx, data.localX, data.localZ, paddock.Size.Y * 0.5, math.max(9.5, paddock.Size.Z * 0.5 - 2.5))
 	local baseCF = paddock.CFrame * CFrame.new(localPos)
 
 	local openerUid = tonumber(data.openerUserId)
@@ -635,6 +643,7 @@ Remotes.Get("CrateHatchReveal").OnClientEvent:Connect(function(data)
 		openerPlayer = openerPlayer,
 		isLocalOpener = isLocalOpener,
 		lowVFX = (currentSettings.lowVFX == true),
+		hatchCutsceneEnabled = ((currentSettings :: any).hatchCutsceneEnabled ~= false),
 		playerGui = localPlayer:FindFirstChildOfClass("PlayerGui"),
 		onComplete = function()
 			if type(data.animalUid) == "string" then
@@ -696,8 +705,9 @@ local function evaluatePenPlacement(): (boolean, number, number, Vector3?, BaseP
 	end
 
 	local rel = myPaddock.CFrame:PointToObjectSpace(res.Position)
+	local halfZ = math.max(9.5, myPaddock.Size.Z * 0.5 - 2.5)
 	local lx = math.clamp(rel.X, -22.5, 22.5)
-	local lz = math.clamp(rel.Z, -14.5, 14.5)
+	local lz = math.clamp(rel.Z, -halfZ, halfZ)
 	local valid = true
 
 	if hType == "Crate" then
@@ -752,6 +762,60 @@ Remotes.Get("AllPlotsSync").OnClientEvent:Connect(function(payload)
 	currentPlotsPayload = payload or {}
 	rebuildEntities(false)
 	updatePlotPrivacyVisuals()
+end)
+
+Remotes.Get("PlayWorldVFX").OnClientEvent:Connect(function(vfxType, data)
+	if vfxType ~= "CashPileSuction" or type(data) ~= "table" then
+		return
+	end
+	local char = localPlayer.Character
+	local hrp = if char then char:FindFirstChild("HumanoidRootPart") else nil
+	if not hrp or not hrp:IsA("BasePart") then return end
+
+	local gw = Workspace:FindFirstChild("GameWorld")
+	local hub = if gw then gw:FindFirstChild("SanctuaryHub") else nil
+	local plotsFolder = if hub then hub:FindFirstChild("Plots") else nil
+	local plotModel = if plotsFolder then plotsFolder:FindFirstChild("Plot_" .. tostring(data.plotIndex or 1)) else nil
+	local cashPad = if plotModel then plotModel:FindFirstChild("CashCollectorPad") else nil
+	local originCF = if cashPad and cashPad:IsA("BasePart") then cashPad.CFrame else hrp.CFrame
+
+	local count = math.clamp(tonumber(data.bundleCount) or 8, 4, 18)
+	local vfxFolder = Workspace:FindFirstChild("ClientWorldVFX") or Workspace
+	for i = 1, count do
+		local isGold = (i > count - 2 and count >= 12)
+		local p = Instance.new("Part")
+		p.Name = "SuctionCash_" .. i
+		p.Shape = Enum.PartType.Block
+		p.Size = Vector3.new(1.15, 0.28, 0.68)
+		p.Color = if isGold then Color3.fromRGB(255, 206, 54) else Color3.fromRGB(68, 204, 92)
+		p.Material = if isGold then Enum.Material.Metal else Enum.Material.SmoothPlastic
+		p.Anchored = true
+		p.CanCollide = false
+		p.CanQuery = false
+		p.CanTouch = false
+		p.CastShadow = false
+		local startPos = (originCF * CFrame.new((math.random() - 0.5) * 4.5, 0.5 + math.floor((i - 1) / 6) * 0.35, (math.random() - 0.5) * 5.0)).Position
+		p.CFrame = CFrame.new(startPos) * CFrame.Angles(0, math.random() * math.pi, 0)
+		p.Parent = vfxFolder
+
+		local dur = 0.28 + i * 0.015
+		task.spawn(function()
+			local t0 = os.clock()
+			while os.clock() - t0 < dur and p.Parent do
+				local a = math.clamp((os.clock() - t0) / dur, 0, 1)
+				local easeA = a * a
+				local destPos = if hrp.Parent then hrp.Position else originCF.Position
+				local arc = Vector3.new(0, math.sin(a * math.pi) * 3.2, 0)
+				local cur = startPos:Lerp(destPos, easeA) + arc
+				p.CFrame = CFrame.new(cur) * CFrame.Angles(a * 6.0, a * 8.0, 0)
+				p.Size = Vector3.new(1.15, 0.28, 0.68) * (1.0 - easeA * 0.55)
+				RunService.RenderStepped:Wait()
+			end
+			if p.Parent then
+				p:Destroy()
+			end
+		end)
+	end
 end)
 
 Remotes.Get("ProfileSync").OnClientEvent:Connect(function(profile)
@@ -930,7 +994,7 @@ RunService.RenderStepped:Connect(function(dt: number)
 				hopY = if isVoxelRig then 0 else math.abs(math.sin(now * 9 + ent.phase)) * 0.55
 			elseif dist <= 0.6 then
 				ent.waitUntil = now + math.random(10, 28) / 10
-				ent.targetPos = randomLocalPaddockPos(ent.topY)
+				ent.targetPos = randomLocalPaddockPos(ent.topY, ent.halfZ)
 			else
 				hopY = if isVoxelRig then 0 else math.abs(math.sin(now * 3 + ent.phase)) * 0.05
 			end
