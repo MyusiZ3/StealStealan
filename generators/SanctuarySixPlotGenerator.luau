@@ -9,6 +9,7 @@ local PlotVisualBuilder = require(ReplicatedStorage.Modules.PlotVisualBuilder)
 local PlotPrefabSystem = require(ReplicatedStorage.Modules.PlotPrefabSystem)
 local DefaultBiomeBuilder = require(ReplicatedStorage.Modules.ClassicStudBiomeBuilder)
 local VoxelFusionMachineBuilder = require(ReplicatedStorage.Modules.VoxelFusionMachineBuilder)
+local VoxelFloatingIslandBuilder = require(ReplicatedStorage.Modules.VoxelFloatingIslandBuilder)
 
 local SanctuarySixPlotGenerator = {}
 
@@ -579,7 +580,7 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder, builderOverride: a
 		skyIslands.Parent = worldFolder
 	end
 	for _, ch in ipairs(skyIslands:GetChildren()) do
-		if string.sub(ch.Name, 1, 10) == "SkyIsland_" then
+		if string.sub(ch.Name, 1, 10) == "SkyIsland_" or ch.Name == "FloatingIsland_Waterfall" then
 			ch:Destroy()
 		end
 	end
@@ -700,21 +701,36 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder, builderOverride: a
 	placeDecorModel(biomeBuilder.BuildVoxelFenceWithLantern(CFrame.new(26, 0, 18) * CFrame.Angles(0, math.rad(90), 0), 0.85, hubDecorFolder), hubDecorFolder)
 	placeDecorModel(biomeBuilder.BuildWildflowerPatch(CFrame.new(26.5, 0, 5), 1.0, hubDecorFolder), hubDecorFolder)
 
+	-- Flagship Hero Voxel Floating Island with Dynamic Waterfall visible from Spawn, Boulevard, & Showroom Plaza
+	placeDecorModel(
+		VoxelFloatingIslandBuilder.Build(
+			CFrame.lookAt(Vector3.new(-192, 54, 148), Vector3.new(0, 48, 60)),
+			1.48,
+			{
+				biomeId = "PineWoods",
+				detailLevel = "Hero",
+				hasWaterfall = true,
+				modelName = "FloatingIsland_Waterfall",
+				parent = skyIslands,
+			}
+		),
+		skyIslands
+	)
+
 	-- Classic Studs Floating Sky Islands around the SanctuaryHub Horizon (PrimaryPart set for client distance streaming!)
 	local hubSkySpots = {
-		{ name = "SkyIsland_1", pos = Vector3.new(-178, 36, -60), sc = 1.15, biome = "PineWoods", fall = true, fallSide = 1 },
-		{ name = "SkyIsland_2", pos = Vector3.new(182, 42, -35), sc = 1.2, biome = "PineWoods", fall = true, fallSide = -1 },
-		{ name = "SkyIsland_3", pos = Vector3.new(-188, 44, 72), sc = 1.25, biome = "PineWoods", fall = true, fallSide = 1 },
-		{ name = "SkyIsland_4", pos = Vector3.new(186, 40, 88), sc = 1.18, biome = "PineWoods", fall = true, fallSide = -1 },
-		{ name = "SkyIsland_5", pos = Vector3.new(-320, 48, -150), sc = 1.4, biome = "PineWoods", fall = true, fallSide = 1 },
-		{ name = "SkyIsland_6", pos = Vector3.new(310, 54, -95), sc = 1.35, biome = "PineWoods", fall = true, fallSide = -1 },
+		{ name = "SkyIsland_1", pos = Vector3.new(-188, 38, -62), sc = 1.15, biome = "PineWoods", fall = true, fallSide = 1, detail = "Hero" :: "Hero" | "Standard" },
+		{ name = "SkyIsland_2", pos = Vector3.new(186, 44, -35), sc = 1.2, biome = "PineWoods", fall = true, fallSide = -1, detail = "Hero" :: "Hero" | "Standard" },
+		{ name = "SkyIsland_3", pos = Vector3.new(-220, 46, 52), sc = 1.25, biome = "PineWoods", fall = true, fallSide = 1, detail = "Hero" :: "Hero" | "Standard" },
+		{ name = "SkyIsland_4", pos = Vector3.new(190, 42, 92), sc = 1.18, biome = "PineWoods", fall = true, fallSide = -1, detail = "Hero" :: "Hero" | "Standard" },
+		{ name = "SkyIsland_5", pos = Vector3.new(-320, 48, -150), sc = 1.4, biome = "PineWoods", fall = true, fallSide = 1, detail = "Standard" :: "Hero" | "Standard" },
+		{ name = "SkyIsland_6", pos = Vector3.new(310, 54, -95), sc = 1.35, biome = "PineWoods", fall = true, fallSide = -1, detail = "Standard" :: "Hero" | "Standard" },
 	}
 	for _, sp in ipairs(hubSkySpots) do
-		local isl = placeDecorModel(
-			biomeBuilder.BuildBiomeFloatingSkyIsland(CFrame.new(sp.pos), sp.sc, skyIslands, sp.biome, sp.fall, sp.fallSide),
+		placeDecorModel(
+			biomeBuilder.BuildBiomeFloatingSkyIsland(CFrame.new(sp.pos), sp.sc, skyIslands, sp.biome, sp.fall, sp.fallSide, sp.detail, sp.name),
 			skyIslands
 		)
-		isl.Name = sp.name
 	end
 
 	-- 7. Build All 6 Pre-Allocated Open-Pen Plots from Single Editable OpenPlotPrefab

@@ -861,7 +861,7 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder, builderOverride: any
 		skyFolder.Parent = worldFolder
 	end
 	for _, ch in ipairs(skyFolder:GetChildren()) do
-		if string.sub(ch.Name, 1, 15) == "BiomeSkyIsland_" or ch.Name == "ColossalHorizonVolcano" then
+		if string.sub(ch.Name, 1, 15) == "BiomeSkyIsland_" then
 			ch:Destroy()
 		end
 	end
@@ -1012,7 +1012,7 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder, builderOverride: any
 		local skySpots = {
 			{ x = -154, y = 36, z = biome.zStart + lenZ * 0.28, sc = 1.15, fall = true, fallSide = 1 },
 			{ x = 158, y = 40, z = biome.zStart + lenZ * 0.48, sc = 1.25, fall = true, fallSide = -1 },
-			{ x = -168, y = 46, z = biome.zStart + lenZ * 0.72, sc = 1.32, fall = false, fallSide = 1 },
+			{ x = -168, y = 46, z = biome.zStart + lenZ * 0.72, sc = 1.32, fall = true, fallSide = 1 },
 			{ x = 162, y = 44, z = biome.zStart + lenZ * 0.88, sc = 1.18, fall = true, fallSide = -1 },
 		}
 		for _, ss in ipairs(skySpots) do

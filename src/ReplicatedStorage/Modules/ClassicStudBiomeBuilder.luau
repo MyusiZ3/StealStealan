@@ -8,6 +8,8 @@ local MaterialService = game:GetService("MaterialService")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
+local VoxelFloatingIslandBuilder = require(script.Parent.VoxelFloatingIslandBuilder)
+
 local ClassicStudBiomeBuilder = {}
 
 local STUDS_COLOR_MAP = "rbxassetid://10509831729"
@@ -1650,60 +1652,26 @@ function ClassicStudBiomeBuilder.BuildBiomeHorizonArchway(cframe: CFrame, scale:
 	return m
 end
 
-local SKY_ISLAND_PALETTES = {
-	PineWoods = { top = Color3.fromRGB(98, 182, 74), rim = Color3.fromRGB(132, 92, 58), stone = Color3.fromRGB(118, 94, 78), treeFn = ClassicStudBiomeBuilder.BuildLushVoxelTreeWithVines, isVolcano = false },
-	MangroveSwamp = { top = Color3.fromRGB(82, 134, 58), rim = Color3.fromRGB(96, 70, 44), stone = Color3.fromRGB(84, 74, 62), treeFn = ClassicStudBiomeBuilder.BuildSwampBanyanVineTree, isVolcano = false },
-	SavannaCamp = { top = Color3.fromRGB(232, 192, 108), rim = Color3.fromRGB(204, 134, 68), stone = Color3.fromRGB(168, 102, 56), treeFn = ClassicStudBiomeBuilder.BuildVoxelFlowerCactus, isVolcano = false },
-	AlpinePeaks = { top = Color3.fromRGB(242, 248, 255), rim = Color3.fromRGB(142, 214, 248), stone = Color3.fromRGB(108, 168, 222), treeFn = ClassicStudBiomeBuilder.BuildSnowyPineTreeTall, isVolcano = false },
-	VolcanicJungle = { top = Color3.fromRGB(58, 46, 62), rim = Color3.fromRGB(46, 36, 48), stone = Color3.fromRGB(34, 28, 38), treeFn = ClassicStudBiomeBuilder.BuildVoxelCrimsonCanopyTree, isVolcano = true },
-}
-
 function ClassicStudBiomeBuilder.BuildBiomeFloatingSkyIsland(
 	cframe: CFrame,
 	scale: number?,
 	parent: Instance?,
 	biomeId: string,
 	hasFall: boolean?,
-	fallSideSign: number?
+	fallSideSign: number?,
+	detailLevel: ("Hero" | "Standard")?,
+	modelName: string?
 ): Model
-	local s = scale or 1
-	local pal = SKY_ISLAND_PALETTES[biomeId] or SKY_ISLAND_PALETTES.PineWoods
-	local m = newAssetModel("BiomeSkyIsland_" .. biomeId, cframe, parent)
-
-	local topPlate = createBlock(m, cframe, s, "IslandTopCap", Vector3.new(40, 4.4, 36), CFrame.new(0, 0, 0), pal.top)
-	m.PrimaryPart = topPlate
-	createBlock(m, cframe, s, "IslandDeckStep", Vector3.new(22, 3.2, 20), CFrame.new(-6, 3.6, 4), pal.top)
-	createBlock(m, cframe, s, "IslandStrataA", Vector3.new(34, 9.0, 30), CFrame.new(0, -6.5, 0), pal.rim)
-	createBlock(m, cframe, s, "IslandStrataB", Vector3.new(24, 11.0, 21), CFrame.new(2, -16.0, -1), pal.stone)
-	createBlock(m, cframe, s, "IslandKeelTip", Vector3.new(12, 10.0, 11), CFrame.new(1, -25.5, 0), pal.stone)
-
-	-- Top vegetation matching the biome
-	pal.treeFn(cframe * CFrame.new(-7 * s, 5.2 * s, 4 * s), s * 1.15, m)
-	pal.treeFn(cframe * CFrame.new(9 * s, 2.2 * s, -6 * s), s * 0.9, m)
-	createBlock(m, cframe, s, "SkyBoulder", Vector3.new(5.5, 4.0, 5.5), CFrame.new(6, 4.0, 8), pal.stone)
-
-	-- Hanging vines / icicles / lava accents underneath
-	for i = 1, 4 do
-		local hx = (-12 + i * 6)
-		local hz = if i % 2 == 0 then 14 else -14
-		local hCol = if biomeId == "AlpinePeaks" then Color3.fromRGB(168, 232, 255) elseif pal.isVolcano then Color3.fromRGB(255, 108, 28) else Color3.fromRGB(82, 168, 62)
-		createBlock(m, cframe, s, "IslandHang_" .. i, Vector3.new(1.2, 6.5, 1.2), CFrame.new(hx, -5.2, hz), hCol, if pal.isVolcano then Enum.Material.Neon else nil, not pal.isVolcano)
-	end
-
-	-- Optional cascading waterfall or magma lavafall toward the main trail
-	if hasFall then
-		local side = fallSideSign or -1
-		local fx = side * 19.5
-		if pal.isVolcano then
-			local lava = createBlock(m, cframe, s, "SkyLavafall", Vector3.new(3.2, 48, 7.8), CFrame.new(fx, -23.0, 0), Color3.fromRGB(255, 112, 24), Enum.Material.Neon, false)
-			addSelectiveParticles(lava, "FireEmbers")
-		else
-			local water = createBlock(m, cframe, s, "SkyWaterfall", Vector3.new(3.0, 52, 8.2), CFrame.new(fx, -25.0, 0), Color3.fromRGB(76, 206, 250), Enum.Material.Glass, false, 0.25)
-			createBlock(m, cframe, s, "WaterfallFoamTop", Vector3.new(4.2, 1.8, 9.2), CFrame.new(fx * 0.96, 1.8, 0), Color3.fromRGB(238, 250, 255))
-			addSelectiveParticles(water, "WaterfallMist")
-		end
-	end
-	return m
+	-- Rotate -Z waterfall face inward toward main trail/hub and slightly toward oncoming player view
+	local side = fallSideSign or -1
+	local yaw = if side > 0 then math.rad(-68) else math.rad(68)
+	return VoxelFloatingIslandBuilder.Build(cframe * CFrame.Angles(0, yaw, 0), scale or 1.0, {
+		biomeId = biomeId,
+		detailLevel = detailLevel or "Standard",
+		hasWaterfall = (hasFall ~= false),
+		modelName = modelName or ("BiomeSkyIsland_" .. biomeId),
+		parent = parent,
+	})
 end
 
 function ClassicStudBiomeBuilder.ApplyReferenceLighting()
