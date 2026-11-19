@@ -21,6 +21,8 @@ local TrainingSystem = {}
 local lastOrbTap: { [number]: number } = {}
 local treadmillCooldownUntil: { [number]: number } = {}
 local treadmillEnteredAt: { [number]: number } = {}
+local bubbleBoostUntil: { [number]: number } = {}
+local lastBubbleClaim: { [number]: number } = {}
 
 local function getTrailSpeedMult(trailId: string): number
 	for _, t in ipairs(TrailConfig) do
@@ -44,7 +46,8 @@ local function computeBaseAndTotalMultiplier(player: Player, profile: any): (num
 	if profile.zoneIndexBonusesClaimed.PineWoods then indexMult += 0.15 end
 	if profile.zoneIndexBonusesClaimed.AlpinePeaks then indexMult += 0.50 end
 	if profile.zoneIndexBonusesClaimed.VolcanicJungle then indexMult += 1.00 end
-	local baseMult = trailMult * passMult * vipMult * indexMult * AdminService.GetSpeedMultiplier()
+	local bubbleMult = if os.clock() < (bubbleBoostUntil[player.UserId] or 0) then 3.0 else 1.0
+	local baseMult = trailMult * passMult * vipMult * indexMult * AdminService.GetSpeedMultiplier() * bubbleMult
 	local vehicleDef = getVehicleDef(profile.equippedVehicle)
 	local totalMult = baseMult
 	if player:GetAttribute("IsRidingVehicle") == true then
@@ -57,10 +60,8 @@ function TrainingSystem.ComputeSpeedMetrics(player: Player, profile: any): (numb
 	local baseMult, totalMult, vehMult = computeBaseAndTotalMultiplier(player, profile)
 	local riding = player:GetAttribute("IsRidingVehicle") == true
 	local displayedSpeed = profile.speedStat * (if riding then vehMult else 1)
-	local stepGain = math.max(
-		1,
-		math.floor(GameConfig.TREADMILL.BASE_SPEED_PER_PULSE * math.pow(GameConfig.TREADMILL.GROWTH_PER_LEVEL, profile.treadmillLevel - 1) * totalMult)
-	)
+	local baseStep = GameConfig.GetTreadmillBaseStep(profile.treadmillLevel)
+	local stepGain = math.max(1, math.floor(baseStep * totalMult))
 	player:SetAttribute("StepGainPerPulse", stepGain)
 	return displayedSpeed, baseMult, totalMult, vehMult
 end
@@ -68,7 +69,7 @@ end
 local function computeSpeedGainPerPulse(player: Player): (number, number)
 	local profile = DataService.GetProfile(player)
 	if not profile then return 0, 1.0 end
-	local base = GameConfig.TREADMILL.BASE_SPEED_PER_PULSE * math.pow(GameConfig.TREADMILL.GROWTH_PER_LEVEL, profile.treadmillLevel - 1)
+	local base = GameConfig.GetTreadmillBaseStep(profile.treadmillLevel)
 	local _, totalMult = computeBaseAndTotalMultiplier(player, profile)
 	return base * totalMult, totalMult
 end
@@ -131,8 +132,28 @@ function TrainingSystem.Init()
 		end
 	end)
 
-	Remotes.Get("TrainingTapOrb").OnServerEvent:Connect(function(player)
+	Remotes.Get("TrainingTapOrb").OnServerEvent:Connect(function(player, mode)
 		local now = os.clock()
+		if mode == "BubbleBoost" then
+			if player:GetAttribute("OnTreadmill") ~= true then
+				return
+			end
+			if now - (lastBubbleClaim[player.UserId] or 0) < 10.0 then
+				return
+			end
+			lastBubbleClaim[player.UserId] = now
+			bubbleBoostUntil[player.UserId] = now + 15.0
+			local expiresUnix = math.floor(workspace:GetServerTimeNow()) + 15
+			player:SetAttribute("TreadmillBoostEndsAt", expiresUnix)
+			local profile = DataService.GetProfile(player)
+			if profile then
+				TrainingSystem.ComputeSpeedMetrics(player, profile)
+			end
+			PlotService.RefreshPlotBoardVisuals(player)
+			DataService.SyncProfile(player)
+			Remotes.Get("NotifyClient"):FireClient(player, "⚡ x3 TREADMILL SPEED BOOST ACTIVE (15s)!", Color3.fromRGB(58, 228, 255))
+			return
+		end
 		if now - (lastOrbTap[player.UserId] or 0) < 0.35 then
 			return
 		end
@@ -221,6 +242,7 @@ function TrainingSystem.Init()
 					if doTrainingTick and (isOn or inZone) then
 						local profile = DataService.GetProfile(player)
 						if profile then
+							TrainingSystem.ComputeSpeedMetrics(player, profile)
 							local rawGain, totalMult = computeSpeedGainPerPulse(player)
 							local gain = math.max(1, math.floor(rawGain))
 							profile.speedStat += gain
@@ -237,6 +259,8 @@ function TrainingSystem.Init()
 		lastOrbTap[player.UserId] = nil
 		treadmillCooldownUntil[player.UserId] = nil
 		treadmillEnteredAt[player.UserId] = nil
+		bubbleBoostUntil[player.UserId] = nil
+		lastBubbleClaim[player.UserId] = nil
 	end)
 end
 

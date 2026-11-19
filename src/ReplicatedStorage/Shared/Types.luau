@@ -103,6 +103,7 @@ export type PlayerSettings = {
 	hideOwnAnimals: boolean,
 	lowVFX: boolean,
 	graphicsQuality: GraphicsQuality,
+	hatchCutsceneEnabled: boolean?,
 }
 
 export type PlayerProfileSchema = {

@@ -19,12 +19,41 @@ local GameConfig = {
 		MAX_INVENTORY_PASS_BONUS = 50,
 	},
 
-	-- Treadmill Upgrades
+	-- Treadmill Upgrades (12 Levels: Lv.1 +2/Step -> Lv.12 +125K/Step)
 	TREADMILL = {
-		BASE_SPEED_PER_PULSE = 2.0,
-		GROWTH_PER_LEVEL = 1.65,
-		UPGRADE_BASE_COST = 250,
-		UPGRADE_GROWTH = 2.6,
+		MAX_LEVEL = 12,
+		BASE_SPEED_PER_PULSE = 2,
+		GROWTH_PER_LEVEL = 2.72,
+		UPGRADE_BASE_COST = 400,
+		UPGRADE_GROWTH = 6.2,
+		LEVEL_SPEED_PER_STEP = {
+			2,       -- Lv. 1 (Basic)
+			6,       -- Lv. 2 (Standard)
+			16,      -- Lv. 3 (Uncommon)
+			45,      -- Lv. 4 (Rare)
+			125,     -- Lv. 5 (Epic)
+			350,     -- Lv. 6 (Legendary)
+			950,     -- Lv. 7 (Mythic)
+			2600,    -- Lv. 8 (Cosmic)
+			7200,    -- Lv. 9 (Divine)
+			20000,   -- Lv. 10 (Infinity)
+			52000,   -- Lv. 11 (Singularity)
+			125000,  -- Lv. 12 (Primordial MAX)
+		},
+		LEVEL_COSTS = {
+			0,              -- Lv. 1 (Starter)
+			400,            -- Lv. 1 -> 2
+			2500,           -- Lv. 2 -> 3
+			18000,          -- Lv. 3 -> 4
+			140000,         -- Lv. 4 -> 5
+			1200000,        -- Lv. 5 -> 6
+			12000000,       -- Lv. 6 -> 7
+			125000000,      -- Lv. 7 -> 8
+			1500000000,     -- Lv. 8 -> 9
+			20000000000,    -- Lv. 9 -> 10
+			300000000000,   -- Lv. 10 -> 11
+			5000000000000,  -- Lv. 11 -> 12
+		},
 	},
 
 	-- World layout coordinates
@@ -274,8 +303,22 @@ local GameConfig = {
 		hideOwnAnimals = false,
 		lowVFX = false,
 		graphicsQuality = "Medium",
+		hatchCutsceneEnabled = true,
 	},
 }
+
+function GameConfig.GetTreadmillBaseStep(level: number): number
+	local lv = math.clamp(math.floor(tonumber(level) or 1), 1, GameConfig.TREADMILL.MAX_LEVEL)
+	return GameConfig.TREADMILL.LEVEL_SPEED_PER_STEP[lv] or GameConfig.TREADMILL.BASE_SPEED_PER_PULSE
+end
+
+function GameConfig.GetTreadmillUpgradeCost(currentLevel: number): number?
+	local lv = math.max(1, math.floor(tonumber(currentLevel) or 1))
+	if lv >= GameConfig.TREADMILL.MAX_LEVEL then
+		return nil
+	end
+	return GameConfig.TREADMILL.LEVEL_COSTS[math.clamp(lv + 1, 2, GameConfig.TREADMILL.MAX_LEVEL)]
+end
 
 function GameConfig.GetRarityTier(rarity: string): number
 	return (GameConfig.RARITY_TIER_INDEX :: any)[rarity] or 1

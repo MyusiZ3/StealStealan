@@ -349,7 +349,7 @@ local function migrateProfile(raw: any): Types.PlayerProfileSchema
 	end
 	raw.penCapacity = math.max(GameConfig.PEN.STARTING_CAPACITY, raw.penCapacity or GameConfig.PEN.STARTING_CAPACITY)
 	raw.penUpgradeLevel = math.max(1, raw.penUpgradeLevel or 1)
-	raw.treadmillLevel = math.max(1, raw.treadmillLevel or 1)
+	raw.treadmillLevel = math.clamp(math.floor(tonumber(raw.treadmillLevel) or 1), 1, GameConfig.TREADMILL.MAX_LEVEL)
 	raw.saveVersion = math.max(1, tonumber(raw.saveVersion) or 1)
 	raw.itemSerialCounter = math.max(0, tonumber(raw.itemSerialCounter) or 0)
 	if type(raw.consumedUids) ~= "table" then
