@@ -46,29 +46,29 @@ local function ensureEffect<T>(className: string, name: string): T
 	return inst
 end
 
--- Comfortable anti-glare sunlit palette (stops flat sunlit floors/slabs from blowing out white!)
+-- Crisp sunlit voxel daylight palette with soft sky-blue aerial perspective matching biome references
 pcall(function()
-	Lighting.Brightness = 1.65
-	Lighting.ExposureCompensation = -0.12
-	Lighting.Ambient = Color3.fromRGB(96, 106, 124)
-	Lighting.OutdoorAmbient = Color3.fromRGB(112, 124, 142)
-	Lighting.EnvironmentDiffuseScale = 0.55
-	Lighting.EnvironmentSpecularScale = 0.22
-	Lighting.ClockTime = 15.2
+	Lighting.Brightness = 1.85
+	Lighting.ExposureCompensation = -0.06
+	Lighting.Ambient = Color3.fromRGB(108, 124, 146)
+	Lighting.OutdoorAmbient = Color3.fromRGB(128, 148, 174)
+	Lighting.EnvironmentDiffuseScale = 0.65
+	Lighting.EnvironmentSpecularScale = 0.28
+	Lighting.ClockTime = 14.8
 end)
 
 local atmosphere: Atmosphere = ensureEffect("Atmosphere", "GameAtmosphere")
-atmosphere.Density = 0.20
-atmosphere.Offset = 0.15
-atmosphere.Color = Color3.fromRGB(246, 226, 238)
-atmosphere.Decay = Color3.fromRGB(236, 204, 224)
-atmosphere.Glare = 0
-atmosphere.Haze = 0.65
+atmosphere.Density = 0.17
+atmosphere.Offset = 0.22
+atmosphere.Color = Color3.fromRGB(196, 230, 255)
+atmosphere.Decay = Color3.fromRGB(164, 206, 246)
+atmosphere.Glare = 0.12
+atmosphere.Haze = 0.45
 
 local terrainClouds = Workspace.Terrain:FindFirstChildOfClass("Clouds") or Instance.new("Clouds")
-terrainClouds.Cover = 0.58
-terrainClouds.Density = 0.42
-terrainClouds.Color = Color3.fromRGB(250, 228, 238)
+terrainClouds.Cover = 0.52
+terrainClouds.Density = 0.48
+terrainClouds.Color = Color3.fromRGB(244, 249, 255)
 terrainClouds.Parent = Workspace.Terrain
 
 local colorCorr: ColorCorrectionEffect = ensureEffect("ColorCorrectionEffect", "GameColorCorrection")

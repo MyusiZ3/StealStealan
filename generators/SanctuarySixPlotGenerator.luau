@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local PlotVisualBuilder = require(ReplicatedStorage.Modules.PlotVisualBuilder)
 local PlotPrefabSystem = require(ReplicatedStorage.Modules.PlotPrefabSystem)
+local DefaultBiomeBuilder = require(ReplicatedStorage.Modules.ClassicStudBiomeBuilder)
 
 local SanctuarySixPlotGenerator = {}
 
@@ -14,6 +15,19 @@ local makePart = PlotVisualBuilder.MakePart
 local addSurfaceSign = PlotVisualBuilder.AddSurfaceSign
 local makeEnhancedPad = PlotVisualBuilder.MakeEnhancedPad
 local addPrompt = PlotVisualBuilder.AddPrompt
+
+local function placeDecorModel(model: Model, parent: Instance): Model
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+			d.Anchored = true
+		end
+	end
+	model.Parent = parent
+	return model
+end
 
 local function groundModel(model: Model, targetBottomY: number)
 	local cf, size = model:GetBoundingBox()
@@ -65,59 +79,10 @@ local function cloneCuratedModel(name: string, targetCFrame: CFrame, scaleFactor
 	return clone
 end
 
-local function placeCuratedNatureProp(
-	packPath: { string },
-	targetCF: CFrame,
-	scaleFactor: number,
-	leafTint: Color3?,
-	parent: Instance,
-	groundY: number
-): Model?
-	local curr: Instance? = ReplicatedStorage:FindFirstChild("CuratedAssets")
-	for _, seg in ipairs(packPath) do
-		if not curr then
-			return nil
-		end
-		curr = curr:FindFirstChild(seg)
-	end
-	if not curr or not curr:IsA("Model") then
-		return nil
-	end
-	local clone = curr:Clone()
-	if scaleFactor ~= 1 then
-		pcall(function()
-			clone:ScaleTo(clone:GetScale() * scaleFactor)
-		end)
-	end
-	for _, d in ipairs(clone:GetDescendants()) do
-		if d:IsA("BasePart") then
-			d.Anchored = true
-			d.CanCollide = false
-			d.CanQuery = false
-			d.CanTouch = false
-			d.CastShadow = false
-			if d.Material == Enum.Material.Neon then
-				d.Material = Enum.Material.SmoothPlastic
-			end
-			if leafTint then
-				local lower = string.lower(d.Name)
-				local isTrunk = string.find(lower, "trunk") or string.find(lower, "wood") or string.find(lower, "stick") or string.find(lower, "stem")
-				local isCanopy = string.find(lower, "canopy") or string.find(lower, "leaf") or string.find(lower, "leaves") or string.find(lower, "foliage")
-				if (isCanopy or (not isTrunk and d.Color.G > d.Color.R + 0.05)) and (not d:IsA("MeshPart") or d.TextureID == "") then
-					d.Color = leafTint
-				end
-			end
-		elseif d:IsA("BaseScript") or d:IsA("ForceField") or d:IsA("Light") then
-			d:Destroy()
-		end
-	end
-	clone:PivotTo(targetCF)
-	clone.Parent = parent
-	groundModel(clone, groundY)
-	return clone
-end
+function SanctuarySixPlotGenerator.Build(worldFolder: Folder, builderOverride: any?)
+	local biomeBuilder = builderOverride or DefaultBiomeBuilder
+	biomeBuilder.EnsureClassicStudsVariant()
 
-function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 	if not worldFolder:FindFirstChild("BrushedDecor") then
 		local brushed = Instance.new("Folder")
 		brushed.Name = "BrushedDecor"
@@ -615,183 +580,150 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder)
 		col.CastShadow = false
 	end
 
-	-- Distant Floating Sky Islands (No CloudSea flat slabs! Lush CuratedAssets Nature + Resurface Terrain!)
-	local oldSky = worldFolder:FindFirstChild("SkyIslands")
-	if oldSky then oldSky:Destroy() end
-	local skyIslands = Instance.new("Folder")
-	skyIslands.Name = "SkyIslands"
-	skyIslands.Parent = worldFolder
+	-- Classic Studs Voxel Hub Floating Sky Islands (preserve BiomeSkyIsland_* from BlockyMapBiomeGenerator)
+	local skyIslands = worldFolder:FindFirstChild("SkyIslands")
+	if not skyIslands then
+		skyIslands = Instance.new("Folder")
+		skyIslands.Name = "SkyIslands"
+		skyIslands.Parent = worldFolder
+	end
+	for _, ch in ipairs(skyIslands:GetChildren()) do
+		if string.sub(ch.Name, 1, 10) == "SkyIsland_" then
+			ch:Destroy()
+		end
+	end
 
-	-- Perimeter Sakura & Nature clusters along outer SanctuaryHub cliff lawn (safely outside X=+-62 plots)
+	-- Stepped Voxel Hub Perimeter Nature, Mosaic & Showroom/Plaza Surroundings (Zero Colliders! Safely outside Plots!)
 	local hubDecorFolder = Instance.new("Folder")
 	hubDecorFolder.Name = "HubPerimeterNature"
 	hubDecorFolder.Parent = hub
-	for _, zPos in ipairs({ -118, -42, 36, 114 }) do
-		for _, xSide in ipairs({ -116, 116 }) do
-			local yaw = (if xSide > 0 then 0.5 else -0.5) + zPos * 0.02
-			placeCuratedNatureProp(
-				{ "Pack_Veedubmike1_Nature", "Trees", if (math.abs(zPos) % 8 == 2) then "Oak Tree" else "Maple Tree" },
-				CFrame.new(xSide, 0, zPos) * CFrame.Angles(0, yaw, 0),
-				1.05,
-				Color3.fromRGB(255, 146, 198),
-				hubDecorFolder,
-				0
+
+	local hubRng = Random.new(90210)
+	local hubShades = {
+		Color3.fromRGB(104, 186, 82),
+		Color3.fromRGB(84, 158, 72),
+		Color3.fromRGB(118, 198, 90),
+	}
+	-- Subtle Studded Mosaic Turf along Outer Hub Lawn (|X| = 108..126 and Back Lawn Z = -134..-120)
+	for z = -126, 134, 24 do
+		for _, xSide in ipairs({ -118, 118 }) do
+			local turf = makePart({
+				name = "HubMosaicTurf",
+				size = Vector3.new(18, 0.14, 22),
+				cframe = CFrame.new(xSide, 0.06, z),
+				color = hubShades[hubRng:NextInteger(1, #hubShades)],
+				material = Enum.Material.Plastic,
+				materialVariant = "Studs",
+				studded = true,
+				canCollide = false,
+				canQuery = false,
+				parent = hubDecorFolder,
+			})
+			turf.CanTouch = false
+		end
+	end
+
+	-- Outer Perimeter Voxel Forest, Stepped Lawn Mounds, Wildflowers, Boulders & Berry Bushes (|X| = 112..126)
+	local perimeterTrees = {
+		biomeBuilder.BuildLushVoxelTreeWithVines,
+		biomeBuilder.BuildPineTreeTall,
+		biomeBuilder.BuildOakTreeBroad,
+		biomeBuilder.BuildBirchTreeForest,
+	}
+	local perimeterFlora = {
+		biomeBuilder.BuildWildflowerPatch,
+		biomeBuilder.BuildBerryBush,
+		biomeBuilder.BuildFernCluster,
+		biomeBuilder.BuildMushroomCluster,
+		biomeBuilder.BuildMossyBoulder,
+	}
+
+	for _, xSide in ipairs({ -1, 1 }) do
+		for z = -130, 136, 28 do
+			local tx = xSide * hubRng:NextNumber(112, 124)
+			local moundH = hubRng:NextNumber(1.2, 2.6)
+			local mound = makePart({
+				name = "PerimeterSteppedMound",
+				size = Vector3.new(16, moundH, 20),
+				cframe = CFrame.new(xSide * 120, moundH * 0.5, z),
+				color = hubShades[hubRng:NextInteger(1, #hubShades)],
+				material = Enum.Material.Plastic,
+				materialVariant = "Studs",
+				studded = true,
+				canCollide = false,
+				canQuery = false,
+				parent = hubDecorFolder,
+			})
+			mound.CanTouch = false
+			mound.CastShadow = false
+
+			local treeFn = perimeterTrees[hubRng:NextInteger(1, #perimeterTrees)]
+			local sc = hubRng:NextNumber(0.95, 1.48)
+			local yaw = (if xSide > 0 then 0.5 else -0.5) + z * 0.03
+			placeDecorModel(treeFn(CFrame.new(tx, moundH * 0.85, z) * CFrame.Angles(0, yaw, 0), sc, hubDecorFolder), hubDecorFolder)
+
+			local flFn = perimeterFlora[hubRng:NextInteger(1, #perimeterFlora)]
+			placeDecorModel(flFn(CFrame.new(xSide * hubRng:NextNumber(109, 117), 0, z + 11) * CFrame.Angles(0, yaw + 1.0, 0), hubRng:NextNumber(0.85, 1.25), hubDecorFolder), hubDecorFolder)
+		end
+	end
+
+	-- Rear Hub Horizon Edge Decor (Z = -134..-124, safely behind Plot_1 & Plot_4)
+	for x = -114, 114, 38 do
+		if math.abs(x) > 28 then
+			local tFn = perimeterTrees[hubRng:NextInteger(1, #perimeterTrees)]
+			placeDecorModel(tFn(CFrame.new(x, 0, -129) * CFrame.Angles(0, hubRng:NextNumber(0, 6.28), 0), hubRng:NextNumber(1.05, 1.55), hubDecorFolder), hubDecorFolder)
+			placeDecorModel(biomeBuilder.BuildWildflowerPatch(CFrame.new(x + 8, 0, -123), 1.15, hubDecorFolder), hubDecorFolder)
+		end
+	end
+
+	-- Boulevard Curb Lantern Fences & Flower Clusters in the clean spaces between Plot rows (Z = -124, -43, 35, 110)
+	for _, zGap in ipairs({ -124, -43, 35, 110 }) do
+		for _, xSide in ipairs({ -1, 1 }) do
+			placeDecorModel(
+				biomeBuilder.BuildVoxelFenceWithLantern(CFrame.new(xSide * 25.5, 0.2, zGap) * CFrame.Angles(0, math.rad(90), 0), 0.88, hubDecorFolder),
+				hubDecorFolder
 			)
-			placeCuratedNatureProp(
-				{ "Pack_Veedubmike1_Nature", "Bushes", if zPos > 0 then "Bush A" else "Bush B" },
-				CFrame.new(xSide + (if xSide > 0 then -6.5 else 6.5), 0, zPos + 5) * CFrame.Angles(0, yaw + 1.1, 0),
-				1.15,
-				nil,
-				hubDecorFolder,
-				0
-			)
-			placeCuratedNatureProp(
-				{ "Pack_Veedubmike1_Nature", "Rocks", "Rock A" },
-				CFrame.new(xSide + (if xSide > 0 then -4.5 else 4.5), 0, zPos - 6) * CFrame.Angles(0, yaw + 2.0, 0),
-				1.25,
-				nil,
-				hubDecorFolder,
-				0
+			placeDecorModel(
+				biomeBuilder.BuildWildflowerPatch(CFrame.new(xSide * 27.5, 0, zGap + 6), 1.05, hubDecorFolder),
+				hubDecorFolder
 			)
 		end
 	end
 
-	local skySpots = {
-		{ pos = Vector3.new(-320, 46, -150), sc = 1.4, treeCol = Color3.fromRGB(255, 146, 198), hasWaterfall = true, isSnow = false },
-		{ pos = Vector3.new(310, 54, -95), sc = 1.25, treeCol = Color3.fromRGB(255, 168, 214), hasWaterfall = true, isSnow = false },
-		{ pos = Vector3.new(-340, 38, 320), sc = 1.5, treeCol = Color3.fromRGB(92, 186, 98), hasWaterfall = true, isSnow = false },
-		{ pos = Vector3.new(350, 52, 690), sc = 1.6, treeCol = Color3.fromRGB(255, 152, 206), hasWaterfall = true, isSnow = false },
-		{ pos = Vector3.new(-355, 48, 1220), sc = 1.45, treeCol = Color3.fromRGB(168, 224, 250), hasWaterfall = true, isSnow = true },
-		{ pos = Vector3.new(330, 56, 1920), sc = 1.55, treeCol = Color3.fromRGB(238, 124, 62), hasWaterfall = false, isSnow = false },
+	-- Showroom / Shop Plaza Framing Surroundings (All CanCollide = false, zero interference with Stand Zones or Prompts!)
+	-- 1. Fuse & Merge Plaza (-56, 128) + Lasso Shop (-34, 132) Framing
+	placeDecorModel(biomeBuilder.BuildLushVoxelTreeWithVines(CFrame.new(-74, 0, 134), 1.25, hubDecorFolder), hubDecorFolder)
+	placeDecorModel(biomeBuilder.BuildMossyBoulder(CFrame.new(-66, 0, 136), 1.2, hubDecorFolder), hubDecorFolder)
+	placeDecorModel(biomeBuilder.BuildBerryBush(CFrame.new(-44, 0, 135), 1.1, hubDecorFolder), hubDecorFolder)
+	placeDecorModel(biomeBuilder.BuildWildflowerPatch(CFrame.new(-26, 0, 135), 1.15, hubDecorFolder), hubDecorFolder)
+
+	-- 2. Trail Shop (34, 132) + Leaderboard Wall (68, 128) Framing
+	placeDecorModel(biomeBuilder.BuildWildflowerPatch(CFrame.new(25, 0, 135), 1.15, hubDecorFolder), hubDecorFolder)
+	placeDecorModel(biomeBuilder.BuildBerryBush(CFrame.new(44, 0, 135), 1.1, hubDecorFolder), hubDecorFolder)
+	placeDecorModel(biomeBuilder.BuildPineTreeTwin(CFrame.new(98, 0, 134), 1.32, hubDecorFolder), hubDecorFolder)
+	placeDecorModel(biomeBuilder.BuildRangerLanternPost(CFrame.new(48, 0, 118) * CFrame.Angles(0, math.rad(-145), 0), 0.92, hubDecorFolder), hubDecorFolder)
+
+	-- 3. Vehicle Garage (19, 68) & Index Merchant Booth (18, 12) Framing (tucked neatly along X = 26 gap)
+	placeDecorModel(biomeBuilder.BuildVoxelFenceWithLantern(CFrame.new(26, 0, 61) * CFrame.Angles(0, math.rad(90), 0), 0.85, hubDecorFolder), hubDecorFolder)
+	placeDecorModel(biomeBuilder.BuildFernCluster(CFrame.new(26.5, 0, 76), 1.05, hubDecorFolder), hubDecorFolder)
+	placeDecorModel(biomeBuilder.BuildVoxelFenceWithLantern(CFrame.new(26, 0, 18) * CFrame.Angles(0, math.rad(90), 0), 0.85, hubDecorFolder), hubDecorFolder)
+	placeDecorModel(biomeBuilder.BuildWildflowerPatch(CFrame.new(26.5, 0, 5), 1.0, hubDecorFolder), hubDecorFolder)
+
+	-- Classic Studs Floating Sky Islands around the SanctuaryHub Horizon (PrimaryPart set for client distance streaming!)
+	local hubSkySpots = {
+		{ name = "SkyIsland_1", pos = Vector3.new(-178, 36, -60), sc = 1.15, biome = "PineWoods", fall = true, fallSide = 1 },
+		{ name = "SkyIsland_2", pos = Vector3.new(182, 42, -35), sc = 1.2, biome = "PineWoods", fall = true, fallSide = -1 },
+		{ name = "SkyIsland_3", pos = Vector3.new(-188, 44, 72), sc = 1.25, biome = "PineWoods", fall = true, fallSide = 1 },
+		{ name = "SkyIsland_4", pos = Vector3.new(186, 40, 88), sc = 1.18, biome = "PineWoods", fall = true, fallSide = -1 },
+		{ name = "SkyIsland_5", pos = Vector3.new(-320, 48, -150), sc = 1.4, biome = "PineWoods", fall = true, fallSide = 1 },
+		{ name = "SkyIsland_6", pos = Vector3.new(310, 54, -95), sc = 1.35, biome = "PineWoods", fall = true, fallSide = -1 },
 	}
-	for idx, sp in ipairs(skySpots) do
-		local sc = sp.sc
-		local isl = Instance.new("Model")
-		isl.Name = "SkyIsland_" .. idx
-		isl.Parent = skyIslands
-
-		local deckHeight = 6 * sc
-		local deckTopY = sp.pos.Y + deckHeight * 0.5
-		local topGrass = makePart({
-			name = "IslandDeck",
-			size = Vector3.new(88 * sc, deckHeight, 78 * sc),
-			cframe = CFrame.new(sp.pos),
-			color = if sp.isSnow then Color3.fromRGB(218, 236, 248) else Color3.fromRGB(108, 178, 86),
-			material = if sp.isSnow then Enum.Material.Snow else Enum.Material.Grass,
-			materialVariant = if sp.isSnow then "BlockyStudSnow" else "BlockyStudGrass",
-			studded = false,
-			canCollide = false,
-			canQuery = false,
-			parent = isl,
-		})
-		topGrass.CastShadow = false
-		isl.PrimaryPart = topGrass
-
-		local hull1 = makePart({
-			name = "IslandHullUpper",
-			size = Vector3.new(72 * sc, 24 * sc, 64 * sc),
-			cframe = CFrame.new(sp.pos - Vector3.new(0, 15 * sc, 0)),
-			color = Color3.fromRGB(134, 104, 84),
-			material = Enum.Material.Slate,
-			materialVariant = "CartoonCliffWall",
-			canCollide = false,
-			canQuery = false,
-			parent = isl,
-		})
-		hull1.CastShadow = false
-		local hull2 = makePart({
-			name = "IslandHullTip",
-			size = Vector3.new(42 * sc, 28 * sc, 38 * sc),
-			cframe = CFrame.new(sp.pos - Vector3.new(0, 38 * sc, 0)),
-			color = Color3.fromRGB(92, 76, 74),
-			material = Enum.Material.Slate,
-			materialVariant = "CartoonCliffWall",
-			canCollide = false,
-			canQuery = false,
-			parent = isl,
-		})
-		hull2.CastShadow = false
-
-		-- Asymmetric tapered side rock ledges for an organic floating-island silhouette
-		for sideIdx, sideOff in ipairs({ Vector3.new(-28 * sc, -12 * sc, 16 * sc), Vector3.new(26 * sc, -16 * sc, -14 * sc) }) do
-			local ledge = makePart({
-				name = "IslandSideLedge_" .. sideIdx,
-				size = Vector3.new(30 * sc, 18 * sc, 28 * sc),
-				cframe = CFrame.new(sp.pos + sideOff) * CFrame.Angles(0, math.rad(sideIdx * 24), 0),
-				color = Color3.fromRGB(114, 92, 82),
-				material = Enum.Material.Slate,
-				materialVariant = "CartoonCliffWall",
-				canCollide = false,
-				canQuery = false,
-				parent = isl,
-			})
-			ledge.CastShadow = false
-		end
-
-		-- Rich Multi-Part Nature Trees, Boulders & Bushes from CuratedAssets
-		local primaryTreePath = if sp.isSnow
-			then { "Pack_Cliosow_PineSnowy", "Low-Poly Pine Trees by Cliosow", "SpruceSnowy1" }
-			elseif idx % 2 == 1 then { "Pack_Veedubmike1_Nature", "Trees", "Oak Tree" }
-			else { "Pack_Veedubmike1_Nature", "Trees", "Maple Tree" }
-		local secondaryTreePath = if sp.isSnow
-			then { "Pack_Cliosow_PineSnowy", "Low-Poly Pine Trees by Cliosow", "SpruceSnowy3" }
-			else { "Pack_K3LLo29_Nature", "LowPolyNaturePack", "Tree1" }
-
-		placeCuratedNatureProp(
-			primaryTreePath,
-			CFrame.new(sp.pos.X - 10 * sc, deckTopY, sp.pos.Z - 4 * sc) * CFrame.Angles(0, idx * 0.9, 0),
-			1.95 * sc,
-			if sp.isSnow then nil else sp.treeCol,
-			isl,
-			deckTopY - 0.3
+	for _, sp in ipairs(hubSkySpots) do
+		local isl = placeDecorModel(
+			biomeBuilder.BuildBiomeFloatingSkyIsland(CFrame.new(sp.pos), sp.sc, skyIslands, sp.biome, sp.fall, sp.fallSide),
+			skyIslands
 		)
-		placeCuratedNatureProp(
-			secondaryTreePath,
-			CFrame.new(sp.pos.X + 18 * sc, deckTopY, sp.pos.Z + 14 * sc) * CFrame.Angles(0, idx * 1.4, 0),
-			1.85 * sc,
-			nil,
-			isl,
-			deckTopY - 0.3
-		)
-		placeCuratedNatureProp(
-			{ "Pack_Veedubmike1_Nature", "Rocks", "Rock A" },
-			CFrame.new(sp.pos.X + 14 * sc, deckTopY, sp.pos.Z - 14 * sc) * CFrame.Angles(0, idx * 0.7, 0),
-			2.4 * sc,
-			nil,
-			isl,
-			deckTopY - 0.4
-		)
-		placeCuratedNatureProp(
-			{ "Pack_K3LLo29_Nature", "LowPolyNaturePack", "Rock2" },
-			CFrame.new(sp.pos.X - 22 * sc, deckTopY, sp.pos.Z + 16 * sc) * CFrame.Angles(0, idx * 1.2, 0),
-			2.1 * sc,
-			nil,
-			isl,
-			deckTopY - 0.4
-		)
-		placeCuratedNatureProp(
-			{ "Pack_Veedubmike1_Nature", "Bushes", "Bush A" },
-			CFrame.new(sp.pos.X + 4 * sc, deckTopY, sp.pos.Z + 18 * sc) * CFrame.Angles(0, idx * 0.5, 0),
-			2.2 * sc,
-			nil,
-			isl,
-			deckTopY - 0.2
-		)
-
-		if sp.hasWaterfall then
-			local fall = makePart({
-				name = "SkyWaterfall",
-				size = Vector3.new(16 * sc, 118, 4 * sc),
-				cframe = CFrame.new(sp.pos + Vector3.new((if sp.pos.X > 0 then -38 else 38) * sc, -54, 0)),
-				color = Color3.fromRGB(118, 204, 245),
-				material = Enum.Material.Glass,
-				transparency = 0.35,
-				canCollide = false,
-				canQuery = false,
-				parent = isl,
-			})
-			fall.CastShadow = false
-		end
+		isl.Name = sp.name
 	end
 
 	-- 7. Build All 6 Pre-Allocated Open-Pen Plots from Single Editable OpenPlotPrefab

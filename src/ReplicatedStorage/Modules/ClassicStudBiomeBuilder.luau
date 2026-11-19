@@ -111,10 +111,10 @@ local function createBlock(
 	mat: Enum.Material?,
 	studded: boolean?,
 	transparency: number?
-)
+): Part
 	local pos = localCF.Position * s
 	local rot = localCF - localCF.Position
-	makeStudPart({
+	return makeStudPart({
 		name = name,
 		size = size * s,
 		cframe = originCF * CFrame.new(pos) * rot,
@@ -124,6 +124,84 @@ local function createBlock(
 		transparency = transparency,
 		parent = m,
 	})
+end
+
+local function addLanternLight(part: BasePart, color: Color3, range: number?, brightness: number?): PointLight
+	local pl = Instance.new("PointLight")
+	pl.Name = "VoxelLight"
+	pl.Color = color
+	pl.Range = range or 18
+	pl.Brightness = brightness or 1.15
+	pl.Shadows = false
+	pl.Parent = part
+	return pl
+end
+
+local function addSelectiveParticles(
+	parent: BasePart,
+	kind: "WaterfallMist" | "Fireflies" | "SwampSpores" | "Snowfall" | "FireEmbers" | "VolcanoSmoke"
+): ParticleEmitter
+	local em = Instance.new("ParticleEmitter")
+	em.Name = "BiomeParticle_" .. kind
+	em.LockedToPart = false
+	if kind == "WaterfallMist" then
+		em.Color = ColorSequence.new(Color3.fromRGB(220, 245, 255), Color3.fromRGB(255, 255, 255))
+		em.Rate = 7
+		em.Lifetime = NumberRange.new(1.2, 2.2)
+		em.Speed = NumberRange.new(1.5, 4.5)
+		em.SpreadAngle = Vector2.new(65, 65)
+		em.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.9), NumberSequenceKeypoint.new(1, 2.6) })
+		em.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.45), NumberSequenceKeypoint.new(1, 1) })
+		em.EmissionDirection = Enum.NormalId.Top
+	elseif kind == "Fireflies" then
+		em.Color = ColorSequence.new(Color3.fromRGB(192, 255, 118), Color3.fromRGB(255, 232, 112))
+		em.Rate = 4
+		em.Lifetime = NumberRange.new(2.2, 3.8)
+		em.Speed = NumberRange.new(0.8, 2.0)
+		em.SpreadAngle = Vector2.new(180, 180)
+		em.LightEmission = 0.75
+		em.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.4, 0.28), NumberSequenceKeypoint.new(1, 0) })
+		em.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.3, 0.15), NumberSequenceKeypoint.new(1, 1) })
+	elseif kind == "SwampSpores" then
+		em.Color = ColorSequence.new(Color3.fromRGB(142, 255, 168), Color3.fromRGB(218, 255, 128))
+		em.Rate = 5
+		em.Lifetime = NumberRange.new(2.4, 4.0)
+		em.Speed = NumberRange.new(0.6, 1.8)
+		em.SpreadAngle = Vector2.new(180, 180)
+		em.LightEmission = 0.65
+		em.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.12), NumberSequenceKeypoint.new(0.5, 0.3), NumberSequenceKeypoint.new(1, 0) })
+		em.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.8), NumberSequenceKeypoint.new(0.4, 0.2), NumberSequenceKeypoint.new(1, 1) })
+	elseif kind == "Snowfall" then
+		em.Color = ColorSequence.new(Color3.fromRGB(240, 248, 255), Color3.fromRGB(204, 236, 255))
+		em.Rate = 10
+		em.Lifetime = NumberRange.new(2.5, 4.2)
+		em.Speed = NumberRange.new(2.5, 5.0)
+		em.SpreadAngle = Vector2.new(24, 24)
+		em.EmissionDirection = Enum.NormalId.Bottom
+		em.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.25), NumberSequenceKeypoint.new(1, 0.16) })
+		em.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.25), NumberSequenceKeypoint.new(1, 0.9) })
+	elseif kind == "FireEmbers" then
+		em.Color = ColorSequence.new(Color3.fromRGB(255, 198, 56), Color3.fromRGB(255, 74, 22))
+		em.Rate = 6
+		em.Lifetime = NumberRange.new(1.4, 2.6)
+		em.Speed = NumberRange.new(2.2, 5.5)
+		em.SpreadAngle = Vector2.new(35, 35)
+		em.LightEmission = 0.8
+		em.EmissionDirection = Enum.NormalId.Top
+		em.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.28), NumberSequenceKeypoint.new(1, 0.04) })
+		em.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.15), NumberSequenceKeypoint.new(1, 1) })
+	elseif kind == "VolcanoSmoke" then
+		em.Color = ColorSequence.new(Color3.fromRGB(82, 74, 88), Color3.fromRGB(132, 124, 138))
+		em.Rate = 8
+		em.Lifetime = NumberRange.new(3.5, 5.5)
+		em.Speed = NumberRange.new(4.0, 7.5)
+		em.SpreadAngle = Vector2.new(28, 28)
+		em.EmissionDirection = Enum.NormalId.Top
+		em.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 2.5), NumberSequenceKeypoint.new(1, 8.5) })
+		em.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 1) })
+	end
+	em.Parent = parent
+	return em
 end
 
 local function addGrassBladesHelper(
@@ -1038,12 +1116,666 @@ function ClassicStudBiomeBuilder.BuildVolcanicSkullBrazier(cframe: CFrame, scale
 end
 
 -- ============================================================================
+-- FULL REDESIGN VOXEL HERO STRUCTURES, VINE TREES, LANTERNS, SKY ISLANDS & LIGHTING
+-- ============================================================================
+
+local function buildGlowingLanternBox(
+	m: Model,
+	originCF: CFrame,
+	s: number,
+	prefix: string,
+	localCenter: Vector3,
+	frameCol: Color3,
+	glowCol: Color3,
+	lightRange: number?
+)
+	createBlock(m, originCF, s, prefix .. "_CapTop", Vector3.new(1.3, 0.28, 1.3), CFrame.new(localCenter + Vector3.new(0, 0.65, 0)), frameCol)
+	createBlock(m, originCF, s, prefix .. "_CapBot", Vector3.new(1.2, 0.24, 1.2), CFrame.new(localCenter + Vector3.new(0, -0.62, 0)), frameCol)
+	local core = createBlock(m, originCF, s, prefix .. "_Core", Vector3.new(0.88, 1.02, 0.88), CFrame.new(localCenter), glowCol, Enum.Material.Neon, false)
+	addLanternLight(core, glowCol, lightRange or 18, 1.15)
+end
+
+-- BIOME 1 (FOREST): Lush Vine Tree, Watchtower, Stream & Bridge, Fence + Lantern
+function ClassicStudBiomeBuilder.BuildLushVoxelTreeWithVines(cframe: CFrame, scale: number?, parent: Instance?): Model
+	local s = scale or 1
+	local m = newAssetModel("LushVoxelTreeWithVines", cframe, parent)
+	local barkDark = Color3.fromRGB(88, 54, 34)
+	local barkMid = Color3.fromRGB(112, 70, 44)
+	local leafDeep = Color3.fromRGB(44, 122, 46)
+	local leafMid = Color3.fromRGB(68, 158, 56)
+	local leafBright = Color3.fromRGB(108, 198, 72)
+
+	for i, off in ipairs({ Vector3.new(1.4, 0.6, 0), Vector3.new(-1.4, 0.6, 0), Vector3.new(0, 0.6, 1.4), Vector3.new(0, 0.6, -1.4) }) do
+		createBlock(m, cframe, s, "Root_" .. i, Vector3.new(1.6, 1.2, 1.6), CFrame.new(off), barkDark)
+	end
+	createBlock(m, cframe, s, "TrunkLower", Vector3.new(2.5, 5.2, 2.5), CFrame.new(0, 2.6, 0), barkMid)
+	createBlock(m, cframe, s, "TrunkUpper", Vector3.new(2.0, 4.4, 2.0), CFrame.new(0, 7.0, 0), barkDark)
+	createBlock(m, cframe, s, "BranchArmL", Vector3.new(2.8, 1.2, 1.3), CFrame.new(-1.8, 7.8, 0.3) * CFrame.Angles(0, 0, math.rad(-18)), barkDark)
+	createBlock(m, cframe, s, "BranchArmR", Vector3.new(2.8, 1.2, 1.3), CFrame.new(1.8, 8.2, -0.3) * CFrame.Angles(0, 0, math.rad(18)), barkDark)
+
+	-- 4-tier dappled lush canopy
+	createBlock(m, cframe, s, "CanopyT1", Vector3.new(11.4, 2.6, 10.6), CFrame.new(0, 9.6, 0), leafDeep)
+	createBlock(m, cframe, s, "CanopyT2", Vector3.new(9.6, 2.4, 9.2), CFrame.new(0.4, 11.8, -0.2), leafMid)
+	createBlock(m, cframe, s, "CanopyT3", Vector3.new(7.4, 2.0, 7.2), CFrame.new(-0.3, 13.6, 0.3), leafBright)
+	createBlock(m, cframe, s, "CanopyT4", Vector3.new(4.4, 1.5, 4.4), CFrame.new(0, 14.9, 0), leafMid)
+
+	-- 8 Hanging green voxel vine strands
+	local vineOffsets = {
+		{ x = -5.1, z = -3.2, h = 4.6 }, { x = -4.6, z = 2.8, h = 3.4 },
+		{ x = 5.1, z = -2.4, h = 4.8 }, { x = 4.7, z = 3.4, h = 3.2 },
+		{ x = -2.2, z = -4.8, h = 3.8 }, { x = 2.5, z = -4.9, h = 4.4 },
+		{ x = -2.0, z = 4.9, h = 4.2 }, { x = 2.3, z = 4.6, h = 2.8 },
+	}
+	for i, v in ipairs(vineOffsets) do
+		createBlock(m, cframe, s, "Vine_" .. i, Vector3.new(0.62, v.h, 0.62), CFrame.new(v.x, 8.4 - v.h * 0.5, v.z), if i % 2 == 0 then leafBright else leafMid)
+	end
+	return m
+end
+
+local WATCHTOWER_THEMES = {
+	Forest = {
+		stone = Color3.fromRGB(134, 138, 142),
+		stoneAccent = Color3.fromRGB(108, 114, 118),
+		wood = Color3.fromRGB(132, 86, 50),
+		woodDark = Color3.fromRGB(96, 62, 36),
+		roof = Color3.fromRGB(148, 92, 48),
+		lanternCol = Color3.fromRGB(255, 198, 76),
+		hasMoss = false,
+	},
+	Swamp = {
+		stone = Color3.fromRGB(106, 114, 102),
+		stoneAccent = Color3.fromRGB(78, 128, 68),
+		wood = Color3.fromRGB(108, 74, 46),
+		woodDark = Color3.fromRGB(76, 52, 32),
+		roof = Color3.fromRGB(82, 134, 58),
+		lanternCol = Color3.fromRGB(255, 192, 74),
+		hasMoss = true,
+	},
+	Desert = {
+		stone = Color3.fromRGB(214, 178, 114),
+		stoneAccent = Color3.fromRGB(186, 134, 72),
+		wood = Color3.fromRGB(142, 92, 52),
+		woodDark = Color3.fromRGB(108, 68, 38),
+		roof = Color3.fromRGB(158, 104, 58),
+		lanternCol = Color3.fromRGB(255, 186, 68),
+		hasMoss = false,
+	},
+}
+
+function ClassicStudBiomeBuilder.BuildVoxelWatchtower(cframe: CFrame, scale: number?, parent: Instance?, theme: string?): Model
+	local s = scale or 1
+	local th = WATCHTOWER_THEMES[theme or "Forest"] or WATCHTOWER_THEMES.Forest
+	local m = newAssetModel("VoxelWatchtower_" .. (theme or "Forest"), cframe, parent)
+
+	-- Tiered stone foundation
+	createBlock(m, cframe, s, "FoundBase", Vector3.new(6.4, 1.4, 6.4), CFrame.new(0, 0.7, 0), th.stone)
+	createBlock(m, cframe, s, "FoundUpper", Vector3.new(5.4, 1.8, 5.4), CFrame.new(0, 2.3, 0), th.stoneAccent)
+
+	-- 4 timber tower corner posts + cross beams
+	for i, px in ipairs({ -2.1, 2.1 }) do
+		for j, pz in ipairs({ -2.1, 2.1 }) do
+			createBlock(m, cframe, s, "Post_" .. i .. "_" .. j, Vector3.new(0.95, 9.6, 0.95), CFrame.new(px, 7.8, pz), th.woodDark)
+		end
+	end
+	createBlock(m, cframe, s, "MidBeamX1", Vector3.new(5.0, 0.65, 0.7), CFrame.new(0, 5.4, 2.1), th.wood)
+	createBlock(m, cframe, s, "MidBeamX2", Vector3.new(5.0, 0.65, 0.7), CFrame.new(0, 5.4, -2.1), th.wood)
+
+	-- Observation deck + railings
+	createBlock(m, cframe, s, "ObsDeck", Vector3.new(7.4, 0.75, 7.4), CFrame.new(0, 8.6, 0), th.wood)
+	for _, r in ipairs({
+		{ sz = Vector3.new(7.4, 0.45, 0.5), off = Vector3.new(0, 10.1, -3.4) },
+		{ sz = Vector3.new(7.4, 0.45, 0.5), off = Vector3.new(0, 10.1, 3.4) },
+		{ sz = Vector3.new(0.5, 0.45, 7.4), off = Vector3.new(-3.4, 10.1, 0) },
+		{ sz = Vector3.new(0.5, 0.45, 7.4), off = Vector3.new(3.4, 10.1, 0) },
+	}) do
+		createBlock(m, cframe, s, "Rail", r.sz, CFrame.new(r.off), th.woodDark)
+	end
+
+	-- Roof posts & pitched 3-tier voxel roof
+	for i, px in ipairs({ -2.6, 2.6 }) do
+		for j, pz in ipairs({ -2.6, 2.6 }) do
+			createBlock(m, cframe, s, "RoofPost_" .. i .. "_" .. j, Vector3.new(0.75, 3.8, 0.75), CFrame.new(px, 10.9, pz), th.woodDark)
+		end
+	end
+	createBlock(m, cframe, s, "RoofT1", Vector3.new(8.2, 0.9, 8.2), CFrame.new(0, 13.0, 0), th.roof)
+	createBlock(m, cframe, s, "RoofT2", Vector3.new(6.0, 0.9, 6.0), CFrame.new(0, 13.9, 0), th.woodDark)
+	createBlock(m, cframe, s, "RoofT3", Vector3.new(3.4, 0.9, 3.4), CFrame.new(0, 14.8, 0), th.roof)
+
+	-- Lantern overhang beam & glowing lantern
+	createBlock(m, cframe, s, "LanternBeam", Vector3.new(2.2, 0.55, 0.55), CFrame.new(-3.4, 8.2, 0), th.woodDark)
+	buildGlowingLanternBox(m, cframe, s, "WatchLantern", Vector3.new(-4.1, 7.0, 0), Color3.fromRGB(48, 36, 28), th.lanternCol, 22)
+
+	-- Stacked crates at base
+	createBlock(m, cframe, s, "CrateA", Vector3.new(1.8, 1.8, 1.8), CFrame.new(-4.2, 0.9, 1.8) * CFrame.Angles(0, 0.15, 0), th.wood)
+	createBlock(m, cframe, s, "CrateB", Vector3.new(1.6, 1.6, 1.6), CFrame.new(-4.5, 0.8, -0.3) * CFrame.Angles(0, -0.2, 0), th.woodDark)
+	createBlock(m, cframe, s, "CrateC", Vector3.new(1.4, 1.4, 1.4), CFrame.new(-4.2, 2.5, 1.6), th.wood)
+
+	if th.hasMoss then
+		createBlock(m, cframe, s, "MossCap1", Vector3.new(3.6, 0.55, 3.6), CFrame.new(-1.8, 13.5, 1.6), Color3.fromRGB(78, 152, 58))
+		createBlock(m, cframe, s, "SwampVineL", Vector3.new(0.55, 4.4, 0.55), CFrame.new(-3.4, 6.2, -2.5), Color3.fromRGB(64, 138, 52))
+		createBlock(m, cframe, s, "SwampVineR", Vector3.new(0.55, 3.8, 0.55), CFrame.new(3.4, 6.6, 2.2), Color3.fromRGB(78, 156, 62))
+	end
+	return m
+end
+
+function ClassicStudBiomeBuilder.BuildForestStreamAndBridge(cframe: CFrame, scale: number?, parent: Instance?): Model
+	local s = scale or 1
+	local m = newAssetModel("ForestStreamAndBridge", cframe, parent)
+	local stoneCol = Color3.fromRGB(134, 140, 146)
+	local woodCol = Color3.fromRGB(138, 88, 50)
+	local darkWood = Color3.fromRGB(98, 62, 36)
+
+	createBlock(m, cframe, s, "PondRim", Vector3.new(14.5, 0.3, 18.0), CFrame.new(0, 0.15, 0), stoneCol)
+	local water = createBlock(m, cframe, s, "StreamWater", Vector3.new(12.2, 0.36, 16.0), CFrame.new(0, 0.2, 0), Color3.fromRGB(62, 198, 232), Enum.Material.Glass, false, 0.22)
+	addSelectiveParticles(water, "Fireflies")
+
+	-- Small arched wooden footbridge across the stream
+	for idx = -3, 3 do
+		local archY = 0.85 + math.cos(idx * 0.38) * 0.65
+		createBlock(m, cframe, s, "BridgePlank_" .. idx, Vector3.new(1.5, 0.42, 4.8), CFrame.new(idx * 1.65, archY, 0), woodCol)
+	end
+	for _, zSide in ipairs({ -2.2, 2.2 }) do
+		for _, xPos in ipairs({ -4.8, 0, 4.8 }) do
+			createBlock(m, cframe, s, "BridgePost", Vector3.new(0.55, 2.0, 0.55), CFrame.new(xPos, 1.8, zSide), darkWood)
+		end
+		createBlock(m, cframe, s, "BridgeRail", Vector3.new(10.5, 0.38, 0.42), CFrame.new(0, 2.6, zSide), woodCol)
+	end
+
+	-- Shoreline reeds & wildflowers + bridge lantern
+	for _, ox in ipairs({ -5.4, 5.4 }) do
+		createBlock(m, cframe, s, "ShoreReed", Vector3.new(0.45, 2.0, 0.45), CFrame.new(ox, 1.0, 5.2), Color3.fromRGB(82, 168, 64))
+		createBlock(m, cframe, s, "ShoreFlower", Vector3.new(0.65, 0.65, 0.65), CFrame.new(ox, 0.65, -5.0), Color3.fromRGB(255, 164, 58))
+	end
+	createBlock(m, cframe, s, "LampPost", Vector3.new(0.65, 3.8, 0.65), CFrame.new(-5.8, 1.9, -3.8), darkWood)
+	buildGlowingLanternBox(m, cframe, s, "BridgeLantern", Vector3.new(-5.8, 4.2, -3.8), darkWood, Color3.fromRGB(255, 206, 84), 18)
+	return m
+end
+
+function ClassicStudBiomeBuilder.BuildVoxelFenceWithLantern(cframe: CFrame, scale: number?, parent: Instance?, lanternColor: Color3?): Model
+	local s = scale or 1
+	local m = newAssetModel("VoxelFenceWithLantern", cframe, parent)
+	local wood = Color3.fromRGB(132, 84, 48)
+	local darkWood = Color3.fromRGB(94, 58, 34)
+	local glow = lanternColor or Color3.fromRGB(255, 204, 78)
+
+	createBlock(m, cframe, s, "StoneFoot", Vector3.new(1.8, 0.9, 1.8), CFrame.new(0, 0.45, 0), Color3.fromRGB(132, 138, 144))
+	createBlock(m, cframe, s, "MainPost", Vector3.new(0.9, 4.2, 0.9), CFrame.new(0, 2.5, 0), darkWood)
+	buildGlowingLanternBox(m, cframe, s, "FenceLantern", Vector3.new(0, 5.1, 0), darkWood, glow, 18)
+
+	for _, xOff in ipairs({ -3.6, 3.6 }) do
+		createBlock(m, cframe, s, "SidePost", Vector3.new(0.65, 2.6, 0.65), CFrame.new(xOff, 1.3, 0), darkWood)
+	end
+	createBlock(m, cframe, s, "RailUpper", Vector3.new(7.8, 0.36, 0.36), CFrame.new(0, 2.1, 0), wood)
+	createBlock(m, cframe, s, "RailLower", Vector3.new(7.8, 0.36, 0.36), CFrame.new(0, 1.15, 0), wood)
+	return m
+end
+
+-- BIOME 2 (SWAMP): Banyan Vine Tree, Swamp Cabin Dock, Cross Lantern Post
+function ClassicStudBiomeBuilder.BuildSwampBanyanVineTree(cframe: CFrame, scale: number?, parent: Instance?): Model
+	local s = scale or 1
+	local m = newAssetModel("SwampBanyanVineTree", cframe, parent)
+	local bark = Color3.fromRGB(92, 62, 42)
+	local barkDark = Color3.fromRGB(68, 46, 30)
+	local leafMoss = Color3.fromRGB(74, 128, 48)
+	local leafBright = Color3.fromRGB(108, 162, 58)
+	local leafDeep = Color3.fromRGB(54, 98, 40)
+
+	for i, off in ipairs({ Vector3.new(2.0, 1.0, 0.4), Vector3.new(-2.0, 1.0, -0.4), Vector3.new(0.4, 1.0, 2.0), Vector3.new(-0.4, 1.0, -2.0) }) do
+		createBlock(m, cframe, s, "ButtressRoot_" .. i, Vector3.new(1.8, 2.2, 1.8), CFrame.new(off), barkDark)
+	end
+	createBlock(m, cframe, s, "SwampTrunk", Vector3.new(3.2, 8.6, 3.2), CFrame.new(0, 4.3, 0), bark)
+	createBlock(m, cframe, s, "BranchL", Vector3.new(4.8, 1.5, 1.8), CFrame.new(-3.2, 8.2, 0.4) * CFrame.Angles(0, 0, math.rad(-14)), barkDark)
+	createBlock(m, cframe, s, "BranchR", Vector3.new(4.8, 1.5, 1.8), CFrame.new(3.2, 8.4, -0.4) * CFrame.Angles(0, 0, math.rad(14)), barkDark)
+
+	createBlock(m, cframe, s, "BanyanT1", Vector3.new(16.0, 2.8, 14.5), CFrame.new(0, 10.0, 0), leafDeep)
+	createBlock(m, cframe, s, "BanyanT2", Vector3.new(13.2, 2.5, 12.2), CFrame.new(0.5, 12.2, 0.3), leafMoss)
+	createBlock(m, cframe, s, "BanyanT3", Vector3.new(9.2, 2.0, 9.0), CFrame.new(-0.3, 14.0, -0.2), leafBright)
+
+	-- 12 Thick hanging swamp moss vine curtains
+	for i = 1, 12 do
+		local ang = (i / 12) * math.pi * 2
+		local r = if i % 2 == 0 then 6.6 else 4.8
+		local vx = math.cos(ang) * r
+		local vz = math.sin(ang) * r
+		local vh = 4.2 + (i % 3) * 1.4
+		createBlock(m, cframe, s, "VineCurtain_" .. i, Vector3.new(0.7, vh, 0.7), CFrame.new(vx, 8.8 - vh * 0.5, vz), if i % 2 == 0 then leafBright else leafMoss)
+	end
+	return m
+end
+
+function ClassicStudBiomeBuilder.BuildSwampWoodenCabinDock(cframe: CFrame, scale: number?, parent: Instance?): Model
+	local s = scale or 1
+	local m = newAssetModel("SwampWoodenCabinDock", cframe, parent)
+	local plank = Color3.fromRGB(132, 88, 52)
+	local timber = Color3.fromRGB(92, 60, 36)
+	local stone = Color3.fromRGB(124, 128, 122)
+	local moss = Color3.fromRGB(84, 148, 54)
+
+	-- Dock stilts & plank deck
+	for _, px in ipairs({ -5.2, 0, 5.2 }) do
+		for _, pz in ipairs({ -4.5, 4.5 }) do
+			createBlock(m, cframe, s, "Stilt", Vector3.new(0.85, 2.0, 0.85), CFrame.new(px, 0.8, pz), timber)
+		end
+	end
+	createBlock(m, cframe, s, "DockDeck", Vector3.new(12.2, 0.65, 10.8), CFrame.new(0, 1.8, 0), plank)
+
+	-- Cabin stone lower wall & timber upper body
+	createBlock(m, cframe, s, "CabinStoneWall", Vector3.new(8.2, 2.2, 6.8), CFrame.new(1.2, 3.2, 0), stone)
+	createBlock(m, cframe, s, "CabinTimberWall", Vector3.new(8.0, 2.6, 6.6), CFrame.new(1.2, 5.4, 0), plank)
+	local win = createBlock(m, cframe, s, "CabinGlowWindow", Vector3.new(0.4, 1.8, 2.2), CFrame.new(-2.85, 4.4, 0), Color3.fromRGB(255, 202, 86), Enum.Material.Neon, false)
+	addLanternLight(win, Color3.fromRGB(255, 198, 78), 20, 1.0)
+
+	-- Moss-covered pitched cabin roof + vines
+	createBlock(m, cframe, s, "RoofBase", Vector3.new(9.6, 1.0, 8.2), CFrame.new(1.2, 7.1, 0), timber)
+	createBlock(m, cframe, s, "RoofMossTop", Vector3.new(7.4, 1.2, 6.4), CFrame.new(1.2, 8.1, 0), moss)
+	createBlock(m, cframe, s, "RoofVine1", Vector3.new(0.6, 3.2, 0.6), CFrame.new(-3.2, 5.4, 3.0), moss)
+	createBlock(m, cframe, s, "RoofVine2", Vector3.new(0.6, 2.6, 0.6), CFrame.new(-3.2, 5.6, -2.8), moss)
+
+	-- Front dock fence + glowing lantern + crate
+	createBlock(m, cframe, s, "FrontFence", Vector3.new(0.45, 1.6, 5.4), CFrame.new(-5.4, 2.9, 1.8), timber)
+	createBlock(m, cframe, s, "LanternPole", Vector3.new(0.6, 3.4, 0.6), CFrame.new(-5.0, 3.8, -3.6), timber)
+	buildGlowingLanternBox(m, cframe, s, "CabinLantern", Vector3.new(-5.0, 5.8, -3.6), timber, Color3.fromRGB(255, 202, 76), 18)
+	createBlock(m, cframe, s, "DockCrate", Vector3.new(1.6, 1.6, 1.6), CFrame.new(-3.6, 2.9, -2.2), plank)
+	return m
+end
+
+function ClassicStudBiomeBuilder.BuildSwampCrossLanternPost(cframe: CFrame, scale: number?, parent: Instance?): Model
+	local s = scale or 1
+	local m = newAssetModel("SwampCrossLanternPost", cframe, parent)
+	local stone = Color3.fromRGB(118, 124, 114)
+	local moss = Color3.fromRGB(76, 142, 54)
+	local timber = Color3.fromRGB(98, 64, 38)
+
+	createBlock(m, cframe, s, "StonePed", Vector3.new(2.2, 1.4, 2.2), CFrame.new(0, 0.7, 0), stone)
+	createBlock(m, cframe, s, "MossPed", Vector3.new(1.4, 0.6, 1.2), CFrame.new(-0.5, 1.6, 0.4), moss)
+	createBlock(m, cframe, s, "Pole", Vector3.new(0.85, 7.6, 0.85), CFrame.new(0, 5.2, 0), timber)
+	createBlock(m, cframe, s, "CrossArm", Vector3.new(3.2, 0.7, 0.7), CFrame.new(1.1, 8.6, 0), timber)
+	createBlock(m, cframe, s, "Chain", Vector3.new(0.28, 0.9, 0.28), CFrame.new(2.2, 7.9, 0), Color3.fromRGB(64, 68, 72))
+	buildGlowingLanternBox(m, cframe, s, "SwampHangLantern", Vector3.new(2.2, 6.8, 0), timber, Color3.fromRGB(255, 198, 72), 20)
+	return m
+end
+
+-- BIOME 3 (DESERT): Stone Arch Ruin, Flower Cactus, Dead Scrub, Pedestal Lantern
+function ClassicStudBiomeBuilder.BuildDesertStoneArchRuin(cframe: CFrame, scale: number?, parent: Instance?): Model
+	local s = scale or 1
+	local m = newAssetModel("DesertStoneArchRuin", cframe, parent)
+	local stone = Color3.fromRGB(154, 152, 146)
+	local sandStone = Color3.fromRGB(218, 174, 102)
+	local timber = Color3.fromRGB(132, 84, 46)
+
+	for _, xOff in ipairs({ -4.2, 4.2 }) do
+		createBlock(m, cframe, s, "PillarBase", Vector3.new(2.4, 1.6, 2.4), CFrame.new(xOff, 0.8, 0), stone)
+		createBlock(m, cframe, s, "PillarShaft", Vector3.new(1.7, 6.4, 1.7), CFrame.new(xOff, 4.8, 0), stone)
+		createBlock(m, cframe, s, "TimberPost", Vector3.new(0.75, 6.0, 0.75), CFrame.new(xOff * 0.72, 3.0, 0.9), timber)
+	end
+	createBlock(m, cframe, s, "ArchLintel", Vector3.new(11.4, 1.7, 2.2), CFrame.new(0, 8.6, 0), stone)
+	createBlock(m, cframe, s, "ArchSandCap", Vector3.new(9.6, 0.9, 2.0), CFrame.new(0, 9.9, 0), sandStone)
+	createBlock(m, cframe, s, "ArchWoodBeam", Vector3.new(8.2, 0.65, 0.75), CFrame.new(0, 7.2, 0.8), timber)
+	buildGlowingLanternBox(m, cframe, s, "ArchLantern", Vector3.new(0, 6.1, 0), timber, Color3.fromRGB(255, 194, 68), 20)
+	return m
+end
+
+function ClassicStudBiomeBuilder.BuildVoxelFlowerCactus(cframe: CFrame, scale: number?, parent: Instance?): Model
+	local s = scale or 1
+	local m = newAssetModel("VoxelFlowerCactus", cframe, parent)
+	local green = Color3.fromRGB(64, 172, 62)
+	local greenLight = Color3.fromRGB(88, 198, 78)
+	local flower = Color3.fromRGB(246, 114, 178)
+
+	createBlock(m, cframe, s, "Stem", Vector3.new(2.0, 6.8, 2.0), CFrame.new(0, 3.4, 0), green)
+	createBlock(m, cframe, s, "ArmL1", Vector3.new(2.0, 1.4, 1.4), CFrame.new(-1.8, 3.2, 0), greenLight)
+	createBlock(m, cframe, s, "ArmL2", Vector3.new(1.4, 2.6, 1.4), CFrame.new(-2.4, 4.5, 0), green)
+	createBlock(m, cframe, s, "ArmR1", Vector3.new(1.8, 1.3, 1.3), CFrame.new(1.7, 2.4, 0), greenLight)
+	createBlock(m, cframe, s, "ArmR2", Vector3.new(1.3, 2.2, 1.3), CFrame.new(2.2, 3.6, 0), green)
+
+	-- Pink cactus blossoms on crown & arm tips
+	createBlock(m, cframe, s, "FlowerTop", Vector3.new(1.1, 0.75, 1.1), CFrame.new(0, 7.1, 0), flower)
+	createBlock(m, cframe, s, "FlowerArmL", Vector3.new(0.85, 0.6, 0.85), CFrame.new(-2.4, 6.0, 0), flower)
+	createBlock(m, cframe, s, "FlowerArmR", Vector3.new(0.8, 0.55, 0.8), CFrame.new(2.2, 4.9, 0), flower)
+	return m
+end
+
+function ClassicStudBiomeBuilder.BuildDesertDeadScrub(cframe: CFrame, scale: number?, parent: Instance?): Model
+	local s = scale or 1
+	local m = newAssetModel("DesertDeadScrub", cframe, parent)
+	local twigA = Color3.fromRGB(132, 88, 48)
+	local twigB = Color3.fromRGB(158, 108, 60)
+	createBlock(m, cframe, s, "Core", Vector3.new(0.65, 1.6, 0.65), CFrame.new(0, 0.8, 0), twigA)
+	for i, b in ipairs({
+		{ off = Vector3.new(-0.8, 1.4, 0.3), ang = Vector3.new(12, 0, 32) },
+		{ off = Vector3.new(0.8, 1.5, -0.3), ang = Vector3.new(-14, 0, -34) },
+		{ off = Vector3.new(0.2, 1.3, 0.8), ang = Vector3.new(30, 15, 0) },
+		{ off = Vector3.new(-0.3, 1.3, -0.8), ang = Vector3.new(-30, -15, 0) },
+	}) do
+		createBlock(m, cframe, s, "Twig_" .. i, Vector3.new(0.42, 1.7, 0.42), CFrame.new(b.off) * CFrame.Angles(math.rad(b.ang.X), math.rad(b.ang.Y), math.rad(b.ang.Z)), if i % 2 == 0 then twigB else twigA)
+	end
+	return m
+end
+
+function ClassicStudBiomeBuilder.BuildDesertPedestalLantern(cframe: CFrame, scale: number?, parent: Instance?): Model
+	local s = scale or 1
+	local m = newAssetModel("DesertPedestalLantern", cframe, parent)
+	createBlock(m, cframe, s, "PedBase", Vector3.new(2.2, 0.9, 2.2), CFrame.new(0, 0.45, 0), Color3.fromRGB(148, 146, 142))
+	createBlock(m, cframe, s, "PedStep", Vector3.new(1.5, 1.0, 1.5), CFrame.new(0, 1.4, 0), Color3.fromRGB(172, 168, 160))
+	createBlock(m, cframe, s, "TimberPost", Vector3.new(0.8, 1.8, 0.8), CFrame.new(0, 2.8, 0), Color3.fromRGB(122, 78, 44))
+	buildGlowingLanternBox(m, cframe, s, "DesertLantern", Vector3.new(0, 4.3, 0), Color3.fromRGB(98, 64, 38), Color3.fromRGB(255, 198, 72), 18)
+	return m
+end
+
+-- BIOME 4 (ALPINE ICE): Snow Igloo, Snowman, Frozen Icicle Pergola, Cyan Lantern
+function ClassicStudBiomeBuilder.BuildVoxelSnowIgloo(cframe: CFrame, scale: number?, parent: Instance?): Model
+	local s = scale or 1
+	local m = newAssetModel("VoxelSnowIgloo", cframe, parent)
+	local snowW = Color3.fromRGB(244, 249, 255)
+	local snowB = Color3.fromRGB(204, 230, 250)
+
+	createBlock(m, cframe, s, "DomeT1", Vector3.new(11.6, 2.4, 11.6), CFrame.new(0, 1.2, 0), snowW)
+	createBlock(m, cframe, s, "DomeT2", Vector3.new(9.6, 2.2, 9.6), CFrame.new(0, 3.5, 0), snowB)
+	createBlock(m, cframe, s, "DomeT3", Vector3.new(7.2, 1.8, 7.2), CFrame.new(0, 5.4, 0), snowW)
+	createBlock(m, cframe, s, "DomeT4", Vector3.new(4.4, 1.2, 4.4), CFrame.new(0, 6.8, 0), snowB)
+
+	-- Entrance tunnel (+Z facing front) & warm hearth glow
+	createBlock(m, cframe, s, "TunnelWallL", Vector3.new(1.2, 3.8, 4.2), CFrame.new(-2.1, 1.9, 6.6), snowW)
+	createBlock(m, cframe, s, "TunnelWallR", Vector3.new(1.2, 3.8, 4.2), CFrame.new(2.1, 1.9, 6.6), snowW)
+	createBlock(m, cframe, s, "TunnelRoof", Vector3.new(5.4, 1.3, 4.2), CFrame.new(0, 4.2, 6.6), snowB)
+	local hearth = createBlock(m, cframe, s, "HearthGlow", Vector3.new(2.6, 2.6, 1.0), CFrame.new(0, 1.6, 5.6), Color3.fromRGB(255, 198, 92), Enum.Material.Neon, false)
+	addLanternLight(hearth, Color3.fromRGB(255, 196, 86), 22, 1.25)
+
+	-- Tiny wooden snow fence beside door
+	createBlock(m, cframe, s, "FenceRail", Vector3.new(3.8, 0.35, 0.35), CFrame.new(4.6, 1.2, 7.2), Color3.fromRGB(118, 76, 46))
+	return m
+end
+
+function ClassicStudBiomeBuilder.BuildVoxelSnowman(cframe: CFrame, scale: number?, parent: Instance?): Model
+	local s = scale or 1
+	local m = newAssetModel("VoxelSnowman", cframe, parent)
+	local snow = Color3.fromRGB(246, 250, 255)
+	local black = Color3.fromRGB(28, 32, 40)
+	local scarf = Color3.fromRGB(224, 52, 52)
+
+	createBlock(m, cframe, s, "BottomBall", Vector3.new(2.6, 2.2, 2.6), CFrame.new(0, 1.1, 0), snow)
+	createBlock(m, cframe, s, "MidBall", Vector3.new(2.1, 1.9, 2.1), CFrame.new(0, 3.1, 0), snow)
+	createBlock(m, cframe, s, "Scarf", Vector3.new(2.25, 0.48, 2.25), CFrame.new(0, 4.15, 0), scarf)
+	createBlock(m, cframe, s, "HeadBall", Vector3.new(1.75, 1.7, 1.75), CFrame.new(0, 5.15, 0), snow)
+	createBlock(m, cframe, s, "CarrotNose", Vector3.new(0.32, 0.32, 0.85), CFrame.new(0, 5.1, 1.1), Color3.fromRGB(255, 132, 34))
+	createBlock(m, cframe, s, "EyeL", Vector3.new(0.24, 0.24, 0.2), CFrame.new(-0.4, 5.45, 0.88), black)
+	createBlock(m, cframe, s, "EyeR", Vector3.new(0.24, 0.24, 0.2), CFrame.new(0.4, 5.45, 0.88), black)
+	createBlock(m, cframe, s, "HatBrim", Vector3.new(2.3, 0.28, 2.3), CFrame.new(0, 6.1, 0), black)
+	createBlock(m, cframe, s, "HatTop", Vector3.new(1.5, 1.35, 1.5), CFrame.new(0, 6.9, 0), black)
+	createBlock(m, cframe, s, "ArmL", Vector3.new(1.6, 0.24, 0.24), CFrame.new(-1.6, 3.3, 0) * CFrame.Angles(0, 0, math.rad(-20)), Color3.fromRGB(98, 62, 36))
+	createBlock(m, cframe, s, "ArmR", Vector3.new(1.6, 0.24, 0.24), CFrame.new(1.6, 3.3, 0) * CFrame.Angles(0, 0, math.rad(20)), Color3.fromRGB(98, 62, 36))
+	return m
+end
+
+function ClassicStudBiomeBuilder.BuildFrozenIciclePergola(cframe: CFrame, scale: number?, parent: Instance?): Model
+	local s = scale or 1
+	local m = newAssetModel("FrozenIciclePergola", cframe, parent)
+	local timber = Color3.fromRGB(108, 72, 46)
+	local snow = Color3.fromRGB(242, 248, 255)
+	local ice = Color3.fromRGB(118, 214, 255)
+
+	for _, xOff in ipairs({ -4.5, 4.5 }) do
+		for _, zOff in ipairs({ -2.4, 2.4 }) do
+			createBlock(m, cframe, s, "PergolaPost", Vector3.new(0.85, 6.4, 0.85), CFrame.new(xOff, 3.2, zOff), timber)
+		end
+	end
+	createBlock(m, cframe, s, "RoofDeck", Vector3.new(11.4, 0.85, 6.6), CFrame.new(0, 6.7, 0), timber)
+	createBlock(m, cframe, s, "SnowRoofCap", Vector3.new(11.6, 1.1, 6.8), CFrame.new(0, 7.6, 0), snow)
+
+	for idx, ix in ipairs({ -3.8, -1.9, 0, 1.9, 3.8 }) do
+		local ih = 1.4 + (idx % 3) * 0.55
+		createBlock(m, cframe, s, "Icicle_" .. idx, Vector3.new(0.48, ih, 0.48), CFrame.new(ix, 6.2 - ih * 0.5, 2.8), if idx % 2 == 0 then snow else ice, Enum.Material.Ice, false)
+	end
+	buildGlowingLanternBox(m, cframe, s, "IceLanternL", Vector3.new(-3.2, 5.2, 0), timber, Color3.fromRGB(84, 234, 255), 20)
+	buildGlowingLanternBox(m, cframe, s, "IceLanternR", Vector3.new(3.2, 5.2, 0), timber, Color3.fromRGB(84, 234, 255), 20)
+	return m
+end
+
+function ClassicStudBiomeBuilder.BuildAlpineCyanLantern(cframe: CFrame, scale: number?, parent: Instance?): Model
+	local s = scale or 1
+	local m = newAssetModel("AlpineCyanLantern", cframe, parent)
+	createBlock(m, cframe, s, "StonePed", Vector3.new(2.0, 1.0, 2.0), CFrame.new(0, 0.5, 0), Color3.fromRGB(134, 152, 174))
+	createBlock(m, cframe, s, "Post", Vector3.new(0.8, 2.6, 0.8), CFrame.new(0, 2.3, 0), Color3.fromRGB(88, 60, 42))
+	buildGlowingLanternBox(m, cframe, s, "CyanLantern", Vector3.new(0, 4.2, 0), Color3.fromRGB(54, 62, 74), Color3.fromRGB(82, 238, 255), 18)
+	return m
+end
+
+-- BIOME 5 (VOLCANO): Crimson Canopy Tree, Basalt Gate Ruin, Fire Brazier Pillar, Colossal Horizon Volcano
+function ClassicStudBiomeBuilder.BuildVoxelCrimsonCanopyTree(cframe: CFrame, scale: number?, parent: Instance?): Model
+	local s = scale or 1
+	local m = newAssetModel("VoxelCrimsonCanopyTree", cframe, parent)
+	local bark = Color3.fromRGB(48, 32, 34)
+	local barkChar = Color3.fromRGB(32, 22, 26)
+	local crimDeep = Color3.fromRGB(154, 22, 34)
+	local crimBright = Color3.fromRGB(214, 42, 52)
+	local emberRed = Color3.fromRGB(246, 78, 42)
+
+	for i, off in ipairs({ Vector3.new(1.3, 0.5, 0), Vector3.new(-1.3, 0.5, 0), Vector3.new(0, 0.5, 1.3), Vector3.new(0, 0.5, -1.3) }) do
+		createBlock(m, cframe, s, "Root_" .. i, Vector3.new(1.3, 1.0, 1.3), CFrame.new(off), barkChar)
+	end
+	createBlock(m, cframe, s, "TrunkBase", Vector3.new(2.2, 5.4, 2.2), CFrame.new(0, 2.7, 0), bark)
+	createBlock(m, cframe, s, "BranchL", Vector3.new(4.2, 1.2, 1.2), CFrame.new(-2.4, 6.2, 0.3) * CFrame.Angles(0, 0, math.rad(-22)), barkChar)
+	createBlock(m, cframe, s, "BranchR", Vector3.new(4.2, 1.2, 1.2), CFrame.new(2.4, 6.6, -0.3) * CFrame.Angles(0, 0, math.rad(20)), barkChar)
+
+	createBlock(m, cframe, s, "LeafPadC", Vector3.new(7.4, 1.9, 6.8), CFrame.new(0, 9.2, 0), crimDeep)
+	createBlock(m, cframe, s, "LeafPadTop", Vector3.new(5.2, 1.5, 4.8), CFrame.new(0.2, 10.6, 0), crimBright)
+	createBlock(m, cframe, s, "LeafPadL", Vector3.new(5.8, 1.6, 5.2), CFrame.new(-4.0, 7.6, 0.4), crimBright)
+	createBlock(m, cframe, s, "LeafPadR", Vector3.new(5.8, 1.6, 5.2), CFrame.new(4.0, 8.0, -0.4), emberRed)
+	return m
+end
+
+function ClassicStudBiomeBuilder.BuildVolcanicBasaltGateRuin(cframe: CFrame, scale: number?, parent: Instance?): Model
+	local s = scale or 1
+	local m = newAssetModel("VolcanicBasaltGateRuin", cframe, parent)
+	local basaltA = Color3.fromRGB(48, 40, 52)
+	local basaltB = Color3.fromRGB(64, 52, 68)
+
+	for _, xOff in ipairs({ -3.8, 3.8 }) do
+		createBlock(m, cframe, s, "GateBase", Vector3.new(3.0, 1.6, 3.0), CFrame.new(xOff, 0.8, 0), basaltB)
+		createBlock(m, cframe, s, "GatePillar", Vector3.new(2.2, 6.8, 2.2), CFrame.new(xOff, 5.0, 0), basaltA)
+	end
+	createBlock(m, cframe, s, "GateLintel", Vector3.new(11.0, 1.8, 2.8), CFrame.new(0, 9.2, 0), basaltB)
+	createBlock(m, cframe, s, "GateCrest", Vector3.new(5.6, 1.2, 2.4), CFrame.new(0, 10.6, 0), basaltA)
+	local core = createBlock(m, cframe, s, "GateCoreSlot", Vector3.new(1.4, 1.8, 2.95), CFrame.new(-3.8, 4.8, 0), Color3.fromRGB(255, 118, 28), Enum.Material.Neon, false)
+	addLanternLight(core, Color3.fromRGB(255, 108, 32), 20, 1.25)
+	return m
+end
+
+function ClassicStudBiomeBuilder.BuildVolcanicFireBrazierPillar(cframe: CFrame, scale: number?, parent: Instance?): Model
+	local s = scale or 1
+	local m = newAssetModel("VolcanicFireBrazierPillar", cframe, parent)
+	local basalt = Color3.fromRGB(52, 42, 54)
+	createBlock(m, cframe, s, "Base", Vector3.new(2.8, 0.9, 2.8), CFrame.new(0, 0.45, 0), basalt)
+	createBlock(m, cframe, s, "Shaft", Vector3.new(1.8, 2.4, 1.8), CFrame.new(0, 2.1, 0), Color3.fromRGB(40, 32, 44))
+	createBlock(m, cframe, s, "Bowl", Vector3.new(2.6, 0.85, 2.6), CFrame.new(0, 3.6, 0), basalt)
+	local fire = createBlock(m, cframe, s, "FlameCore", Vector3.new(1.5, 1.5, 1.5), CFrame.new(0, 4.7, 0), Color3.fromRGB(255, 168, 36), Enum.Material.Neon, false)
+	createBlock(m, cframe, s, "FlameTip", Vector3.new(0.85, 1.0, 0.85), CFrame.new(0, 5.7, 0), Color3.fromRGB(255, 86, 24), Enum.Material.Neon, false)
+	addLanternLight(fire, Color3.fromRGB(255, 132, 36), 20, 1.3)
+	addSelectiveParticles(fire, "FireEmbers")
+	return m
+end
+
+function ClassicStudBiomeBuilder.BuildColossalHorizonVolcano(cframe: CFrame, scale: number?, parent: Instance?): Model
+	local s = scale or 1
+	local m = newAssetModel("ColossalHorizonVolcano", cframe, parent)
+	local darkRock = Color3.fromRGB(46, 36, 48)
+	local midRock = Color3.fromRGB(64, 48, 62)
+	local lavaCol = Color3.fromRGB(255, 108, 24)
+
+	local tiers = {
+		{ w = 176, h = 18, y = 9, col = darkRock },
+		{ w = 136, h = 18, y = 27, col = midRock },
+		{ w = 98, h = 18, y = 45, col = darkRock },
+		{ w = 64, h = 18, y = 63, col = midRock },
+		{ w = 36, h = 14, y = 79, col = darkRock },
+	}
+	for i, t in ipairs(tiers) do
+		createBlock(m, cframe, s, "VolcanoTier_" .. i, Vector3.new(t.w, t.h, t.w * 0.72), CFrame.new(0, t.y, 0), t.col)
+	end
+	local caldera = createBlock(m, cframe, s, "SummitMagma", Vector3.new(26, 3.0, 20), CFrame.new(0, 86.2, 0), Color3.fromRGB(255, 152, 32), Enum.Material.Neon, false)
+	addSelectiveParticles(caldera, "VolcanoSmoke")
+
+	-- Glowing stepped lava veins running down the front (-Z) face toward player camera
+	for i = 1, 5 do
+		local y = 80 - (i - 1) * 16
+		local z = -14 - (i - 1) * 11.5
+		createBlock(m, cframe, s, "LavaRiverCenter_" .. i, Vector3.new(8 + i * 2, 16, 4), CFrame.new(0, y, z), lavaCol, Enum.Material.Neon, false)
+		createBlock(m, cframe, s, "LavaRiverLeft_" .. i, Vector3.new(5 + i, 15, 3.5), CFrame.new(-12 - i * 4, y - 4, z + 3), lavaCol, Enum.Material.Neon, false)
+	end
+	return m
+end
+
+-- SHARED HORIZON ARCHWAYS & FLOATING SKY ISLANDS
+local ARCHWAY_STYLES = {
+	PineWoods = { pillar = Color3.fromRGB(168, 52, 42), trim = Color3.fromRGB(118, 42, 34), cap = Color3.fromRGB(72, 154, 62), glow = Color3.fromRGB(255, 206, 86) },
+	MangroveSwamp = { pillar = Color3.fromRGB(98, 68, 44), trim = Color3.fromRGB(74, 134, 56), cap = Color3.fromRGB(108, 168, 62), glow = Color3.fromRGB(255, 198, 72) },
+	SavannaCamp = { pillar = Color3.fromRGB(218, 174, 102), trim = Color3.fromRGB(182, 128, 68), cap = Color3.fromRGB(242, 204, 132), glow = Color3.fromRGB(255, 194, 68) },
+	AlpinePeaks = { pillar = Color3.fromRGB(184, 224, 250), trim = Color3.fromRGB(114, 198, 248), cap = Color3.fromRGB(244, 249, 255), glow = Color3.fromRGB(82, 238, 255) },
+	VolcanicJungle = { pillar = Color3.fromRGB(46, 36, 48), trim = Color3.fromRGB(68, 52, 68), cap = Color3.fromRGB(255, 102, 28), glow = Color3.fromRGB(255, 132, 32) },
+}
+
+function ClassicStudBiomeBuilder.BuildBiomeHorizonArchway(cframe: CFrame, scale: number?, parent: Instance?, biomeId: string): Model
+	local s = scale or 1
+	local st = ARCHWAY_STYLES[biomeId] or ARCHWAY_STYLES.PineWoods
+	local m = newAssetModel("BiomeHorizonArchway_" .. biomeId, cframe, parent)
+
+	for _, xSide in ipairs({ -20, 20 }) do
+		createBlock(m, cframe, s, "PillarBase_" .. xSide, Vector3.new(5.2, 2.4, 5.2), CFrame.new(xSide, 1.2, 0), st.trim)
+		createBlock(m, cframe, s, "PillarCol_" .. xSide, Vector3.new(3.4, 17.5, 3.4), CFrame.new(xSide, 11.0, 0), st.pillar)
+		buildGlowingLanternBox(m, cframe, s, "ArchLamp_" .. xSide, Vector3.new(xSide * 0.78, 14.5, 0), st.trim, st.glow, 22)
+	end
+	createBlock(m, cframe, s, "TopCrossBeam", Vector3.new(48.0, 2.8, 4.4), CFrame.new(0, 20.8, 0), st.pillar)
+	createBlock(m, cframe, s, "LowerCrossBeam", Vector3.new(43.0, 1.8, 3.2), CFrame.new(0, 17.4, 0), st.trim)
+	createBlock(m, cframe, s, "CrownCap", Vector3.new(51.0, 1.5, 5.2), CFrame.new(0, 22.8, 0), st.cap)
+	return m
+end
+
+local SKY_ISLAND_PALETTES = {
+	PineWoods = { top = Color3.fromRGB(98, 182, 74), rim = Color3.fromRGB(132, 92, 58), stone = Color3.fromRGB(118, 94, 78), treeFn = ClassicStudBiomeBuilder.BuildLushVoxelTreeWithVines, isVolcano = false },
+	MangroveSwamp = { top = Color3.fromRGB(82, 134, 58), rim = Color3.fromRGB(96, 70, 44), stone = Color3.fromRGB(84, 74, 62), treeFn = ClassicStudBiomeBuilder.BuildSwampBanyanVineTree, isVolcano = false },
+	SavannaCamp = { top = Color3.fromRGB(232, 192, 108), rim = Color3.fromRGB(204, 134, 68), stone = Color3.fromRGB(168, 102, 56), treeFn = ClassicStudBiomeBuilder.BuildVoxelFlowerCactus, isVolcano = false },
+	AlpinePeaks = { top = Color3.fromRGB(242, 248, 255), rim = Color3.fromRGB(142, 214, 248), stone = Color3.fromRGB(108, 168, 222), treeFn = ClassicStudBiomeBuilder.BuildSnowyPineTreeTall, isVolcano = false },
+	VolcanicJungle = { top = Color3.fromRGB(58, 46, 62), rim = Color3.fromRGB(46, 36, 48), stone = Color3.fromRGB(34, 28, 38), treeFn = ClassicStudBiomeBuilder.BuildVoxelCrimsonCanopyTree, isVolcano = true },
+}
+
+function ClassicStudBiomeBuilder.BuildBiomeFloatingSkyIsland(
+	cframe: CFrame,
+	scale: number?,
+	parent: Instance?,
+	biomeId: string,
+	hasFall: boolean?,
+	fallSideSign: number?
+): Model
+	local s = scale or 1
+	local pal = SKY_ISLAND_PALETTES[biomeId] or SKY_ISLAND_PALETTES.PineWoods
+	local m = newAssetModel("BiomeSkyIsland_" .. biomeId, cframe, parent)
+
+	local topPlate = createBlock(m, cframe, s, "IslandTopCap", Vector3.new(40, 4.4, 36), CFrame.new(0, 0, 0), pal.top)
+	m.PrimaryPart = topPlate
+	createBlock(m, cframe, s, "IslandDeckStep", Vector3.new(22, 3.2, 20), CFrame.new(-6, 3.6, 4), pal.top)
+	createBlock(m, cframe, s, "IslandStrataA", Vector3.new(34, 9.0, 30), CFrame.new(0, -6.5, 0), pal.rim)
+	createBlock(m, cframe, s, "IslandStrataB", Vector3.new(24, 11.0, 21), CFrame.new(2, -16.0, -1), pal.stone)
+	createBlock(m, cframe, s, "IslandKeelTip", Vector3.new(12, 10.0, 11), CFrame.new(1, -25.5, 0), pal.stone)
+
+	-- Top vegetation matching the biome
+	pal.treeFn(cframe * CFrame.new(-7 * s, 5.2 * s, 4 * s), s * 1.15, m)
+	pal.treeFn(cframe * CFrame.new(9 * s, 2.2 * s, -6 * s), s * 0.9, m)
+	createBlock(m, cframe, s, "SkyBoulder", Vector3.new(5.5, 4.0, 5.5), CFrame.new(6, 4.0, 8), pal.stone)
+
+	-- Hanging vines / icicles / lava accents underneath
+	for i = 1, 4 do
+		local hx = (-12 + i * 6)
+		local hz = if i % 2 == 0 then 14 else -14
+		local hCol = if biomeId == "AlpinePeaks" then Color3.fromRGB(168, 232, 255) elseif pal.isVolcano then Color3.fromRGB(255, 108, 28) else Color3.fromRGB(82, 168, 62)
+		createBlock(m, cframe, s, "IslandHang_" .. i, Vector3.new(1.2, 6.5, 1.2), CFrame.new(hx, -5.2, hz), hCol, if pal.isVolcano then Enum.Material.Neon else nil, not pal.isVolcano)
+	end
+
+	-- Optional cascading waterfall or magma lavafall toward the main trail
+	if hasFall then
+		local side = fallSideSign or -1
+		local fx = side * 19.5
+		if pal.isVolcano then
+			local lava = createBlock(m, cframe, s, "SkyLavafall", Vector3.new(3.2, 48, 7.8), CFrame.new(fx, -23.0, 0), Color3.fromRGB(255, 112, 24), Enum.Material.Neon, false)
+			addSelectiveParticles(lava, "FireEmbers")
+		else
+			local water = createBlock(m, cframe, s, "SkyWaterfall", Vector3.new(3.0, 52, 8.2), CFrame.new(fx, -25.0, 0), Color3.fromRGB(76, 206, 250), Enum.Material.Glass, false, 0.25)
+			createBlock(m, cframe, s, "WaterfallFoamTop", Vector3.new(4.2, 1.8, 9.2), CFrame.new(fx * 0.96, 1.8, 0), Color3.fromRGB(238, 250, 255))
+			addSelectiveParticles(water, "WaterfallMist")
+		end
+	end
+	return m
+end
+
+function ClassicStudBiomeBuilder.ApplyReferenceLighting()
+	local Lighting = game:GetService("Lighting")
+	local Workspace = game:GetService("Workspace")
+	pcall(function()
+		Lighting.ClockTime = 14.8
+		Lighting.Brightness = 1.85
+		Lighting.ExposureCompensation = -0.06
+		Lighting.Ambient = Color3.fromRGB(108, 124, 146)
+		Lighting.OutdoorAmbient = Color3.fromRGB(128, 148, 174)
+		Lighting.EnvironmentDiffuseScale = 0.65
+		Lighting.EnvironmentSpecularScale = 0.28
+		Lighting.GlobalShadows = true
+	end)
+
+	local atm = Lighting:FindFirstChild("GameAtmosphere") :: Atmosphere?
+	if not atm or not atm:IsA("Atmosphere") then
+		atm = Instance.new("Atmosphere")
+		atm.Name = "GameAtmosphere"
+		atm.Parent = Lighting
+	end
+	atm.Density = 0.17
+	atm.Offset = 0.22
+	atm.Color = Color3.fromRGB(196, 230, 255)
+	atm.Decay = Color3.fromRGB(164, 206, 246)
+	atm.Glare = 0.12
+	atm.Haze = 0.45
+
+	local cc = Lighting:FindFirstChild("GameColorCorrection") :: ColorCorrectionEffect?
+	if not cc or not cc:IsA("ColorCorrectionEffect") then
+		cc = Instance.new("ColorCorrectionEffect")
+		cc.Name = "GameColorCorrection"
+		cc.Parent = Lighting
+	end
+	cc.Saturation = 0.14
+	cc.Contrast = 0.08
+	cc.Brightness = 0.0
+
+	local bloom = Lighting:FindFirstChild("GameBloom") :: BloomEffect?
+	if not bloom or not bloom:IsA("BloomEffect") then
+		bloom = Instance.new("BloomEffect")
+		bloom.Name = "GameBloom"
+		bloom.Parent = Lighting
+	end
+	bloom.Intensity = 0.14
+	bloom.Size = 18
+	bloom.Threshold = 2.15
+
+	local sunRays = Lighting:FindFirstChild("GameSunRays") :: SunRaysEffect?
+	if not sunRays or not sunRays:IsA("SunRaysEffect") then
+		sunRays = Instance.new("SunRaysEffect")
+		sunRays.Name = "GameSunRays"
+		sunRays.Parent = Lighting
+	end
+	sunRays.Intensity = 0.04
+	sunRays.Spread = 0.25
+
+	local clouds = Workspace.Terrain:FindFirstChildOfClass("Clouds") or Instance.new("Clouds")
+	clouds.Cover = 0.52
+	clouds.Density = 0.48
+	clouds.Color = Color3.fromRGB(244, 249, 255)
+	clouds.Parent = Workspace.Terrain
+end
+
+-- ============================================================================
 -- PER-BIOME REGISTRIES
 -- ============================================================================
 
 ClassicStudBiomeBuilder.BIOME_1_ASSETS = {
 	{ id = "PineTreeTall", title = "Pine Tree (Tall)", category = "Tree", catalogScale = 0.65, build = ClassicStudBiomeBuilder.BuildPineTreeTall },
-	{ id = "PineTreeTwin", title = "Pine Tree (Twin)", category = "Tree", catalogScale = 0.68, build = ClassicStudBiomeBuilder.BuildPineTreeTwin },
+	{ id = "LushVoxelTreeWithVines", title = "Lush Vine Canopy Tree", category = "Tree", catalogScale = 0.56, build = ClassicStudBiomeBuilder.BuildLushVoxelTreeWithVines },
 	{ id = "OakTreeBroad", title = "Oak Tree (Broad)", category = "Tree", catalogScale = 0.68, build = ClassicStudBiomeBuilder.BuildOakTreeBroad },
 	{ id = "BirchTreeForest", title = "Birch Tree", category = "Tree", catalogScale = 0.72, build = ClassicStudBiomeBuilder.BuildBirchTreeForest },
 	{ id = "GrassTuftCluster", title = "Grass Tufts 3D", category = "Flora", catalogScale = 0.95, build = ClassicStudBiomeBuilder.BuildGrassTuftCluster },
@@ -1051,28 +1783,29 @@ ClassicStudBiomeBuilder.BIOME_1_ASSETS = {
 	{ id = "FernCluster", title = "Forest Ferns", category = "Flora", catalogScale = 0.95, build = ClassicStudBiomeBuilder.BuildFernCluster },
 	{ id = "BerryBush", title = "Berry Bush", category = "Flora", catalogScale = 0.9, build = ClassicStudBiomeBuilder.BuildBerryBush },
 	{ id = "WildflowerPatch", title = "Wildflowers", category = "Flora", catalogScale = 0.95, build = ClassicStudBiomeBuilder.BuildWildflowerPatch },
+	{ id = "VoxelWatchtower", title = "Forest Watchtower", category = "Prop", catalogScale = 0.42, build = function(cf, sc, p) return ClassicStudBiomeBuilder.BuildVoxelWatchtower(cf, sc, p, "Forest") end },
+	{ id = "ForestStreamAndBridge", title = "Stream & Wood Bridge", category = "Prop", catalogScale = 0.44, build = ClassicStudBiomeBuilder.BuildForestStreamAndBridge },
+	{ id = "VoxelFenceWithLantern", title = "Fence & Lantern", category = "Prop", catalogScale = 0.75, build = ClassicStudBiomeBuilder.BuildVoxelFenceWithLantern },
 	{ id = "MossyBoulder", title = "Mossy Boulder", category = "Prop", catalogScale = 0.82, build = ClassicStudBiomeBuilder.BuildMossyBoulder },
-	{ id = "RockCluster", title = "Forest Rock Trio", category = "Prop", catalogScale = 0.9, build = ClassicStudBiomeBuilder.BuildRockCluster },
 	{ id = "FallenHollowLog", title = "Fallen Hollow Log", category = "Prop", catalogScale = 0.78, build = ClassicStudBiomeBuilder.BuildFallenHollowLog },
-	{ id = "TreeStump", title = "Cut Tree Stump", category = "Prop", catalogScale = 0.95, build = ClassicStudBiomeBuilder.BuildTreeStump },
 	{ id = "MushroomCluster", title = "Toadstool Trio", category = "Prop", catalogScale = 1.0, build = ClassicStudBiomeBuilder.BuildMushroomCluster },
-	{ id = "RangerLanternPost", title = "Ranger Lantern Post", category = "Prop", catalogScale = 0.82, build = ClassicStudBiomeBuilder.BuildRangerLanternPost },
 } :: { AssetSpec }
 
 ClassicStudBiomeBuilder.BIOME_2_ASSETS = {
+	{ id = "SwampBanyanVineTree", title = "Swamp Banyan Vine Tree", category = "Tree", catalogScale = 0.54, build = ClassicStudBiomeBuilder.BuildSwampBanyanVineTree },
 	{ id = "MangroveTreeArch", title = "Mangrove Tree Arch", category = "Tree", catalogScale = 0.68, build = ClassicStudBiomeBuilder.BuildMangroveTreeArch },
 	{ id = "DeadSwampWillow", title = "Dead Swamp Willow", category = "Tree", catalogScale = 0.72, build = ClassicStudBiomeBuilder.BuildDeadSwampWillow },
 	{ id = "GiantGlowMushroom", title = "Giant Glow Mushroom", category = "Tree", catalogScale = 0.72, build = ClassicStudBiomeBuilder.BuildGiantGlowMushroom },
-	{ id = "SwampTotemShrine", title = "Swamp Totem Shrine", category = "Tree", catalogScale = 0.68, build = ClassicStudBiomeBuilder.BuildSwampTotemShrine },
 	{ id = "CattailReedCluster", title = "Cattail Reeds", category = "Flora", catalogScale = 0.95, build = ClassicStudBiomeBuilder.BuildCattailReedCluster },
 	{ id = "SwampLilyPadCluster", title = "Swamp Lily Pads", category = "Flora", catalogScale = 0.9, build = ClassicStudBiomeBuilder.BuildSwampLilyPadCluster },
 	{ id = "MudMossTurfPatch", title = "Mud & Moss Turf", category = "Flora", catalogScale = 0.82, build = ClassicStudBiomeBuilder.BuildMudMossTurfPatch },
 	{ id = "SwampVineFern", title = "Swamp Vine Fern", category = "Flora", catalogScale = 0.95, build = ClassicStudBiomeBuilder.BuildSwampVineFern },
 	{ id = "GlowSporeTrio", title = "Glow Spore Trio", category = "Flora", catalogScale = 1.0, build = ClassicStudBiomeBuilder.BuildGlowSporeTrio },
-	{ id = "SunkenHollowLog", title = "Sunken Hollow Log", category = "Prop", catalogScale = 0.82, build = ClassicStudBiomeBuilder.BuildSunkenHollowLog },
+	{ id = "SwampWoodenCabinDock", title = "Swamp Cabin & Dock", category = "Prop", catalogScale = 0.48, build = ClassicStudBiomeBuilder.BuildSwampWoodenCabinDock },
+	{ id = "SwampCrossLanternPost", title = "Swamp Cross Lantern", category = "Prop", catalogScale = 0.68, build = ClassicStudBiomeBuilder.BuildSwampCrossLanternPost },
+	{ id = "SwampTotemShrine", title = "Swamp Totem Shrine", category = "Prop", catalogScale = 0.62, build = ClassicStudBiomeBuilder.BuildSwampTotemShrine },
 	{ id = "MossySwampBoulder", title = "Mossy Swamp Boulder", category = "Prop", catalogScale = 0.85, build = ClassicStudBiomeBuilder.BuildMossySwampBoulder },
-	{ id = "WoodenSwampDock", title = "Wooden Swamp Dock", category = "Prop", catalogScale = 0.8, build = ClassicStudBiomeBuilder.BuildWoodenSwampDock },
-	{ id = "SwampLanternTotem", title = "Swamp Lantern Totem", category = "Prop", catalogScale = 0.85, build = ClassicStudBiomeBuilder.BuildSwampLanternTotem },
+	{ id = "WoodenSwampDock", title = "Wooden Swamp Dock", category = "Prop", catalogScale = 0.78, build = ClassicStudBiomeBuilder.BuildWoodenSwampDock },
 } :: { AssetSpec }
 
 ClassicStudBiomeBuilder.BIOME_3_ASSETS = {
@@ -1080,15 +1813,15 @@ ClassicStudBiomeBuilder.BIOME_3_ASSETS = {
 	{ id = "AcaciaTreeFlat", title = "Savanna Acacia Tree", category = "Tree", catalogScale = 0.65, build = ClassicStudBiomeBuilder.BuildAcaciaTreeFlat },
 	{ id = "DesertPalmTree", title = "Desert Palm Tree", category = "Tree", catalogScale = 0.72, build = ClassicStudBiomeBuilder.BuildDesertPalmTree },
 	{ id = "SaguaroCactusGiant", title = "Saguaro Cactus", category = "Tree", catalogScale = 0.78, build = ClassicStudBiomeBuilder.BuildSaguaroCactusGiant },
+	{ id = "VoxelFlowerCactus", title = "Flowering Cactus", category = "Flora", catalogScale = 0.82, build = ClassicStudBiomeBuilder.BuildVoxelFlowerCactus },
 	{ id = "BarrelCactusCluster", title = "Barrel Cactus Cluster", category = "Flora", catalogScale = 0.95, build = ClassicStudBiomeBuilder.BuildBarrelCactusCluster },
 	{ id = "SavannaGrassTuft", title = "Savanna Grass Tuft", category = "Flora", catalogScale = 0.95, build = ClassicStudBiomeBuilder.BuildSavannaGrassTuft },
-	{ id = "SandDuneTurfPatch", title = "Sand Dune Turf", category = "Flora", catalogScale = 0.82, build = ClassicStudBiomeBuilder.BuildSandDuneTurfPatch },
-	{ id = "DesertScrubBush", title = "Desert Scrub Bush", category = "Flora", catalogScale = 0.95, build = ClassicStudBiomeBuilder.BuildDesertScrubBush },
-	{ id = "SandstoneRuinedPillar", title = "Ruined Temple Pillar", category = "Prop", catalogScale = 0.82, build = ClassicStudBiomeBuilder.BuildSandstoneRuinedPillar },
-	{ id = "SandstoneMesaArch", title = "Sandstone Mesa Arch", category = "Prop", catalogScale = 0.75, build = ClassicStudBiomeBuilder.BuildSandstoneMesaArch },
-	{ id = "OasisWaterPool", title = "Oasis Water Pool", category = "Prop", catalogScale = 0.78, build = ClassicStudBiomeBuilder.BuildOasisWaterPool },
+	{ id = "DesertDeadScrub", title = "Desert Deadwood Scrub", category = "Flora", catalogScale = 1.0, build = ClassicStudBiomeBuilder.BuildDesertDeadScrub },
+	{ id = "DesertStoneArchRuin", title = "Desert Arch Ruin", category = "Prop", catalogScale = 0.56, build = ClassicStudBiomeBuilder.BuildDesertStoneArchRuin },
+	{ id = "DesertPedestalLantern", title = "Desert Pedestal Lamp", category = "Prop", catalogScale = 0.85, build = ClassicStudBiomeBuilder.BuildDesertPedestalLantern },
+	{ id = "SandstoneMesaArch", title = "Sandstone Mesa Arch", category = "Prop", catalogScale = 0.72, build = ClassicStudBiomeBuilder.BuildSandstoneMesaArch },
+	{ id = "OasisWaterPool", title = "Oasis Water Pool", category = "Prop", catalogScale = 0.75, build = ClassicStudBiomeBuilder.BuildOasisWaterPool },
 	{ id = "DesertSkullBone", title = "Desert Skull & Bones", category = "Prop", catalogScale = 0.9, build = ClassicStudBiomeBuilder.BuildDesertSkullBone },
-	{ id = "DesertBrazierTorch", title = "Desert Brazier Torch", category = "Prop", catalogScale = 0.88, build = ClassicStudBiomeBuilder.BuildDesertBrazierTorch },
 } :: { AssetSpec }
 
 ClassicStudBiomeBuilder.BIOME_4_ASSETS = {
@@ -1100,27 +1833,27 @@ ClassicStudBiomeBuilder.BIOME_4_ASSETS = {
 	{ id = "FrostGrassTuft", title = "Frost Grass Tuft", category = "Flora", catalogScale = 0.95, build = ClassicStudBiomeBuilder.BuildFrostGrassTuft },
 	{ id = "IceBerryBush", title = "Ice Berry Bush", category = "Flora", catalogScale = 0.9, build = ClassicStudBiomeBuilder.BuildIceBerryBush },
 	{ id = "CrystalFrostFlower", title = "Crystal Frost Flowers", category = "Flora", catalogScale = 0.95, build = ClassicStudBiomeBuilder.BuildCrystalFrostFlower },
-	{ id = "GlacierBoulderSnowy", title = "Snowy Glacier Boulder", category = "Prop", catalogScale = 0.82, build = ClassicStudBiomeBuilder.BuildGlacierBoulderSnowy },
+	{ id = "VoxelSnowIgloo", title = "Voxel Snow Igloo", category = "Prop", catalogScale = 0.48, build = ClassicStudBiomeBuilder.BuildVoxelSnowIgloo },
+	{ id = "VoxelSnowman", title = "Voxel Snowman", category = "Prop", catalogScale = 0.78, build = ClassicStudBiomeBuilder.BuildVoxelSnowman },
+	{ id = "FrozenIciclePergola", title = "Icicle Pergola", category = "Prop", catalogScale = 0.54, build = ClassicStudBiomeBuilder.BuildFrozenIciclePergola },
+	{ id = "AlpineCyanLantern", title = "Alpine Cyan Lantern", category = "Prop", catalogScale = 0.85, build = ClassicStudBiomeBuilder.BuildAlpineCyanLantern },
 	{ id = "IceCrystalCluster", title = "Ice Crystal Cluster", category = "Prop", catalogScale = 0.9, build = ClassicStudBiomeBuilder.BuildIceCrystalCluster },
-	{ id = "FrozenHollowLog", title = "Frozen Hollow Log", category = "Prop", catalogScale = 0.82, build = ClassicStudBiomeBuilder.BuildFrozenHollowLog },
-	{ id = "AlpineStoneCairn", title = "Alpine Stone Cairn", category = "Prop", catalogScale = 0.95, build = ClassicStudBiomeBuilder.BuildAlpineStoneCairn },
-	{ id = "FrozenIceArchway", title = "Frozen Ice Archway", category = "Prop", catalogScale = 0.72, build = ClassicStudBiomeBuilder.BuildFrozenIceArchway },
 } :: { AssetSpec }
 
 ClassicStudBiomeBuilder.BIOME_5_ASSETS = {
 	{ id = "VolcanoCraterLandmark", title = "Volcano Crater Spire", category = "Tree", catalogScale = 0.40, build = ClassicStudBiomeBuilder.BuildVolcanoCraterLandmark },
+	{ id = "VoxelCrimsonCanopyTree", title = "Crimson Canopy Tree", category = "Tree", catalogScale = 0.62, build = ClassicStudBiomeBuilder.BuildVoxelCrimsonCanopyTree },
 	{ id = "CharredCrimsonTree", title = "Charred Crimson Tree", category = "Tree", catalogScale = 0.68, build = ClassicStudBiomeBuilder.BuildCharredCrimsonTree },
-	{ id = "ObsidianDeadTree", title = "Obsidian Dead Tree", category = "Tree", catalogScale = 0.74, build = ClassicStudBiomeBuilder.BuildObsidianDeadTree },
 	{ id = "MagmaPalmTree", title = "Magma Palm Tree", category = "Tree", catalogScale = 0.72, build = ClassicStudBiomeBuilder.BuildMagmaPalmTree },
 	{ id = "AshEmberGrassTuft", title = "Ash Ember Grass", category = "Flora", catalogScale = 0.95, build = ClassicStudBiomeBuilder.BuildAshEmberGrassTuft },
 	{ id = "BasaltLavaTurfPatch", title = "Basalt & Lava Turf", category = "Flora", catalogScale = 0.82, build = ClassicStudBiomeBuilder.BuildBasaltLavaTurfPatch },
 	{ id = "FirebloomFlowerPatch", title = "Firebloom Flowers", category = "Flora", catalogScale = 0.95, build = ClassicStudBiomeBuilder.BuildFirebloomFlowerPatch },
 	{ id = "ScorchedThornBush", title = "Scorched Thorn Bush", category = "Flora", catalogScale = 0.9, build = ClassicStudBiomeBuilder.BuildScorchedThornBush },
+	{ id = "VolcanicBasaltGateRuin", title = "Basalt Gate Ruin", category = "Prop", catalogScale = 0.56, build = ClassicStudBiomeBuilder.BuildVolcanicBasaltGateRuin },
+	{ id = "VolcanicFireBrazierPillar", title = "Fire Brazier Pillar", category = "Prop", catalogScale = 0.82, build = ClassicStudBiomeBuilder.BuildVolcanicFireBrazierPillar },
 	{ id = "ObsidianMonolithRuins", title = "Obsidian Monolith", category = "Prop", catalogScale = 0.75, build = ClassicStudBiomeBuilder.BuildObsidianMonolithRuins },
 	{ id = "MagmaVentGeyser", title = "Magma Vent Geyser", category = "Prop", catalogScale = 0.85, build = ClassicStudBiomeBuilder.BuildMagmaVentGeyser },
-	{ id = "LavaCrackedBoulder", title = "Lava-Cracked Boulder", category = "Prop", catalogScale = 0.85, build = ClassicStudBiomeBuilder.BuildLavaCrackedBoulder },
 	{ id = "CrimsonCrystalCluster", title = "Crimson Crystals", category = "Prop", catalogScale = 0.9, build = ClassicStudBiomeBuilder.BuildCrimsonCrystalCluster },
-	{ id = "VolcanicSkullBrazier", title = "Volcanic Skull Brazier", category = "Prop", catalogScale = 0.88, build = ClassicStudBiomeBuilder.BuildVolcanicSkullBrazier },
 } :: { AssetSpec }
 
 ClassicStudBiomeBuilder.BIOME_ASSETS_BY_ID = {
