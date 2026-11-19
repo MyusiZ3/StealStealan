@@ -130,8 +130,8 @@ function PlotPrefabSystem.BuildDefaultOpenPlotPrefab(forceRebuild: boolean?): Mo
 	-- 2. Flush Open-Pen Roaming Paddock (no elevated tier above PlotBase)
 	local paddockFloor = PlotVisualBuilder.MakePart({
 		name = "OpenPaddockFloor",
-		size = Vector3.new(52, 0.08, 36),
-		cframe = plotCF * CFrame.new(0, 1.00, 10),
+		size = Vector3.new(40, 0.08, 40),
+		cframe = plotCF * CFrame.new(0, 1.00, 11.5),
 		color = Color3.fromRGB(122, 198, 94),
 		material = Enum.Material.Plastic,
 		materialVariant = "Studs",

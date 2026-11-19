@@ -599,15 +599,17 @@ function PlotVisualBuilder.BuildPenFences(plotModel: Model, plotCF: CFrame, penL
 	folder.Parent = plotModel
 
 	local surfaceY = PlotVisualBuilder.GetPlotSurfaceY(plotCF)
-	-- Fixed front gate at Z = -8.5; rear wall expands +3.5 studs backward (+Z) per level!
+	-- True 1:1 square (40x40) at Lv. 1; fixed front gate at Z = -8.5 and expands +2.5 studs backward (+Z) per level
+	local penWidth = 40.0
+	local xFence = 20.5
 	local zFront = -8.5
-	local penDepth = 24.0 + (lv - 1) * 3.5
+	local penDepth = 40.0 + (lv - 1) * 2.5
 	local zBack = zFront + penDepth
 	local zCenter = (zFront + zBack) * 0.5
 
 	local paddock = plotModel:FindFirstChild("OpenPaddockFloor")
 	if paddock and paddock:IsA("BasePart") then
-		paddock.Size = Vector3.new(52, 0.08, penDepth)
+		paddock.Size = Vector3.new(penWidth, 0.08, penDepth)
 		paddock.CFrame = plotCF * CFrame.new(0, 1.00, zCenter)
 		if tier >= 5 then
 			paddock.Color = Color3.fromRGB(98, 212, 138)
@@ -619,8 +621,8 @@ function PlotVisualBuilder.BuildPenFences(plotModel: Model, plotCF: CFrame, penL
 	end
 
 	-- Extend PlotBase foundation seamlessly backward (+Z) when pen grows beyond default Z=+32
-	if zBack + 3.5 > 32.0 then
-		local extLen = (zBack + 3.5) - 32.0
+	if lv > 1 and (zBack + 2.5 > 32.0) then
+		local extLen = (zBack + 2.5) - 32.0
 		local extMidZ = 32.0 + extLen * 0.5
 		makePart({
 			name = "PlotBaseRearExt",
@@ -634,20 +636,20 @@ function PlotVisualBuilder.BuildPenFences(plotModel: Model, plotCF: CFrame, penL
 		})
 	end
 
-	buildFenceSegment(folder, Vector3.new(-26.5, 0, zBack), Vector3.new(26.5, 0, zBack), plotCF, surfaceY, tier)
-	buildFenceSegment(folder, Vector3.new(-26.5, 0, zFront), Vector3.new(-26.5, 0, zBack), plotCF, surfaceY, tier)
-	buildFenceSegment(folder, Vector3.new(26.5, 0, zFront), Vector3.new(26.5, 0, zBack), plotCF, surfaceY, tier)
-	buildFenceSegment(folder, Vector3.new(-26.5, 0, zFront), Vector3.new(-7.0, 0, zFront), plotCF, surfaceY, tier)
-	buildFenceSegment(folder, Vector3.new(7.0, 0, zFront), Vector3.new(26.5, 0, zFront), plotCF, surfaceY, tier)
+	buildFenceSegment(folder, Vector3.new(-xFence, 0, zBack), Vector3.new(xFence, 0, zBack), plotCF, surfaceY, tier)
+	buildFenceSegment(folder, Vector3.new(-xFence, 0, zFront), Vector3.new(-xFence, 0, zBack), plotCF, surfaceY, tier)
+	buildFenceSegment(folder, Vector3.new(xFence, 0, zFront), Vector3.new(xFence, 0, zBack), plotCF, surfaceY, tier)
+	buildFenceSegment(folder, Vector3.new(-xFence, 0, zFront), Vector3.new(-6.5, 0, zFront), plotCF, surfaceY, tier)
+	buildFenceSegment(folder, Vector3.new(6.5, 0, zFront), Vector3.new(xFence, 0, zFront), plotCF, surfaceY, tier)
 
 	-- Progressive Accessories: Sub-Level +1 (Lanterns + Gate Arch), Sub-Level +2 (Rear Totems + Planter Trim)
 	local pal = PEN_TIER_ACCENTS[tier] or PEN_TIER_ACCENTS[1]
 	if subLevel >= 1 or tier >= 2 then
 		for idx, cLocal in ipairs({
-			Vector3.new(-26.5, 0, zFront),
-			Vector3.new(26.5, 0, zFront),
-			Vector3.new(-26.5, 0, zBack),
-			Vector3.new(26.5, 0, zBack),
+			Vector3.new(-xFence, 0, zFront),
+			Vector3.new(xFence, 0, zFront),
+			Vector3.new(-xFence, 0, zBack),
+			Vector3.new(xFence, 0, zBack),
 		}) do
 			local wp = (plotCF * CFrame.new(cLocal)).Position
 			buildCornerLanternPost(folder, Vector3.new(wp.X, surfaceY, wp.Z), pal, tostring(idx))
@@ -697,8 +699,8 @@ function PlotVisualBuilder.BuildPenFences(plotModel: Model, plotCF: CFrame, penL
 
 	if subLevel >= 2 then
 		local rotOnly = plotCF - plotCF.Position
-		-- 2 Rear Corner Totem / Statue Ornaments + Planter Trim Boxes
-		for sideIdx, sx in ipairs({ -24.0, 24.0 }) do
+		-- Rear Totem / Statue Ornaments + Planter Trim Boxes
+		for sideIdx, sx in ipairs({ -13.0, 0, 13.0 }) do
 			local wp = (plotCF * CFrame.new(sx, 0, zBack - 2.2)).Position
 			makePart({
 				name = "RearTotemBase_" .. sideIdx,
@@ -723,15 +725,15 @@ function PlotVisualBuilder.BuildPenFences(plotModel: Model, plotCF: CFrame, penL
 		end
 
 		for boxIdx, bLocal in ipairs({
-			Vector3.new(-16.5, 0, zFront - 1.4),
-			Vector3.new(16.5, 0, zFront - 1.4),
-			Vector3.new(-27.8, 0, zCenter),
-			Vector3.new(27.8, 0, zCenter),
+			Vector3.new(-13.5, 0, zFront - 1.4),
+			Vector3.new(13.5, 0, zFront - 1.4),
+			Vector3.new(-(xFence + 1.3), 0, zCenter),
+			Vector3.new(xFence + 1.3, 0, zCenter),
 		}) do
 			local bp = (plotCF * CFrame.new(bLocal)).Position
 			makePart({
 				name = "DecoPlanter_" .. boxIdx,
-				size = if math.abs(bLocal.X) > 27 then Vector3.new(1.5, 0.85, 6.0) else Vector3.new(5.6, 0.85, 1.4),
+				size = if math.abs(bLocal.X) > xFence then Vector3.new(1.5, 0.85, 6.0) else Vector3.new(5.6, 0.85, 1.4),
 				cframe = CFrame.new(bp.X, surfaceY + 0.42, bp.Z) * rotOnly,
 				color = pal.trim,
 				material = Enum.Material.SmoothPlastic,
@@ -741,7 +743,7 @@ function PlotVisualBuilder.BuildPenFences(plotModel: Model, plotCF: CFrame, penL
 			})
 			makePart({
 				name = "DecoFlora_" .. boxIdx,
-				size = if math.abs(bLocal.X) > 27 then Vector3.new(1.0, 0.5, 5.2) else Vector3.new(4.8, 0.5, 0.9),
+				size = if math.abs(bLocal.X) > xFence then Vector3.new(1.0, 0.5, 5.2) else Vector3.new(4.8, 0.5, 0.9),
 				cframe = CFrame.new(bp.X, surfaceY + 1.0, bp.Z) * rotOnly,
 				color = pal.glow,
 				material = Enum.Material.Grass,

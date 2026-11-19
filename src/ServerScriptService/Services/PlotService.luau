@@ -395,7 +395,7 @@ local function resolveCrateLocalXZ(crate: Types.CrateInstance, fallbackIdx: numb
 	local idx0 = math.clamp(slotIdx - 1, 0, GameConfig.PEN.MAX_PLACED_CRATES - 1)
 	local col = idx0 % 6
 	local row = math.floor(idx0 / 6)
-	return -20 + col * 8.0, -10 + row * 6.0
+	return -15 + col * 6.0, -10 + row * 6.0
 end
 
 function PlotService.AddCrateToInventory(
@@ -467,8 +467,9 @@ function PlotService.PlaceCrateInPen(player: Player, crateUid: string, targetLoc
 	local plotIdx = playerPlots[player.UserId]
 	local plotModel = if plotIdx then PlotService.GetPlotModel(plotIdx) else nil
 	local paddock = if plotModel then plotModel:FindFirstChild("OpenPaddockFloor") else nil
-	local halfZ = if paddock and paddock:IsA("BasePart") then math.max(9.5, paddock.Size.Z * 0.5 - 2.5) else 14.5
-	local lx = math.clamp(targetLocalX, -22.5, 22.5)
+	local halfX = if paddock and paddock:IsA("BasePart") then math.max(14.0, paddock.Size.X * 0.5 - 2.5) else 17.5
+	local halfZ = if paddock and paddock:IsA("BasePart") then math.max(14.0, paddock.Size.Z * 0.5 - 2.5) else 17.5
+	local lx = math.clamp(targetLocalX, -halfX, halfX)
 	local lz = math.clamp(targetLocalZ, -halfZ, halfZ)
 	local newScale = tonumber(invCrate.sizeScale) or GameConfig.ComputeCrateScale(invCrate.rarity)
 

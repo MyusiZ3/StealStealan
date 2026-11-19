@@ -102,7 +102,7 @@ terrainGroundRayParams.FilterDescendantsInstances = { Workspace.Terrain }
 local function randomLocalPaddockPos(paddockTopY: number?, halfZ: number?): Vector3
 	local topY = paddockTopY or 0.04
 	local hz = math.max(8, math.floor(halfZ or 10))
-	return Vector3.new(math.random(-20, 20), topY, math.random(-hz, hz))
+	return Vector3.new(math.random(-16, 16), topY, math.random(-hz, hz))
 end
 
 local function computeEntityGroundCFrame(paddockCF: CFrame, localX: number, topY: number, localZ: number, hopY: number, yaw: number, footBotRel: number): CFrame
@@ -118,12 +118,12 @@ local function computePenCrateSlotLocalPos(slotIndex: number, localX: number?, l
 	local topY = paddockTopY or 0.04
 	local hz = math.max(9.5, halfZ or 14.5)
 	if type(localX) == "number" and type(localZ) == "number" then
-		return Vector3.new(math.clamp(localX, -22.5, 22.5), topY, math.clamp(localZ, -hz, hz))
+		return Vector3.new(math.clamp(localX, -17.5, 17.5), topY, math.clamp(localZ, -hz, hz))
 	end
 	local idx0 = math.clamp(slotIndex - 1, 0, GameConfig.PEN.MAX_PLACED_CRATES - 1)
 	local col = idx0 % 6
 	local row = math.floor(idx0 / 6)
-	local x = -20 + col * 8.0
+	local x = -15 + col * 6.0
 	local zSpan = math.min(hz * 1.6, 28.0)
 	local z = -zSpan * 0.5 + row * (zSpan / 4.0)
 	return Vector3.new(x, topY, z)
@@ -705,8 +705,9 @@ local function evaluatePenPlacement(): (boolean, number, number, Vector3?, BaseP
 	end
 
 	local rel = myPaddock.CFrame:PointToObjectSpace(res.Position)
-	local halfZ = math.max(9.5, myPaddock.Size.Z * 0.5 - 2.5)
-	local lx = math.clamp(rel.X, -22.5, 22.5)
+	local halfX = math.max(14.0, myPaddock.Size.X * 0.5 - 2.5)
+	local halfZ = math.max(14.0, myPaddock.Size.Z * 0.5 - 2.5)
+	local lx = math.clamp(rel.X, -halfX, halfX)
 	local lz = math.clamp(rel.Z, -halfZ, halfZ)
 	local valid = true
 
