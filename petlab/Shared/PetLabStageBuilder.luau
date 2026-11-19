@@ -16,6 +16,7 @@ local VoxelPets = require(ReplicatedStorage.Modules.VoxelPets)
 local AnimalVisualBuilder = require(ReplicatedStorage.Modules.AnimalVisualBuilder)
 local VoxelCrateBuilder = require(ReplicatedStorage.Modules.VoxelCrateBuilder)
 local ClassicStudBiomeBuilder = require(ReplicatedStorage.Modules.ClassicStudBiomeBuilder)
+local VoxelFusionMachineBuilder = require(ReplicatedStorage.Modules.VoxelFusionMachineBuilder)
 
 local PetLabStageBuilder = {}
 
@@ -901,6 +902,66 @@ function PetLabStageBuilder.BuildStage(): Folder
 		subtitle = "[PRIMORDIAL CRATE • VOXEL 3D]  [E] Inspect",
 		parent = stage,
 	})
+
+	-- 3b. Hero Sci-Fi Voxel Pet Fusion Machine Showcase (5-View Design)
+	local fusionCF = CFrame.new(ttX + 22.0, PetLabStageBuilder.SHOWROOM_FLOOR_Y, ttZ) * CFrame.Angles(0, math.rad(180), 0)
+	local fusionShowcase = VoxelFusionMachineBuilder.Build(fusionCF, 0.95, {
+		withPrompt = true,
+		withLabel = true,
+		parent = stage,
+	})
+	fusionShowcase.Name = "Showcase_FusionMachine"
+
+	-- Placard for Fusion Machine Showcase
+	local fusionTagAnchor = makePart({
+		name = "TagAnchor_FusionMachine",
+		size = Vector3.new(0.2, 0.2, 0.2),
+		cframe = CFrame.new(ttX + 22.0, PetLabStageBuilder.SHOWROOM_FLOOR_Y + 1.2, ttZ - 10.5),
+		color = Color3.fromRGB(36, 34, 46),
+		canCollide = false,
+		parent = fusionShowcase,
+	})
+	local fusionCardGui = Instance.new("BillboardGui")
+	fusionCardGui.Name = "PlacardGui"
+	fusionCardGui.Size = UDim2.fromOffset(260, 68)
+	fusionCardGui.StudsOffset = Vector3.new(0, 0.8, 0)
+	fusionCardGui.AlwaysOnTop = false
+	fusionCardGui.MaxDistance = 90
+	fusionCardGui.Parent = fusionTagAnchor
+
+	local fCard = Instance.new("Frame")
+	fCard.Size = UDim2.fromScale(1, 1)
+	fCard.BackgroundColor3 = Color3.fromRGB(22, 18, 32)
+	fCard.BackgroundTransparency = 0.08
+	fCard.BorderSizePixel = 0
+	local fCorner = Instance.new("UICorner")
+	fCorner.CornerRadius = UDim.new(0, 10)
+	fCorner.Parent = fCard
+	local fStroke = Instance.new("UIStroke")
+	fStroke.Color = Color3.fromRGB(225, 65, 255)
+	fStroke.Thickness = 2.2
+	fStroke.Parent = fCard
+	fCard.Parent = fusionCardGui
+
+	local fTitle = Instance.new("TextLabel")
+	fTitle.Size = UDim2.new(0.94, 0, 0.48, 0)
+	fTitle.Position = UDim2.new(0.03, 0, 0.06, 0)
+	fTitle.BackgroundTransparency = 1
+	fTitle.Font = Enum.Font.FredokaOne
+	fTitle.TextScaled = true
+	fTitle.TextColor3 = Color3.fromRGB(255, 235, 120)
+	fTitle.Text = "VOXEL FUSION MACHINE"
+	fTitle.Parent = fCard
+
+	local fSub = Instance.new("TextLabel")
+	fSub.Size = UDim2.new(0.94, 0, 0.38, 0)
+	fSub.Position = UDim2.new(0.03, 0, 0.54, 0)
+	fSub.BackgroundTransparency = 1
+	fSub.Font = Enum.Font.GothamBold
+	fSub.TextScaled = true
+	fSub.TextColor3 = Color3.fromRGB(225, 65, 255)
+	fSub.Text = "[PET SYNTHESIS ALTAR • 5-VIEW VOXEL]"
+	fSub.Parent = fCard
 
 	-- 4. Dark Checkerboard Showroom Floor (8-stud tiles covering X = -64..64, Z = -168..32) & Back Wall
 	local checkerFolder = Instance.new("Folder")

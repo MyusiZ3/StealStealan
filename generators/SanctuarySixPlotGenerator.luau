@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local PlotVisualBuilder = require(ReplicatedStorage.Modules.PlotVisualBuilder)
 local PlotPrefabSystem = require(ReplicatedStorage.Modules.PlotPrefabSystem)
 local DefaultBiomeBuilder = require(ReplicatedStorage.Modules.ClassicStudBiomeBuilder)
+local VoxelFusionMachineBuilder = require(ReplicatedStorage.Modules.VoxelFusionMachineBuilder)
 
 local SanctuarySixPlotGenerator = {}
 
@@ -403,27 +404,17 @@ function SanctuarySixPlotGenerator.Build(worldFolder: Folder, builderOverride: a
 		return outerRing
 	end
 
-	-- 3. FRONT-LEFT PLAZA (Z ~ 120..132): Merge Pets Machine (using Hero_RebirthPortal 3D) + Lasso Shop!
+	-- 3. FRONT-LEFT PLAZA (Z ~ 120..132): Sci-Fi Fantasy Voxel Fusion Machine (5-View Design) + Lasso Shop!
 	local fuseZone = Instance.new("Model")
 	fuseZone.Name = "FuseAndMergePlaza"
 	fuseZone.Parent = hub
 
-	local fuseHero = cloneCuratedModel("Hero_RebirthPortal", CFrame.new(-56, 5.5, 128) * CFrame.Angles(0, math.rad(165), 0), 0.78, fuseZone, 0.45)
-		or cloneCuratedModel("Hero_FuseMachine_HQ", CFrame.new(-56, 5.5, 128) * CFrame.Angles(0, math.rad(165), 0), 1.18, fuseZone, 0.45)
-	local mergeAnchor = makePart({
-		name = "MergePromptAnchor",
-		size = Vector3.new(6, 5, 6),
-		cframe = CFrame.new(-56, 3.0, 126.5),
-		color = Color3.fromRGB(168, 92, 255),
-		canCollide = false,
-		canQuery = false,
-		transparency = if fuseHero then 1 else 0.2,
+	local fuseMachineCF = CFrame.new(-56, 0.45, 128) * CFrame.Angles(0, math.rad(165), 0)
+	VoxelFusionMachineBuilder.Build(fuseMachineCF, 1.0, {
+		withPrompt = true,
+		withLabel = true,
 		parent = fuseZone,
 	})
-	local mergePrompt = addPrompt(mergeAnchor, "Hold [E] to Merge Pets", "Merge Machine", "FusePrompt")
-	mergePrompt.HoldDuration = 0.6
-	mergePrompt.MaxActivationDistance = 16
-	addFloatingBoothLabel(Vector3.new(-56, 13.8, 128), "Merge Pets", Color3.fromRGB(142, 212, 255))
 
 	-- Lasso Shop right beside Merge Machine on the Front-Left!
 	cloneCuratedModel("Hero_ShopBooth", CFrame.new(-34, 6, 132) * CFrame.Angles(0, math.rad(180), 0), 0.95, hub, 0.45, true)
