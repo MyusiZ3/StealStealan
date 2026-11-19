@@ -27,6 +27,7 @@ type PoacherAgent = {
 	zMax: number,
 	model: Model,
 	root: Part,
+	hitbox: Part,
 	waypoints: { Vector3 },
 	wpIndex: number,
 	baseScale: number,
@@ -92,7 +93,7 @@ local ENEMY_TIERS: { [string]: { emoji: string, label: string, color: Color3 } }
 	VolcanicJungle = { emoji = "😈", label = "Nightmare", color = Color3.fromRGB(218, 76, 255) },
 }
 
-local function buildPoacherModel(name: string, isBoss: boolean, biomeId: string, accentColor: Color3, pos: Vector3, parent: Instance): (Model, Part, number)
+local function buildPoacherModel(name: string, isBoss: boolean, biomeId: string, accentColor: Color3, pos: Vector3, parent: Instance): (Model, Part, Part, number)
 	local ca = ReplicatedStorage:FindFirstChild("CuratedAssets")
 	local heroSrc = if ca then ca:FindFirstChild("Hero_PoacherBoss") else nil
 
@@ -105,10 +106,26 @@ local function buildPoacherModel(name: string, isBoss: boolean, biomeId: string,
 	root.Size = Vector3.new(3.5 * scale, 5.5 * scale, 3.5 * scale)
 	root.Anchored = true
 	root.CanCollide = false
+	root.CanTouch = false
+	root.CanQuery = false
 	root.Transparency = 1
 	root.CFrame = CFrame.new(pos)
 	root.Parent = m
 	m.PrimaryPart = root
+
+	local hitbox = Instance.new("Part")
+	hitbox.Name = "HitboxTrigger"
+	hitbox.Shape = Enum.PartType.Block
+	hitbox.Size = if isBoss then Vector3.new(9.5, 9.0, 9.5) else Vector3.new(6.8, 7.2, 6.8)
+	hitbox.Transparency = 1
+	hitbox.Anchored = true
+	hitbox.CanCollide = false
+	hitbox.CanTouch = true
+	hitbox.CanQuery = true
+	hitbox.CFrame = CFrame.new(pos)
+	hitbox:SetAttribute("PoacherBiomeId", biomeId)
+	hitbox:SetAttribute("IsBoss", isBoss)
+	hitbox.Parent = m
 
 	if heroSrc and heroSrc:IsA("Model") then
 		local clone = heroSrc:Clone()
@@ -167,7 +184,7 @@ local function buildPoacherModel(name: string, isBoss: boolean, biomeId: string,
 	lblSt.Parent = lbl
 
 	m.Parent = parent
-	return m, root, scale
+	return m, root, hitbox, scale
 end
 
 function PoacherAISystem.Init()
@@ -179,6 +196,57 @@ function PoacherAISystem.Init()
 	activeFolder = Instance.new("Folder")
 	activeFolder.Name = "ActivePoachers"
 	activeFolder.Parent = gw
+
+	local lastCatchTick: { [number]: number } = {}
+
+	local function tryCatchPlayer(ag: PoacherAgent, player: Player, now: number)
+		if not hasAggroInBiome(player.UserId, ag.biomeId) or AdminService.HasGodMode(player) then
+			return
+		end
+		local char = player.Character
+		local pRoot = if char then char:FindFirstChild("HumanoidRootPart") else nil
+		if not pRoot or not pRoot:IsA("BasePart") or pRoot.Position.Z <= GameConfig.WORLD.SAFE_ZONE_Z_MAX + 3 then
+			return
+		end
+		if (now - (lastCatchTick[player.UserId] or 0)) <= 2.2 then
+			return
+		end
+		lastCatchTick[player.UserId] = now
+		local shields = playerShields[player.UserId] or 0
+		if shields > 0 then
+			playerShields[player.UserId] = shields - 1
+			Remotes.Get("NotifyClient"):FireClient(player, "Armor Shield absorbed Poacher tackle!", Color3.fromRGB(255, 206, 62))
+		else
+			local away = Vector3.new(pRoot.Position.X - ag.root.Position.X, 0, pRoot.Position.Z - ag.root.Position.Z)
+			if away.Magnitude < 0.1 then
+				away = Vector3.new(0, 0, -1)
+			else
+				away = away.Unit
+			end
+			local horizSpeed = if ag.isBoss then 118 else 98
+			local liftY = if ag.isBoss then 66 else 56
+			local knockDir = Vector3.new(away.X * horizSpeed, liftY, (away.Z - 0.35) * horizSpeed)
+			player:SetAttribute("StunnedUntil", os.clock() + 1.65)
+			Remotes.Get("PlayerKnockback"):FireClient(player, knockDir, 1.55)
+
+			PoacherAISystem.ClearBiomeAggro(player, nil)
+			for _, cb in ipairs(onCatchCallbacks) do
+				cb(player, pRoot.Position)
+			end
+			Remotes.Get("NotifyClient"):FireClient(player, ag.model.Name .. " tackled you! Pick up your dropped crate within 50s!", Color3.fromRGB(255, 118, 72))
+		end
+	end
+
+	local function bindHitboxTouch(ag: PoacherAgent)
+		ag.hitbox.Touched:Connect(function(hit)
+			local char = hit and hit.Parent
+			if not char or not char:IsA("Model") then return end
+			local p = Players:GetPlayerFromCharacter(char)
+			if p then
+				tryCatchPlayer(ag, p, os.clock())
+			end
+		end)
+	end
 
 	for _, biome in ipairs(BiomeConfig) do
 		local bFolder = biomesFolder:FindFirstChild(biome.id)
@@ -199,8 +267,8 @@ function PoacherAISystem.Init()
 		end
 
 		-- Spawn 2 Biome-Scoped Patrol Guards & 1 Biome Boss
-		local guard1M, guard1Root, g1Scale = buildPoacherModel(biome.id .. " Guard #1", false, biome.id, biome.accentColor, waypoints[1], activeFolder)
-		table.insert(agents, {
+		local guard1M, guard1Root, guard1Hitbox, g1Scale = buildPoacherModel(biome.id .. " Guard #1", false, biome.id, biome.accentColor, waypoints[1], activeFolder)
+		local ag1: PoacherAgent = {
 			id = biome.id .. "_Guard1",
 			biomeId = biome.id,
 			isBoss = false,
@@ -210,14 +278,17 @@ function PoacherAISystem.Init()
 			zMax = biome.zEnd - 8,
 			model = guard1M,
 			root = guard1Root,
+			hitbox = guard1Hitbox,
 			waypoints = waypoints,
 			wpIndex = 2,
 			baseScale = g1Scale,
-		})
+		}
+		table.insert(agents, ag1)
+		bindHitboxTouch(ag1)
 
 		local g2Start = waypoints[#waypoints]
-		local guard2M, guard2Root, g2Scale = buildPoacherModel(biome.id .. " Guard #2", false, biome.id, biome.accentColor, g2Start, activeFolder)
-		table.insert(agents, {
+		local guard2M, guard2Root, guard2Hitbox, g2Scale = buildPoacherModel(biome.id .. " Guard #2", false, biome.id, biome.accentColor, g2Start, activeFolder)
+		local ag2: PoacherAgent = {
 			id = biome.id .. "_Guard2",
 			biomeId = biome.id,
 			isBoss = false,
@@ -227,14 +298,17 @@ function PoacherAISystem.Init()
 			zMax = biome.zEnd - 8,
 			model = guard2M,
 			root = guard2Root,
+			hitbox = guard2Hitbox,
 			waypoints = waypoints,
 			wpIndex = math.max(1, #waypoints - 1),
 			baseScale = g2Scale,
-		})
+		}
+		table.insert(agents, ag2)
+		bindHitboxTouch(ag2)
 
 		local bossPos = waypoints[math.min(3, #waypoints)]
-		local bossM, bossRoot, bScale = buildPoacherModel(biome.bossName, true, biome.id, Color3.fromRGB(255, 62, 62), bossPos, activeFolder)
-		table.insert(agents, {
+		local bossM, bossRoot, bossHitbox, bScale = buildPoacherModel(biome.bossName, true, biome.id, Color3.fromRGB(255, 62, 62), bossPos, activeFolder)
+		local agBoss: PoacherAgent = {
 			id = biome.id .. "_Boss",
 			biomeId = biome.id,
 			isBoss = true,
@@ -244,13 +318,14 @@ function PoacherAISystem.Init()
 			zMax = biome.zEnd - 8,
 			model = bossM,
 			root = bossRoot,
+			hitbox = bossHitbox,
 			waypoints = waypoints,
 			wpIndex = 1,
 			baseScale = bScale,
-		})
+		}
+		table.insert(agents, agBoss)
+		bindHitboxTouch(agBoss)
 	end
-
-	local lastCatchTick: { [number]: number } = {}
 
 	RunService.Heartbeat:Connect(function(dt: number)
 		local now = os.clock()
@@ -319,37 +394,20 @@ function PoacherAISystem.Init()
 				ag.wpIndex = (ag.wpIndex % #ag.waypoints) + 1
 			end
 
-			-- Horizontal XZ-plane hit detection scoped strictly to players aggroed on THIS biome
+			-- Instant HitboxTrigger overlap + radial proximity detection
 			for _, player in ipairs(Players:GetPlayers()) do
 				if hasAggroInBiome(player.UserId, ag.biomeId) and not AdminService.HasGodMode(player) then
 					local char = player.Character
 					local pRoot = if char then char:FindFirstChild("HumanoidRootPart") else nil
 					if pRoot and pRoot:IsA("BasePart") and pRoot.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX + 3 then
+						local localHit = ag.hitbox.CFrame:PointToObjectSpace(pRoot.Position)
+						local inBox = math.abs(localHit.X) <= (ag.hitbox.Size.X * 0.5 + 1.2)
+							and math.abs(localHit.Z) <= (ag.hitbox.Size.Z * 0.5 + 1.2)
+							and math.abs(localHit.Y) <= (ag.hitbox.Size.Y * 0.5 + 2.0)
 						local xzDist = Vector2.new(pRoot.Position.X - ag.root.Position.X, pRoot.Position.Z - ag.root.Position.Z).Magnitude
-						local catchRadius = if ag.isBoss then 7.2 else 5.4
-						if xzDist <= catchRadius and (now - (lastCatchTick[player.UserId] or 0)) > 2.5 then
-							lastCatchTick[player.UserId] = now
-							local shields = playerShields[player.UserId] or 0
-							if shields > 0 then
-								playerShields[player.UserId] = shields - 1
-								Remotes.Get("NotifyClient"):FireClient(player, "Armor Shield absorbed Poacher tackle!", Color3.fromRGB(255, 206, 62))
-							else
-								local away = Vector3.new(pRoot.Position.X - ag.root.Position.X, 0, pRoot.Position.Z - ag.root.Position.Z)
-								if away.Magnitude < 0.1 then
-									away = Vector3.new(0, 0, -1)
-								else
-									away = away.Unit
-								end
-								local knockDir = Vector3.new(away.X * 68, 36, (away.Z - 0.35) * 68)
-								player:SetAttribute("StunnedUntil", os.clock() + 1.5)
-								Remotes.Get("PlayerKnockback"):FireClient(player, knockDir, 1.4)
-
-								PoacherAISystem.ClearBiomeAggro(player, nil)
-								for _, cb in ipairs(onCatchCallbacks) do
-									cb(player, pRoot.Position)
-								end
-								Remotes.Get("NotifyClient"):FireClient(player, ag.model.Name .. " tackled you! Pick up your dropped crate within 50s!", Color3.fromRGB(255, 118, 72))
-							end
+						local catchRadius = if ag.isBoss then 8.2 else 6.2
+						if inBox or xzDist <= catchRadius then
+							tryCatchPlayer(ag, player, now)
 						end
 					end
 				end

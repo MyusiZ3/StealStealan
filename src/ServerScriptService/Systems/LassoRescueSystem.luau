@@ -120,21 +120,20 @@ local function makeAnnounceItem(rarity: Types.AnimalRarity, biomeId: string, mut
 	}
 end
 
-local function announceCrateSpawn(rarity: Types.AnimalRarity, crateTitle: string, biomeId: string, mutation: Types.AnimalMutation?)
+local function announceCrateSpawn(rarity: Types.AnimalRarity, crateTitle: string, biomeId: string, _mutation: Types.AnimalMutation?)
 	local zoneName = BIOME_ZONE_NAMES[biomeId] or biomeId
 	local icon = RARITY_ANNOUNCE_ICON[rarity] or "📦"
 	local col = GameConfig.RARITY_COLORS[rarity] or Color3.fromRGB(255, 224, 92)
-	local mutStr = if mutation and mutation ~= "None" then string.format(" [%s]", string.upper(mutation)) else ""
-	local fallbackMsg = string.format("%s %s Crate%s Spawned In %s!", icon, rarity, mutStr, zoneName)
+	local fallbackMsg = string.format("%s %s Crate Spawned In %s!", icon, rarity, zoneName)
 	Remotes.Get("CrateSpawnAnnounce"):FireAllClients({
 		isWaveReset = false,
-		items = { makeAnnounceItem(rarity, biomeId, mutation) },
+		items = { makeAnnounceItem(rarity, biomeId, "None") },
 		message = fallbackMsg,
 		rarity = rarity,
 		crateTitle = crateTitle,
 		biomeId = biomeId,
 		zoneName = zoneName,
-		mutation = mutation or "None",
+		mutation = "None",
 		color = col,
 	})
 end
@@ -187,7 +186,7 @@ local function announceWaveResetBatch(headerText: string, crates: { WorldCrate }
 
 	local items = {}
 	for _, c in ipairs(chosen) do
-		table.insert(items, makeAnnounceItem(c.rarity, c.biomeId, c.customMutation))
+		table.insert(items, makeAnnounceItem(c.rarity, c.biomeId, "None"))
 	end
 	Remotes.Get("CrateSpawnAnnounce"):FireAllClients({
 		isWaveReset = true,
@@ -273,7 +272,8 @@ local function spawnCrateAt(
 	forcedRarity: Types.AnimalRarity?,
 	announceSpawn: boolean?,
 	forcedSpeciesId: string?,
-	forcedMutation: Types.AnimalMutation?
+	forcedMutation: Types.AnimalMutation?,
+	forcedSizeRatio: number?
 ): WorldCrate?
 	local cratesFolder = Workspace:FindFirstChild("GameWorld") and Workspace.GameWorld:FindFirstChild("ActiveCrates")
 	if not cratesFolder then return nil end
@@ -286,7 +286,10 @@ local function spawnCrateAt(
 		elseif isOnboarding then (AnimalConfig.GetById("RustyFox") or AnimalConfig.ALL[1])
 		else AnimalConfig.RollSpeciesForBiome(biomeId, luckMult, AdminService.GetRarityWeightOverrides())
 	local rarity = forcedRarity or spec.rarity
-	local preSizeRatio = if isOnboarding then 1.0 else AnimalConfig.RollSizeRatio(AdminService.GetGiantSizeMultiplier())
+	local preSizeRatio = if type(forcedSizeRatio) == "number" and forcedSizeRatio > 0
+		then math.clamp(forcedSizeRatio, 0.4, 12.0)
+		elseif isOnboarding then 1.0
+		else AnimalConfig.RollSizeRatio(AdminService.GetGiantSizeMultiplier(), AdminService.GetSizeBracketOverrides())
 	local sizeScale = GameConfig.ComputeCrateScale(rarity, preSizeRatio)
 	local mutLuck = PassManager.GetServerLuckMultiplier() * AdminService.GetMutationLuckMultiplier()
 	local preMutation: Types.AnimalMutation = if forcedMutation
@@ -308,28 +311,16 @@ local function spawnCrateAt(
 	model:SetAttribute("CrateVariant", variantIdx)
 	model:SetAttribute("SizeScale", sizeScale)
 	model:SetAttribute("Resistance", resistance)
-	model:SetAttribute("Mutation", preMutation)
+	-- Mutation hidden on wild biome crates until unboxed at player pen!
+	model:SetAttribute("Mutation", "None")
 	model:PivotTo(CFrame.new(spawnPos))
 
-	local mutMeta = if preMutation ~= "None" then (GameConfig.MUTATIONS :: any)[preMutation] else nil
-	if mutMeta then
-		local hl = Instance.new("Highlight")
-		hl.Name = "WildMutationHighlight"
-		hl.Adornee = model
-		hl.DepthMode = Enum.HighlightDepthMode.Occluded
-		hl.FillColor = mutMeta.color
-		hl.FillTransparency = 0.72
-		hl.OutlineColor = Color3.new(1, 1, 1)
-		hl.OutlineTransparency = 0.15
-		hl.Parent = model
-	end
-
-	-- Clean 2-Line Floating Crate Label (Image 11 style: Crate Name top + Rarity bottom, NO dark box!)
+	-- Clean 2-Line Floating Crate Label (Crate Name + Rarity only; mutation is revealed on hatch)
 	local root = model.PrimaryPart :: BasePart
 	local bb = Instance.new("BillboardGui")
 	bb.Size = UDim2.fromOffset(195, 54)
 	bb.StudsOffset = Vector3.new(0, 4.4 * sizeScale + 1.1, 0)
-	bb.MaxDistance = if GameConfig.IsCosmicOrAbove(rarity) or mutMeta then 135 else 85
+	bb.MaxDistance = if GameConfig.IsCosmicOrAbove(rarity) then 135 else 85
 	if GameConfig.IsCosmicOrAbove(rarity) then
 		bb:SetAttribute("CosmicRarity", rarity)
 	end
@@ -339,8 +330,8 @@ local function spawnCrateAt(
 	lbl.Name = "CrateTitleLabel"
 	lbl.Size = UDim2.fromScale(1, 0.52)
 	lbl.BackgroundTransparency = 1
-	lbl.Text = if mutMeta then string.format("[%s] %s", string.upper(mutMeta.label), crateTitle) else crateTitle
-	lbl.TextColor3 = if mutMeta then mutMeta.color else Color3.new(1, 1, 1)
+	lbl.Text = crateTitle
+	lbl.TextColor3 = Color3.new(1, 1, 1)
 	lbl.Font = Enum.Font.FredokaOne
 	lbl.TextScaled = true
 	lbl.Parent = bb
@@ -1094,14 +1085,14 @@ function LassoRescueSystem.SpawnCrateRain()
 	announceWaveResetBatch("CRATE RAIN!", rainBest)
 end
 
-function LassoRescueSystem.SpawnCustomCrate(biomeId: string, rarity: Types.AnimalRarity?, speciesId: string?, nearPos: Vector3?, forcedMutation: Types.AnimalMutation?): boolean
+function LassoRescueSystem.SpawnCustomCrate(biomeId: string, rarity: Types.AnimalRarity?, speciesId: string?, nearPos: Vector3?, forcedMutation: Types.AnimalMutation?, forcedSizeRatio: number?): boolean
 	local biome = getBiomeDef(biomeId)
 	local lastBiome = BiomeConfig[#BiomeConfig]
 	local maxWorldZ = if lastBiome then (lastBiome.zEnd - 10) else biome.zEnd - 10
 	local pos = if nearPos
 		then Vector3.new(math.clamp(nearPos.X, -82, 82), math.max(0.2, nearPos.Y - 2), math.clamp(nearPos.Z, GameConfig.WORLD.SAFE_ZONE_Z_MAX + 12, maxWorldZ))
 		else sampleBiomeCrateGroundPos(biome)
-	local rec = spawnCrateAt(biome.id, pos, false, rarity, true, speciesId, forcedMutation)
+	local rec = spawnCrateAt(biome.id, pos, false, rarity, true, speciesId, forcedMutation, forcedSizeRatio)
 	return rec ~= nil
 end
 
@@ -1131,8 +1122,8 @@ function LassoRescueSystem.Init()
 	cratesFolder.Parent = gw
 
 	AdminService.RegisterCrateRainCallback(LassoRescueSystem.SpawnCrateRain)
-	AdminService.RegisterWorldSpawnerCallback(function(bId, rar, spId, nearP)
-		return LassoRescueSystem.SpawnCustomCrate(bId, rar, spId, nearP)
+	AdminService.RegisterWorldSpawnerCallback(function(bId, rar, spId, nearP, mut, szRatio)
+		return LassoRescueSystem.SpawnCustomCrate(bId, rar, spId, nearP, mut, szRatio)
 	end)
 	AdminService.RegisterWaveResetCallback(LassoRescueSystem.TriggerImmediateWaveReset)
 	AdminService.RegisterKillCleanupCallback(function(p, pos)
@@ -1206,7 +1197,10 @@ function LassoRescueSystem.Init()
 					if #candidates > 0 then
 						local picked = candidates[math.random(1, #candidates)]
 						local pos = sampleBiomeCrateGroundPos(picked)
-						spawnCrateAt(picked.id, pos, false, nil, true)
+						local rec = spawnCrateAt(picked.id, pos, false, nil, false)
+						if rec and GameConfig.GetRarityTier(rec.rarity) >= 5 then
+							announceCrateSpawn(rec.rarity, rec.crateTitle, rec.biomeId, nil)
+						end
 					end
 				end
 

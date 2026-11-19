@@ -2,6 +2,7 @@
 -- RescueClient.client.luau
 -- Renders the glowing Lasso Beam during crate extraction, Pull Progress + Tap Boost UI, Slow Mode brake, & 60s Onboarding Arrow
 
+local Debris = game:GetService("Debris")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
@@ -294,11 +295,76 @@ local function updateBeam(cratePos: Vector3?)
 	end
 end
 
+local lastTapBoostAnimAt = 0
+local savedMotorC0: { [Motor6D]: CFrame } = {}
+
+local function restorePullMotors()
+	for motor, origC0 in pairs(savedMotorC0) do
+		if motor.Parent then
+			motor.C0 = origC0
+		end
+	end
+	table.clear(savedMotorC0)
+end
+
+local function applyMotorOffset(motor: Instance?, rotOffset: CFrame)
+	if not motor or not motor:IsA("Motor6D") then return end
+	if not savedMotorC0[motor] then
+		savedMotorC0[motor] = motor.C0
+	end
+	motor.C0 = savedMotorC0[motor] * rotOffset
+end
+
+local function updatePullingCharacterPose(cratePos: Vector3?)
+	if not isPullActive or not cratePos then
+		if next(savedMotorC0) ~= nil then
+			restorePullMotors()
+		end
+		return
+	end
+	local char = localPlayer.Character
+	local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
+	local hum = if char then char:FindFirstChildOfClass("Humanoid") else nil
+	if not char or not root or not root:IsA("BasePart") or not hum then
+		return
+	end
+
+	-- Face the crate smoothly while pulling
+	local flatTarget = Vector3.new(cratePos.X, root.Position.Y, cratePos.Z)
+	if (flatTarget - root.Position).Magnitude > 0.5 then
+		root.CFrame = root.CFrame:Lerp(CFrame.lookAt(root.Position, flatTarget), 0.25)
+	end
+
+	local t = os.clock()
+	local tapPulse = math.max(0, 1 - (t - lastTapBoostAnimAt) / 0.18)
+	local rightTug = math.sin(t * 11.5) * 0.42 + tapPulse * 0.48
+	local leftTug = math.sin(t * 11.5 + math.pi * 0.65) * 0.42 + tapPulse * 0.48
+	local leanBack = -14 - ((rightTug + leftTug) * 0.5) * 12
+
+	if hum.RigType == Enum.HumanoidRigType.R15 then
+		local rUpper = char:FindFirstChild("RightUpperArm")
+		local lUpper = char:FindFirstChild("LeftUpperArm")
+		local lowerTorso = char:FindFirstChild("LowerTorso")
+		applyMotorOffset(if rUpper then rUpper:FindFirstChild("RightShoulder") else nil, CFrame.Angles(math.rad(75 + rightTug * 28), 0, math.rad(-12)))
+		applyMotorOffset(if lUpper then lUpper:FindFirstChild("LeftShoulder") else nil, CFrame.Angles(math.rad(75 + leftTug * 28), 0, math.rad(12)))
+		applyMotorOffset(if lowerTorso then lowerTorso:FindFirstChild("Root") else nil, CFrame.Angles(math.rad(leanBack), 0, 0))
+	else
+		local torso = char:FindFirstChild("Torso")
+		applyMotorOffset(if torso then torso:FindFirstChild("Right Shoulder") else nil, CFrame.Angles(0, 0, math.rad(75 + rightTug * 28)))
+		applyMotorOffset(if torso then torso:FindFirstChild("Left Shoulder") else nil, CFrame.Angles(0, 0, math.rad(-(75 + leftTug * 28))))
+		applyMotorOffset(root:FindFirstChild("RootJoint"), CFrame.Angles(math.rad(-leanBack * 0.65), 0, 0))
+	end
+end
+
 RunService.RenderStepped:Connect(function()
 	if isPullActive and activeCratePos then
 		updateBeam(activeCratePos)
-	elseif beamPart then
-		destroyLassoRopeVisuals()
+		updatePullingCharacterPose(activeCratePos)
+	else
+		if beamPart then
+			destroyLassoRopeVisuals()
+		end
+		updatePullingCharacterPose(nil)
 	end
 end)
 
@@ -349,6 +415,7 @@ end
 
 UserInputService.InputBegan:Connect(function(input, gp)
 	if isPullActive and (input.KeyCode == Enum.KeyCode.Space or (not gp and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch))) then
+		lastTapBoostAnimAt = os.clock()
 		Remotes.Get("LassoTapBoost"):FireServer()
 		return
 	end
@@ -364,7 +431,7 @@ localPlayer.AttributeChanged:Connect(function(attr)
 	end
 end)
 
--- Ragdoll / Knockback handler when tackled by Poacher or Boss (no teleport to base!)
+-- Smooth long parabolic Ragdoll / Knockback handler when tackled by Poacher or Boss
 Remotes.Get("PlayerKnockback").OnClientEvent:Connect(function(knockVel: Vector3, stunDuration: number)
 	local char = localPlayer.Character
 	local hum = if char then char:FindFirstChildOfClass("Humanoid") else nil
@@ -377,10 +444,25 @@ Remotes.Get("PlayerKnockback").OnClientEvent:Connect(function(knockVel: Vector3,
 	pcall(function()
 		hum:ChangeState(Enum.HumanoidStateType.Physics)
 	end)
+	-- Lift slightly off ground so floor friction never kills frame-1 parabolic impulse
+	root.CFrame = root.CFrame + Vector3.new(0, 1.1, 0)
 	root.AssemblyLinearVelocity = knockVel
-	root.AssemblyAngularVelocity = Vector3.new(math.random(-6, 6), math.random(-6, 6), math.random(-6, 6))
+	root.AssemblyAngularVelocity = Vector3.new(-10, math.random(-8, 8), math.random(-8, 8))
 
-	task.delay(tonumber(stunDuration) or 1.4, function()
+	local att = Instance.new("Attachment")
+	att.Name = "KnockbackThrustAtt"
+	att.Parent = root
+	local lv = Instance.new("LinearVelocity")
+	lv.Name = "KnockbackLinearVel"
+	lv.Attachment0 = att
+	lv.MaxForce = 1e6
+	lv.VectorVelocity = knockVel
+	lv.RelativeTo = Enum.ActuatorRelativeTo.World
+	lv.Parent = root
+	Debris:AddItem(lv, 0.20)
+	Debris:AddItem(att, 0.22)
+
+	task.delay(tonumber(stunDuration) or 1.55, function()
 		if hum.Parent then
 			hum.PlatformStand = false
 			pcall(function()

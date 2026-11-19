@@ -5190,6 +5190,16 @@ local function renderSettingsModal()
 		Remotes.Get("UpdateSettings"):FireServer({ lowVFX = not viewCratesEnabled })
 		renderSettingsModal()
 	end)
+	local cutsceneOn = ((s :: any).hatchCutsceneEnabled ~= false)
+	addSwitchRow("Hatch Cutscene (Epic+)", cutsceneOn, function()
+		playClickSFX()
+		local nextVal = not cutsceneOn
+		if profile and type(profile.settings) == "table" then
+			(profile.settings :: any).hatchCutsceneEnabled = nextVal
+		end
+		Remotes.Get("UpdateSettings"):FireServer({ hatchCutsceneEnabled = nextVal })
+		renderSettingsModal()
+	end)
 
 	-- Graphics Quality Cyclic Row (Low | Medium | High)
 	local gRow = Instance.new("Frame")
@@ -5744,11 +5754,13 @@ end)
 
 Remotes.Get("GlobalEventBanner").OnClientEvent:Connect(function(msg, color, duration)
 	local col = if typeof(color) == "Color3" then color else Color3.fromRGB(255, 214, 64)
+	local dur = tonumber(duration) or 8
 	eventBanner.Text = tostring(msg)
 	eventBanner.TextColor3 = col
 	eventBannerStroke.Color = col
+	eventBanner:SetAttribute("ExpiresAt", os.clock() + dur + 0.25)
 	eventBanner.Visible = true
-	task.delay(tonumber(duration) or 8, function()
+	task.delay(dur, function()
 		if eventBanner.Text == tostring(msg) then eventBanner.Visible = false end
 	end)
 end)
@@ -5917,16 +5929,6 @@ do
 		local bHex = BIOME_HEX[biomeId] or "#FFE066"
 		local biomeSpan = string.format('<font color="%s">%s</font>', bHex, escapeXml(zoneName))
 
-		if mutation ~= "" and mutation ~= "None" then
-			local icon = MUTATION_ICONS[mutation] or "✨"
-			local mutInfo = (GameConfig.MUTATIONS :: any)[mutation]
-			local rawDisplay = if mutation == "SpiritBloom" then "SPIRIT" elseif mutInfo then string.upper(mutInfo.label) else string.upper(mutation)
-			local mutSpan = if mutation == "Rainbow"
-				then buildGradientSpan(rawDisplay, Color3.fromRGB(255, 92, 168), Color3.fromRGB(92, 224, 255), true)
-				else string.format('<font color="%s">%s</font>', color3ToHex(if mutInfo then mutInfo.color else Color3.fromRGB(255, 146, 224)), escapeXml(rawDisplay))
-			return string.format("%s %s %s Appeared In %s In %s!", icon, article, raritySpan, mutSpan, biomeSpan)
-		end
-
 		return string.format("%s %s Spawned In %s!", article, raritySpan, biomeSpan)
 	end
 
@@ -5980,6 +5982,7 @@ do
 		tc.Parent = lbl
 
 		local entry = { label = lbl, stroke = st }
+		lbl:SetAttribute("ExpiresAt", os.clock() + holdSec + 0.5)
 		table.insert(activeLines, entry)
 		crateAnnounceFeed.Visible = true
 		updateCrateAnnouncePosition()
@@ -6028,6 +6031,7 @@ do
 				resetHeaderLbl.Text = tostring(payload.headerText or "ALL CRATES RESET!")
 				resetHeaderLbl.TextTransparency = 1
 				resetHeaderStroke.Transparency = 1
+				resetHeaderLbl:SetAttribute("ExpiresAt", os.clock() + holdSec + 0.5)
 				resetHeaderLbl.Visible = true
 				crateAnnounceFeed.Visible = true
 				updateCrateAnnouncePosition()
@@ -6067,11 +6071,44 @@ do
 			end
 		end
 	end)
+
+	-- Watchdog cleanup so CrateSpawnBanner never remains stuck after waves or rapid weather spawns
+	task.spawn(function()
+		while crateAnnounceFeed.Parent do
+			task.wait(0.25)
+			local nowClk = os.clock()
+			local changed = false
+			if resetHeaderLbl.Visible and nowClk >= (tonumber(resetHeaderLbl:GetAttribute("ExpiresAt")) or 0) then
+				resetHeaderLbl.Visible = false
+				changed = true
+			end
+			for i = #activeLines, 1, -1 do
+				local entry = activeLines[i]
+				local expAt = tonumber(entry.label:GetAttribute("ExpiresAt")) or 0
+				if not entry.label.Parent or nowClk >= expAt then
+					if entry.label.Parent then
+						entry.label:Destroy()
+					end
+					table.remove(activeLines, i)
+					changed = true
+				end
+			end
+			if changed then
+				syncFeedVisibility()
+			end
+			if eventBanner.Visible and nowClk >= (tonumber(eventBanner:GetAttribute("ExpiresAt")) or 0) then
+				eventBanner.Visible = false
+			end
+			toastUI.isVisible()
+		end
+	end)
 end
 
 -- Biome Entry Detection + Shop Green-Zone Auto Open/Close + RUN! Danger Vignette Pulse
 local checkAccum = 0
 local secAccum = 0
+local lastBiomeBannerId: string? = nil
+local biomeBannerExpiresAt = 0
 
 RunService.Heartbeat:Connect(function(dt: number)
 	checkAccum += dt
@@ -6206,12 +6243,19 @@ RunService.Heartbeat:Connect(function(dt: number)
 			end
 		end
 		if foundBiome then
-			biomeBanner.Visible = true
-			local disp = BIOME_BANNER_DISPLAY[foundBiome.id] or { title = foundBiome.name, emoji = "⚠️" }
-			biomeTitleLbl.Text = string.format("%s %s", disp.title, disp.emoji)
-			biomeTitleLbl.TextColor3 = foundBiome.accentColor:Lerp(Color3.new(1, 1, 1), 0.55)
-			biomeRecLbl.Text = string.format("Recommended: 👟 <font color=\"#52E0FF\">%s Speed</font>", FormatUtil.Number(foundBiome.recommendedSpeed))
+			if foundBiome.id ~= lastBiomeBannerId then
+				lastBiomeBannerId = foundBiome.id
+				biomeBannerExpiresAt = os.clock() + 3.0
+				local disp = BIOME_BANNER_DISPLAY[foundBiome.id] or { title = foundBiome.name, emoji = "⚠️" }
+				biomeTitleLbl.Text = string.format("%s %s", disp.title, disp.emoji)
+				biomeTitleLbl.TextColor3 = foundBiome.accentColor:Lerp(Color3.new(1, 1, 1), 0.55)
+				biomeRecLbl.Text = string.format("Recommended: 👟 <font color=\"#52E0FF\">%s Speed</font>", FormatUtil.Number(foundBiome.recommendedSpeed))
+				biomeBanner.Visible = true
+			elseif os.clock() >= biomeBannerExpiresAt then
+				biomeBanner.Visible = false
+			end
 		else
+			lastBiomeBannerId = nil
 			biomeBanner.Visible = false
 		end
 	end
