@@ -763,38 +763,56 @@ do
 	}
 end
 
--- Danger Red Edge Vignette & Bold "RUN!" Chase Banner (shown while carrying crates / hunted by Poachers)
+-- Danger Red Edge Vignette & Bold "RUN!" Chase Banner (responsive across all aspect ratios)
+local dangerOverlayGui = Instance.new("ScreenGui")
+dangerOverlayGui.Name = "DangerOverlayHUD"
+dangerOverlayGui.ResetOnSpawn = false
+dangerOverlayGui.IgnoreGuiInset = true
+dangerOverlayGui.DisplayOrder = 15
+dangerOverlayGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+dangerOverlayGui.Parent = playerGui
+
 local runVignette = Instance.new("Frame")
 runVignette.Name = "RunDangerVignette"
 runVignette.Size = UDim2.fromScale(1, 1)
+runVignette.Position = UDim2.fromScale(0, 0)
 runVignette.BackgroundTransparency = 1
-runVignette.ZIndex = 1
 runVignette.Visible = false
-runVignette.Parent = gui
+runVignette.Parent = dangerOverlayGui
+
+local runTint = Instance.new("Frame")
+runTint.Name = "RunTint"
+runTint.Size = UDim2.fromScale(1, 1)
+runTint.Position = UDim2.fromScale(0, 0)
+runTint.BackgroundColor3 = Color3.fromRGB(235, 24, 32)
+runTint.BorderSizePixel = 0
+runTint.BackgroundTransparency = 0.88
+runTint.ZIndex = 1
+runTint.Parent = runVignette
 
 local runEdgeStrips: { { bar: Frame, grad: UIGradient } } = {}
 do
 	local edgeDefs = {
-		{ size = UDim2.new(1, 0, 0.16, 0), pos = UDim2.fromScale(0, 0), rot = 90 },
-		{ size = UDim2.new(1, 0, 0.16, 0), pos = UDim2.fromScale(0, 0.84), rot = 270 },
-		{ size = UDim2.new(0.11, 0, 1, 0), pos = UDim2.fromScale(0, 0), rot = 0 },
-		{ size = UDim2.new(0.11, 0, 1, 0), pos = UDim2.fromScale(0.89, 0), rot = 180 },
+		{ size = UDim2.new(1, 0, 0.35, 0), pos = UDim2.fromScale(0, 0), rot = 90 },
+		{ size = UDim2.new(1, 0, 0.35, 0), pos = UDim2.fromScale(0, 0.65), rot = 270 },
+		{ size = UDim2.new(0.28, 0, 1, 0), pos = UDim2.fromScale(0, 0), rot = 0 },
+		{ size = UDim2.new(0.28, 0, 1, 0), pos = UDim2.fromScale(0.72, 0), rot = 180 },
 	}
 	for idx, ed in ipairs(edgeDefs) do
 		local bar = Instance.new("Frame")
 		bar.Name = "RunEdge_" .. idx
 		bar.Size = ed.size
 		bar.Position = ed.pos
-		bar.BackgroundColor3 = Color3.fromRGB(255, 22, 36)
+		bar.BackgroundColor3 = Color3.fromRGB(255, 18, 30)
 		bar.BorderSizePixel = 0
-		bar.ZIndex = 1
+		bar.ZIndex = 2
 		bar.Parent = runVignette
 		local gr = Instance.new("UIGradient")
 		gr.Rotation = ed.rot
 		gr.Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0.12),
-			NumberSequenceKeypoint.new(0.65, 0.72),
-			NumberSequenceKeypoint.new(1, 1.0),
+			NumberSequenceKeypoint.new(0.0, 0.08),
+			NumberSequenceKeypoint.new(0.55, 0.65),
+			NumberSequenceKeypoint.new(1.0, 1.0),
 		})
 		gr.Parent = bar
 		table.insert(runEdgeStrips, { bar = bar, grad = gr })
@@ -804,16 +822,16 @@ end
 local runAlertBanner = Instance.new("TextLabel")
 runAlertBanner.Name = "RunAlertBanner"
 runAlertBanner.AnchorPoint = Vector2.new(0.5, 0)
-runAlertBanner.Size = UDim2.fromOffset(220, 56)
-runAlertBanner.Position = UDim2.new(0.5, 0, 0, 68)
-runAlertBanner.BackgroundColor3 = Color3.fromRGB(64, 66, 82)
+runAlertBanner.Size = UDim2.fromOffset(200, 52)
+runAlertBanner.Position = UDim2.new(0.5, 0, 0, 56)
+runAlertBanner.BackgroundColor3 = Color3.fromRGB(64, 28, 36)
 runAlertBanner.Text = "RUN!"
 runAlertBanner.TextColor3 = Color3.new(1, 1, 1)
 runAlertBanner.Font = Enum.Font.FredokaOne
 runAlertBanner.TextScaled = true
 runAlertBanner.ZIndex = 20
 runAlertBanner.Visible = false
-runAlertBanner.Parent = gui
+runAlertBanner.Parent = dangerOverlayGui
 makeCorner(runAlertBanner, 10)
 makeStroke(runAlertBanner, 3.5, Color3.fromRGB(255, 42, 54))
 makeTextStroke(runAlertBanner, 3.0)
@@ -4780,9 +4798,35 @@ local function renderInventoryModal()
 			petKgLbl.TextSize = 11
 			petKgLbl.Font = Enum.Font.GothamBold
 
-			if animal.locked then
-				makeOutlinedLabel(card, "🔒", UDim2.fromOffset(18, 18), UDim2.fromOffset(3, 2), Color3.new(1, 1, 1), 1.4)
-			end
+			local isLocked = animal.locked == true
+			local lockBtn = Instance.new("TextButton")
+			lockBtn.Name = "PetLockBtn"
+			lockBtn.Size = UDim2.fromOffset(24, 24)
+			lockBtn.Position = UDim2.fromOffset(4, 4)
+			lockBtn.ZIndex = 12
+			lockBtn.AutoButtonColor = true
+			lockBtn.BackgroundColor3 = if isLocked then Color3.fromRGB(220, 48, 48) else Color3.fromRGB(28, 34, 48)
+			lockBtn.BackgroundTransparency = if isLocked then 0.12 else 0.50
+			lockBtn.Text = if isLocked then "🔒" else "🔓"
+			lockBtn.TextSize = 13
+			lockBtn.Parent = card
+			makeCorner(lockBtn, 6)
+			local lockStroke = makeStroke(lockBtn, 1.5, if isLocked then Color3.fromRGB(255, 120, 120) else Color3.fromRGB(72, 84, 110))
+			lockStroke.Transparency = if isLocked then 0.1 else 0.4
+
+			lockBtn.InputBegan:Connect(function(inp)
+				if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+					activeDragPress = nil
+				end
+			end)
+			lockBtn.MouseButton1Click:Connect(function()
+				activeDragPress = nil
+				animal.locked = not animal.locked
+				Remotes.Get("ToggleLockAnimal"):FireServer(uid)
+				if renderInventoryModalRef then
+					renderInventoryModalRef()
+				end
+			end)
 
 			attachDragAndDrop(card, {
 				kind = "Pet",
@@ -6117,15 +6161,56 @@ RunService.Heartbeat:Connect(function(dt: number)
 
 	local carryingCrates = (tonumber(localPlayer:GetAttribute("TowedCrateCount")) or 0) > 0
 	local inDanger = isPoacherChasing or carryingCrates
+	dangerOverlayGui.Enabled = inDanger
 	runVignette.Visible = inDanger
 	runAlertBanner.Visible = inDanger
 	if inDanger then
 		local pulse = 0.5 + 0.5 * math.sin(os.clock() * 7.5)
-		local edgeAlpha = 0.10 + pulse * 0.28
+		local edgeAlpha = 0.08 + pulse * 0.24
+		runTint.BackgroundTransparency = 0.82 + pulse * 0.10
 		for _, strip in ipairs(runEdgeStrips) do
 			strip.bar.BackgroundTransparency = edgeAlpha
 		end
-		runAlertBanner.BackgroundColor3 = Color3.fromRGB(72 + math.round(pulse * 58), 42, 54)
+		runAlertBanner.BackgroundColor3 = Color3.fromRGB(72 + math.round(pulse * 58), 28, 38)
+		biomeBanner.Visible = false
+	end
+
+	-- Continuous Biome Entry & Exit Detection (runs every frame so leaving zone hides banner instantly)
+	local char = localPlayer.Character
+	local root = if char then char:FindFirstChild("HumanoidRootPart") else nil
+	if not inDanger and root and root:IsA("BasePart") then
+		local z = root.Position.Z
+		-- Safe Zone check: If inside Safe Zone (Z <= 155), instantly hide the banner!
+		if z <= GameConfig.WORLD.SAFE_ZONE_Z_MAX + 5 then
+			biomeBanner.Visible = false
+			lastBiomeBannerId = nil
+		else
+			local foundBiome = nil
+			for _, b in ipairs(BiomeConfig) do
+				if z >= b.zStart and z <= b.zEnd then
+					foundBiome = b
+					break
+				end
+			end
+			if foundBiome then
+				if foundBiome.id ~= lastBiomeBannerId then
+					lastBiomeBannerId = foundBiome.id
+					biomeBannerExpiresAt = os.clock() + 3.0
+					local disp = BIOME_BANNER_DISPLAY[foundBiome.id] or { title = foundBiome.name, emoji = "⚠️" }
+					biomeTitleLbl.Text = string.format("%s %s", disp.title, disp.emoji)
+					biomeTitleLbl.TextColor3 = foundBiome.accentColor:Lerp(Color3.new(1, 1, 1), 0.55)
+					biomeRecLbl.Text = string.format("Recommended: 👟 <font color=\"#52E0FF\">%s Speed</font>", FormatUtil.Number(foundBiome.recommendedSpeed))
+					biomeBanner.Visible = true
+				elseif os.clock() >= biomeBannerExpiresAt then
+					biomeBanner.Visible = false
+				end
+			else
+				lastBiomeBannerId = nil
+				biomeBanner.Visible = false
+			end
+		end
+	elseif not inDanger then
+		biomeBanner.Visible = false
 	end
 
 	-- Fast Shop StandZone auto-open & auto-close (direct scan handles StreamingEnabled instantly!)
@@ -6231,33 +6316,6 @@ RunService.Heartbeat:Connect(function(dt: number)
 	else
 		timerLbl.Text = string.format("In: %02d:%02d", mins, secs)
 		timerLbl.TextColor3 = Color3.new(1, 1, 1)
-	end
-
-	if root and root:IsA("BasePart") then
-		local z = root.Position.Z
-		local foundBiome = nil
-		for _, b in ipairs(BiomeConfig) do
-			if z >= b.zStart and z <= b.zEnd then
-				foundBiome = b
-				break
-			end
-		end
-		if foundBiome then
-			if foundBiome.id ~= lastBiomeBannerId then
-				lastBiomeBannerId = foundBiome.id
-				biomeBannerExpiresAt = os.clock() + 3.0
-				local disp = BIOME_BANNER_DISPLAY[foundBiome.id] or { title = foundBiome.name, emoji = "⚠️" }
-				biomeTitleLbl.Text = string.format("%s %s", disp.title, disp.emoji)
-				biomeTitleLbl.TextColor3 = foundBiome.accentColor:Lerp(Color3.new(1, 1, 1), 0.55)
-				biomeRecLbl.Text = string.format("Recommended: 👟 <font color=\"#52E0FF\">%s Speed</font>", FormatUtil.Number(foundBiome.recommendedSpeed))
-				biomeBanner.Visible = true
-			elseif os.clock() >= biomeBannerExpiresAt then
-				biomeBanner.Visible = false
-			end
-		else
-			lastBiomeBannerId = nil
-			biomeBanner.Visible = false
-		end
 	end
 end)
 

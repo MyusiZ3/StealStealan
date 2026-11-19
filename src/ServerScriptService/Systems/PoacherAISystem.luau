@@ -117,7 +117,7 @@ local function buildPoacherModel(name: string, isBoss: boolean, biomeId: string,
 	local hitbox = Instance.new("Part")
 	hitbox.Name = "HitboxTrigger"
 	hitbox.Shape = Enum.PartType.Block
-	hitbox.Size = if isBoss then Vector3.new(12.0, 10.0, 12.0) else Vector3.new(9.2, 8.5, 9.2)
+	hitbox.Size = if isBoss then Vector3.new(5.6 * scale, 7.2 * scale, 5.6 * scale) else Vector3.new(3.6 * scale, 5.2 * scale, 3.6 * scale)
 	hitbox.Transparency = 1
 	hitbox.Anchored = true
 	hitbox.CanCollide = false
@@ -206,6 +206,11 @@ function PoacherAISystem.Init()
 		if AdminService.HasGodMode(player) then
 			return
 		end
+		-- Only players actively towing a crate can be tackled by poachers!
+		local towedCount = player:GetAttribute("TowedCrateCount") or 0
+		if towedCount <= 0 then
+			return
+		end
 		local char = player.Character
 		local pRoot = if char then char:FindFirstChild("HumanoidRootPart") else nil
 		if not pRoot or not pRoot:IsA("BasePart") or pRoot.Position.Z <= GameConfig.WORLD.SAFE_ZONE_Z_MAX + 2 then
@@ -248,7 +253,10 @@ function PoacherAISystem.Init()
 			if not char or not char:IsA("Model") then return end
 			local p = Players:GetPlayerFromCharacter(char)
 			if p then
-				tryCatchPlayer(ag, p, os.clock())
+				local towedCount = p:GetAttribute("TowedCrateCount") or 0
+				if towedCount > 0 then
+					tryCatchPlayer(ag, p, os.clock())
+				end
 			end
 		end
 		for _, d in ipairs(ag.model:GetDescendants()) do
@@ -378,20 +386,23 @@ function PoacherAISystem.Init()
 			local chasingPlayer: Player? = nil
 			local bestDistSq = math.huge
 
-			-- Find closest thief (aggroed OR encroaching within close personal range inside this biome) outside Safe Zone
+			-- Find closest thief (ONLY players actively towing crates outside Safe Zone)
 			for _, candidate in ipairs(Players:GetPlayers()) do
 				if not AdminService.HasGodMode(candidate) then
-					local cChar = candidate.Character
-					local cHum = if cChar then cChar:FindFirstChildOfClass("Humanoid") else nil
-					local cRoot = if cChar then cChar:FindFirstChild("HumanoidRootPart") else nil
-					if cHum and cHum.Health > 0 and cRoot and cRoot:IsA("BasePart") and cRoot.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX + 2 then
-						local d = (cRoot.Position - currPos)
-						local distSq = d.X * d.X + d.Z * d.Z
-						local inBiomeBounds = (cRoot.Position.Z >= ag.zMin - 4 and cRoot.Position.Z <= ag.zMax + 4)
-						if hasAggroInBiome(candidate.UserId, ag.biomeId) or (inBiomeBounds and distSq <= 22 * 22) then
-							if distSq < bestDistSq then
-								bestDistSq = distSq
-								chasingPlayer = candidate
+					local towedCount = candidate:GetAttribute("TowedCrateCount") or 0
+					if towedCount > 0 then
+						local cChar = candidate.Character
+						local cHum = if cChar then cChar:FindFirstChildOfClass("Humanoid") else nil
+						local cRoot = if cChar then cChar:FindFirstChild("HumanoidRootPart") else nil
+						if cHum and cHum.Health > 0 and cRoot and cRoot:IsA("BasePart") and cRoot.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX + 2 then
+							local d = (cRoot.Position - currPos)
+							local distSq = d.X * d.X + d.Z * d.Z
+							local inBiomeBounds = (cRoot.Position.Z >= ag.zMin - 4 and cRoot.Position.Z <= ag.zMax + 4)
+							if hasAggroInBiome(candidate.UserId, ag.biomeId) or (inBiomeBounds and distSq <= 28 * 28) then
+								if distSq < bestDistSq then
+									bestDistSq = distSq
+									chasingPlayer = candidate
+								end
 							end
 						end
 					end
@@ -429,25 +440,25 @@ function PoacherAISystem.Init()
 				ag.wpIndex = (ag.wpIndex % #ag.waypoints) + 1
 			end
 
-			-- Instant HitboxTrigger overlap + velocity-compensated radial proximity detection (no aggro gate)
+			-- Direct contact & close-range tackle check (ONLY targets players with towed crates)
 			for _, player in ipairs(Players:GetPlayers()) do
 				if not AdminService.HasGodMode(player) then
-					local char = player.Character
-					local pRoot = if char then char:FindFirstChild("HumanoidRootPart") else nil
-					if pRoot and pRoot:IsA("BasePart") and pRoot.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX + 2 then
-						local dy = math.abs(pRoot.Position.Y - ag.root.Position.Y)
-						if dy <= 8.5 then
-							local localHit = ag.hitbox.CFrame:PointToObjectSpace(pRoot.Position)
-							local inBox = math.abs(localHit.X) <= (ag.hitbox.Size.X * 0.5 + 1.5)
-								and math.abs(localHit.Z) <= (ag.hitbox.Size.Z * 0.5 + 1.5)
-								and math.abs(localHit.Y) <= (ag.hitbox.Size.Y * 0.5 + 2.0)
-							local xzDist = Vector2.new(pRoot.Position.X - ag.root.Position.X, pRoot.Position.Z - ag.root.Position.Z).Magnitude
-							local pVel = pRoot.AssemblyLinearVelocity
-							local predPos = pRoot.Position + Vector3.new(pVel.X, 0, pVel.Z) * 0.12
-							local predXzDist = Vector2.new(predPos.X - ag.root.Position.X, predPos.Z - ag.root.Position.Z).Magnitude
-							local catchRadius = if ag.isBoss then 10.5 else 8.2
-							if inBox or xzDist <= catchRadius or predXzDist <= catchRadius then
-								tryCatchPlayer(ag, player, now)
+					local towedCount = player:GetAttribute("TowedCrateCount") or 0
+					if towedCount > 0 then
+						local char = player.Character
+						local pRoot = if char then char:FindFirstChild("HumanoidRootPart") else nil
+						if pRoot and pRoot:IsA("BasePart") and pRoot.Position.Z > GameConfig.WORLD.SAFE_ZONE_Z_MAX + 2 then
+							local dy = math.abs(pRoot.Position.Y - ag.root.Position.Y)
+							if dy <= 6.0 then
+								local localHit = ag.hitbox.CFrame:PointToObjectSpace(pRoot.Position)
+								local inBox = math.abs(localHit.X) <= (ag.hitbox.Size.X * 0.5)
+									and math.abs(localHit.Z) <= (ag.hitbox.Size.Z * 0.5)
+									and math.abs(localHit.Y) <= (ag.hitbox.Size.Y * 0.5 + 0.5)
+								local xzDist = Vector2.new(pRoot.Position.X - ag.root.Position.X, pRoot.Position.Z - ag.root.Position.Z).Magnitude
+								local catchRadius = if ag.isBoss then 4.8 else 3.4
+								if inBox or xzDist <= catchRadius then
+									tryCatchPlayer(ag, player, now)
+								end
 							end
 						end
 					end

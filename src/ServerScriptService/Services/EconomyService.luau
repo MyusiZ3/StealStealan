@@ -217,6 +217,13 @@ function EconomyService.Init()
 		if animal then
 			animal.locked = not animal.locked
 			DataService.SyncProfile(player)
+			local spec = AnimalConfig.GetById(animal.speciesId)
+			local nameStr = if spec then spec.name else "Pet"
+			if animal.locked then
+				Remotes.Get("NotifyClient"):FireClient(player, string.format("🔒 Locked %s! Protected from selling.", nameStr), Color3.fromRGB(255, 120, 120))
+			else
+				Remotes.Get("NotifyClient"):FireClient(player, string.format("🔓 Unlocked %s! Can now be sold or fused.", nameStr), Color3.fromRGB(120, 245, 160))
+			end
 		end
 	end)
 
