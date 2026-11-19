@@ -171,16 +171,21 @@ local function rebuildEntities(forceReset: boolean?)
 								if existing and existing.model then
 									existing.model:Destroy()
 								end
+								local vpMod = VoxelPets.GetSpeciesModule(animal.speciesId)
+								local speciesBaseScale = if vpMod and vpMod.DefaultScale then vpMod.DefaultScale else 1.0
 								local titanicActive = Workspace:GetAttribute("TitanicZooActive") == true
-								local visualSizeRatio = if titanicActive then math.max(animal.sizeRatio * 2.1, 2.8) else animal.sizeRatio
+								local baseRatio = if titanicActive then math.max(animal.sizeRatio * 2.1, 2.8) else animal.sizeRatio
+								local visualSizeRatio = baseRatio * speciesBaseScale
 								local model = AnimalVisualBuilder.BuildAnimalModel(animal.speciesId, visualSizeRatio, animal.mutation, currentSettings.lowVFX)
 								model.Name = string.format("P%d_%s_%s", plotData.plotIndex, animal.speciesId, string.sub(animal.uid, 1, 6))
 
 								local root = model.PrimaryPart :: BasePart
 								local spec = AnimalConfig.GetById(animal.speciesId)
+								local _, boxSz = model:GetBoundingBox()
+								local minAboveRoot = (boxSz.Y - root.Size.Y * 0.5) + 1.15
 								local bb = Instance.new("BillboardGui")
 								bb.Size = UDim2.fromOffset(170, 44)
-								bb.StudsOffset = Vector3.new(0, 3.6 * visualSizeRatio, 0)
+								bb.StudsOffset = Vector3.new(0, math.max(3.6 * visualSizeRatio, minAboveRoot), 0)
 								bb.MaxDistance = 65
 								bb.Parent = root
 
@@ -952,63 +957,3 @@ RunService.RenderStepped:Connect(function(dt: number)
 		end
 	end
 end)
-
--- Animate Hub VoxelFantasyShowcase Pedestal Pets & Bind Interactive Pose Switcher
-do
-	local SHOWCASE_CYCLE: { VoxelPets.AnimMode } = { "Idle", "Walk", "Fly" }
-	local NEXT_POSE_LABEL = { "Auto", "Idle", "Walk", "Fly" }
-	local boundPrompts: { [Instance]: boolean } = {}
-
-	local function cycleShowcasePose(pedestal: Instance)
-		local petModel = pedestal:FindFirstChildWhichIsA("Model")
-		if not petModel then return end
-		local cur = tostring(petModel:GetAttribute("ShowcaseAnimMode") or "Auto")
-		local idx = table.find(NEXT_POSE_LABEL, cur) or 1
-		local nxt = NEXT_POSE_LABEL[(idx % #NEXT_POSE_LABEL) + 1]
-		petModel:SetAttribute("ShowcaseAnimMode", nxt)
-		local prompt = pedestal:FindFirstChild("ShowcasePosePrompt", true)
-		if prompt and prompt:IsA("ProximityPrompt") then
-			prompt.ActionText = "Pose: " .. nxt .. " ([E] Switch)"
-		end
-	end
-
-	RunService.RenderStepped:Connect(function()
-		local gw = Workspace:FindFirstChild("GameWorld")
-		local hub = if gw then gw:FindFirstChild("SanctuaryHub") else nil
-		local showcase = if hub then hub:FindFirstChild("VoxelFantasyShowcase") else nil
-		if not showcase then return end
-
-		local now = os.clock()
-		for i, ch in ipairs(showcase:GetChildren()) do
-			if string.sub(ch.Name, 1, 9) == "Pedestal_" then
-				local prompt = ch:FindFirstChild("ShowcasePosePrompt", true)
-				if prompt and prompt:IsA("ProximityPrompt") and not boundPrompts[prompt] then
-					boundPrompts[prompt] = true
-					prompt.Triggered:Connect(function()
-						cycleShowcasePose(ch)
-					end)
-				end
-				local cd = ch:FindFirstChild("ShowcasePoseClick", true)
-				if cd and cd:IsA("ClickDetector") and not boundPrompts[cd] then
-					boundPrompts[cd] = true
-					cd.MouseClick:Connect(function()
-						cycleShowcasePose(ch)
-					end)
-				end
-
-				local petModel = ch:FindFirstChildWhichIsA("Model")
-				if petModel and petModel:GetAttribute("VoxelRig") == true then
-					local modeAttr = tostring(petModel:GetAttribute("ShowcaseAnimMode") or "Auto")
-					local animMode: VoxelPets.AnimMode
-					if modeAttr == "Idle" or modeAttr == "Walk" or modeAttr == "Fly" then
-						animMode = modeAttr :: VoxelPets.AnimMode
-					else
-						local slot = (math.floor((now + i * 1.5) / 5) % #SHOWCASE_CYCLE) + 1
-						animMode = SHOWCASE_CYCLE[slot]
-					end
-					VoxelPets.StepRig(petModel, animMode, now, i * 1.3)
-				end
-			end
-		end
-	end)
-end

@@ -8,6 +8,8 @@ local Types = require(script.Parent.Parent.Shared.Types)
 local GameConfig = require(script.Parent.Parent.Config.GameConfig)
 local AnimalConfig = require(script.Parent.Parent.Config.AnimalConfig)
 local VoxelPets = require(script.Parent.VoxelPets)
+local PrimordialCrateBuilder = require(script.Parent.PrimordialCrateBuilder)
+local VoxelCrateBuilder = require(script.Parent.VoxelCrateBuilder)
 
 local AnimalVisualBuilder = {}
 
@@ -460,7 +462,13 @@ local BIOME_CRATE_VARIANTS: { [string]: { string } } = {
 	VolcanicJungle = { "Basalt Coffer", "Magma Vault", "Obsidian Pod" },
 }
 
-function AnimalVisualBuilder.GetCrateVariantInfo(biomeId: string, _rarity: Types.AnimalRarity?, variantIndex: number?): (string, number)
+function AnimalVisualBuilder.GetCrateVariantInfo(biomeId: string, rarity: Types.AnimalRarity?, variantIndex: number?): (string, number)
+	if rarity then
+		local title = VoxelCrateBuilder.GetTitle(rarity)
+		if title then
+			return title, 1
+		end
+	end
 	local list = BIOME_CRATE_VARIANTS[biomeId] or BIOME_CRATE_VARIANTS.PineWoods
 	local idx = ((math.max(1, math.floor(variantIndex or 1)) - 1) % #list) + 1
 	return list[idx], idx
@@ -470,252 +478,9 @@ function AnimalVisualBuilder.BuildCrateModel(
 	rarity: Types.AnimalRarity,
 	biomeId: string,
 	sizeScale: number?,
-	opts: { isBuried: boolean?, canCollide: boolean?, showBeacon: boolean?, variant: number? }?
+	opts: { isBuried: boolean?, canCollide: boolean?, showBeacon: boolean?, variant: number?, lowDetail: boolean? }?
 ): Model
-	local s = sizeScale or GameConfig.ComputeCrateScale(rarity)
-	local rarityColor = GameConfig.RARITY_COLORS[rarity] or Color3.fromRGB(168, 182, 172)
-	local isBuried = if opts and opts.isBuried ~= nil then opts.isBuried else true
-	local canCollide = if opts and opts.canCollide ~= nil then opts.canCollide else false
-	local showBeacon = if opts and opts.showBeacon ~= nil then opts.showBeacon else isBuried
-	local crateName, styleIdx = AnimalVisualBuilder.GetCrateVariantInfo(biomeId, rarity, opts and opts.variant)
-
-	local crateModel = Instance.new("Model")
-	crateModel.Name = string.format("Crate_%s_%s", biomeId, rarity)
-	crateModel:SetAttribute("BiomeId", biomeId)
-	crateModel:SetAttribute("Rarity", rarity)
-	crateModel:SetAttribute("SizeScale", s)
-	crateModel:SetAttribute("CrateVariant", styleIdx)
-	crateModel:SetAttribute("CrateTitle", crateName)
-
-	local tilt = if isBuried then CFrame.Angles(math.rad(12), math.rad(10), math.rad(-8)) else CFrame.new()
-	local baseY = (2.1 * s)
-
-	-- Biome-specific palette, silhouette, and structural theme
-	local frameCol = Color3.fromRGB(128, 86, 50)
-	local frameMat = Enum.Material.Wood
-	local accentCol = Color3.fromRGB(58, 132, 64)
-	local accentMat = Enum.Material.Grass
-	local barCol = Color3.fromRGB(54, 58, 66)
-	local barMat = Enum.Material.Metal
-	local outerTrans = 0
-	local boxDims = Vector3.new(4.2 * s, 3.6 * s, 4.2 * s)
-
-	if biomeId == "MangroveSwamp" then
-		frameCol = Color3.fromRGB(98, 78, 46)
-		frameMat = Enum.Material.WoodPlanks
-		accentCol = Color3.fromRGB(72, 224, 158)
-		accentMat = Enum.Material.Neon
-		barCol = Color3.fromRGB(142, 118, 66)
-		barMat = Enum.Material.Wood
-		boxDims = Vector3.new(4.6 * s, 3.1 * s, 3.8 * s)
-	elseif biomeId == "SavannaCamp" then
-		frameCol = Color3.fromRGB(68, 72, 82)
-		frameMat = Enum.Material.DiamondPlate
-		accentCol = Color3.fromRGB(224, 158, 52)
-		accentMat = Enum.Material.Metal
-		barCol = Color3.fromRGB(38, 40, 46)
-		barMat = Enum.Material.Metal
-		boxDims = Vector3.new(4.0 * s, 4.1 * s, 4.6 * s)
-	elseif biomeId == "AlpinePeaks" then
-		frameCol = Color3.fromRGB(148, 222, 255)
-		frameMat = Enum.Material.Ice
-		accentCol = Color3.fromRGB(228, 246, 255)
-		accentMat = Enum.Material.Glass
-		barCol = Color3.fromRGB(92, 136, 186)
-		barMat = Enum.Material.Metal
-		outerTrans = 0.25
-		boxDims = Vector3.new(4.3 * s, 3.9 * s, 4.3 * s)
-	elseif biomeId == "VolcanicJungle" then
-		frameCol = Color3.fromRGB(42, 34, 46)
-		frameMat = Enum.Material.Basalt
-		accentCol = Color3.fromRGB(238, 88, 34)
-		accentMat = Enum.Material.SmoothPlastic
-		barCol = Color3.fromRGB(28, 24, 30)
-		barMat = Enum.Material.Basalt
-		boxDims = Vector3.new(4.4 * s, 4.0 * s, 4.4 * s)
-	end
-
-	-- Distinct silhouette proportions per variant style (1: Blocky Crate, 2: Arched Trunk Chest, 3: Relic Pod on Ring Base)
-	if styleIdx == 2 then
-		boxDims = Vector3.new(boxDims.X * 1.15, boxDims.Y * 0.85, boxDims.Z * 0.88)
-	elseif styleIdx == 3 then
-		boxDims = Vector3.new(boxDims.X * 0.88, boxDims.Y * 1.12, boxDims.Z * 0.88)
-	end
-
-	local root = makeBox("CrateRoot", boxDims, CFrame.new(0, baseY, 0) * tilt, frameCol, frameMat, crateModel)
-	root.Transparency = outerTrans
-	root.CanCollide = canCollide
-	root.CanQuery = true
-	-- Ground-anchored bottom pivot (Y = 0) so ScaleTo expands upward naturally without sinking
-	root.PivotOffset = CFrame.new(0, -baseY, 0)
-	crateModel.PrimaryPart = root
-	crateModel.WorldPivot = CFrame.new(0, 0, 0)
-
-	local rootCF = root.CFrame
-	local hx, hy, hz = boxDims.X * 0.5, boxDims.Y * 0.5, boxDims.Z * 0.5
-
-	-- Textured Nest / Swirl Pedestal Ring underneath (Image 11 style!)
-	local discSize = math.max(boxDims.X, boxDims.Z) * 1.38
-	local pedestal = makeBox(
-		"PedestalBase",
-		Vector3.new(0.42 * s, discSize, discSize),
-		CFrame.new(0, 0.22 * s, 0) * CFrame.Angles(0, 0, math.rad(90)),
-		accentCol:Lerp(rarityColor, 0.38),
-		Enum.Material.Cobblestone,
-		crateModel
-	)
-	pedestal.Shape = Enum.PartType.Cylinder
-	pedestal.TopSurface = Enum.SurfaceType.Studs
-
-	if styleIdx == 2 then
-		-- Archetype 2: Arched Dome Lid + Side Handles
-		local archLid = makeBox(
-			"ArchedLid",
-			Vector3.new(boxDims.X * 0.94, 0.85 * s, boxDims.Z * 0.84),
-			rootCF * CFrame.new(0, hy + 0.35 * s, 0),
-			accentCol,
-			accentMat,
-			crateModel
-		)
-		archLid.TopSurface = Enum.SurfaceType.Studs
-		for _, sx in { -1, 1 } do
-			makeBox("SideHandle", Vector3.new(0.32 * s, 0.72 * s, 1.45 * s), rootCF * CFrame.new(sx * (hx + 0.2 * s), 0.1 * s, 0), rarityColor, Enum.Material.Metal, crateModel)
-		end
-	elseif styleIdx == 3 then
-		-- Archetype 3: Octagonal Relic Pod with Crisp Core + Dome Cap
-		local podOrb = makeBox("RelicCore", Vector3.new(boxDims.X * 0.78, boxDims.Y * 1.15, boxDims.Z * 0.78), rootCF, rarityColor, Enum.Material.SmoothPlastic, crateModel)
-		podOrb.Shape = Enum.PartType.Ball
-		podOrb.Transparency = 0.22
-		makeBox("RelicCap", Vector3.new(boxDims.X * 0.92, 0.5 * s, boxDims.Z * 0.92), rootCF * CFrame.new(0, hy + 0.2 * s, 0) * CFrame.Angles(0, math.rad(45), 0), accentCol, Enum.Material.SmoothPlastic, crateModel)
-	end
-
-	-- Corner structural pillars / ribs tinted with biome material + rarity
-	for _, cx in { -1, 1 } do
-		for _, cz in { -1, 1 } do
-			local pillar = makeBox(
-				"CornerPillar",
-				Vector3.new(0.46 * s, boxDims.Y + 0.35 * s, 0.46 * s),
-				rootCF * CFrame.new(cx * hx, 0, cz * hz),
-				barCol,
-				barMat,
-				crateModel
-			)
-			pillar.TopSurface = Enum.SurfaceType.Studs
-
-			if biomeId == "AlpinePeaks" then
-				local crys = makeBox(
-					"IceCrystal",
-					Vector3.new(0.55 * s, 1.3 * s, 0.55 * s),
-					rootCF * CFrame.new(cx * hx, hy + 0.45 * s, cz * hz) * CFrame.Angles(math.rad(cx * 15), 0, math.rad(cz * -15)),
-					Color3.fromRGB(168, 238, 255),
-					Enum.Material.Glass,
-					crateModel
-				)
-				crys.Transparency = 0.15
-			elseif biomeId == "VolcanicJungle" then
-				makeBox(
-					"ObsidianHorn",
-					Vector3.new(0.52 * s, 1.45 * s, 0.52 * s),
-					rootCF * CFrame.new(cx * (hx + 0.1 * s), hy + 0.48 * s, cz * (hz + 0.1 * s)) * CFrame.Angles(math.rad(cz * -18), 0, math.rad(cx * 18)),
-					accentCol,
-					Enum.Material.SmoothPlastic,
-					crateModel
-				)
-			elseif rarity == "Rare" or rarity == "Epic" or rarity == "Legendary" or rarity == "Mythic" then
-				makeBox(
-					"RarityStud",
-					Vector3.new(0.56 * s, 0.38 * s, 0.56 * s),
-					rootCF * CFrame.new(cx * hx, hy + 0.25 * s, cz * hz),
-					rarityColor,
-					Enum.Material.SmoothPlastic,
-					crateModel
-				)
-			end
-		end
-	end
-
-	-- Front & back cage bars + top/bottom frame rims
-	for _, bz in { -hz - 0.08 * s, hz + 0.08 * s } do
-		for bx = -1, 1 do
-			makeBox(
-				"CageBar",
-				Vector3.new(0.28 * s, boxDims.Y - 0.4 * s, 0.28 * s),
-				rootCF * CFrame.new(bx * 0.9 * s, 0, bz),
-				if biomeId == "VolcanicJungle" then accentCol else barCol,
-				if biomeId == "VolcanicJungle" then Enum.Material.SmoothPlastic else barMat,
-				crateModel
-			)
-		end
-	end
-
-	-- Biome side/top trim detail + crisp rarity band
-	makeBox(
-		"RarityBand",
-		Vector3.new(boxDims.X + 0.24 * s, 0.36 * s, boxDims.Z + 0.24 * s),
-		rootCF * CFrame.new(0, 0, 0),
-		rarityColor,
-		Enum.Material.SmoothPlastic,
-		crateModel
-	)
-	makeBox(
-		"BiomeRoofTrim",
-		Vector3.new(boxDims.X * 0.72, 0.34 * s, boxDims.Z * 0.72),
-		rootCF * CFrame.new(0, hy + 0.16 * s, 0),
-		accentCol,
-		accentMat,
-		crateModel
-	)
-
-	-- Padlock & Keyhole on front face
-	makeBox(
-		"Padlock",
-		Vector3.new(0.85 * s, 0.95 * s, 0.42 * s),
-		rootCF * CFrame.new(0, -0.25 * s, -hz - 0.22 * s),
-		rarityColor,
-		Enum.Material.Metal,
-		crateModel
-	)
-
-	local tier = GameConfig.GetRarityTier(rarity)
-	local secColor = (GameConfig.RARITY_SECONDARY_COLORS :: any)[rarity] or rarityColor
-
-	-- Epic..Primordial crest + Cosmic+ Crown + top tow ring
-	if tier >= 4 then
-		makeBox(
-			"CrestRing",
-			Vector3.new(boxDims.X * 0.46, 0.42 * s, boxDims.Z * 0.46),
-			rootCF * CFrame.new(0, hy + 0.48 * s, 0) * CFrame.Angles(0, math.rad(45), 0),
-			rarityColor,
-			Enum.Material.SmoothPlastic,
-			crateModel
-		)
-	end
-	if tier >= GameConfig.COSMIC_TIER_THRESHOLD then
-		makeBox(
-			"CosmicCrownStar",
-			Vector3.new(boxDims.X * 0.34, 0.45 * s, boxDims.Z * 0.34),
-			rootCF * CFrame.new(0, hy + 0.92 * s, 0) * CFrame.Angles(math.rad(15), math.rad(22), math.rad(-15)),
-			secColor,
-			Enum.Material.SmoothPlastic,
-			crateModel
-		)
-	end
-
-	local ring = makeBox("TowRing", Vector3.new(1.05 * s, 1.05 * s, 1.05 * s), rootCF * CFrame.new(0, hy + 0.95 * s, 0), rarityColor, Enum.Material.SmoothPlastic, crateModel)
-	ring.Shape = Enum.PartType.Ball
-
-	if showBeacon and tier >= 3 then
-		local beamHeight = if tier >= GameConfig.COSMIC_TIER_THRESHOLD then 48 + (tier - 6) * 6 else 32
-		local beamWidth = if tier >= GameConfig.COSMIC_TIER_THRESHOLD then 1.35 * s else 1.0 * s
-		local beacon = makeBox("RarityBeacon", Vector3.new(beamWidth, beamHeight, beamWidth), rootCF * CFrame.new(0, beamHeight * 0.5 + hy, 0), rarityColor, Enum.Material.SmoothPlastic, crateModel)
-		beacon.Transparency = 0.82
-		if tier >= GameConfig.COSMIC_TIER_THRESHOLD then
-			local innerCore = makeBox("CosmicBeaconCore", Vector3.new(0.42 * s, beamHeight + 8, 0.42 * s), rootCF * CFrame.new(0, beamHeight * 0.5 + hy, 0), secColor, Enum.Material.Neon, crateModel)
-			innerCore.Transparency = 0.68
-		end
-	end
-
-	return crateModel
+	return VoxelCrateBuilder.Build(rarity, biomeId, sizeScale, opts)
 end
 
 function AnimalVisualBuilder.BuildBuriedCrate(rarity: Types.AnimalRarity, biomeId: string, sizeScale: number?, variantIndex: number?): Model

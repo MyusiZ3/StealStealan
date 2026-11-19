@@ -485,7 +485,11 @@ local function rebuildMountVisual()
 	local speciesId = tostring(localPlayer:GetAttribute("MountedAnimalId") or "Capybara")
 	local mutation = tostring(localPlayer:GetAttribute("MountedAnimalMutation") or "Normal")
 	local sizeRatio = tonumber(localPlayer:GetAttribute("MountedAnimalSize")) or 1.0
-	local mountScale = math.clamp(sizeRatio * 0.72, 0.8, 1.35)
+	local vpMod = VoxelPets.GetSpeciesModule(speciesId)
+	local isColossus = (vpMod ~= nil and vpMod.Archetype == "CataclysmColossus")
+	local mountScale = if isColossus
+		then math.clamp(sizeRatio * 1.25, 1.05, 1.85)
+		else math.clamp(sizeRatio * 0.82, 0.80, 1.45)
 	local keepRig = VoxelPets.IsVoxelRigSpecies(speciesId)
 	local m = AnimalVisualBuilder.BuildAnimalModel(speciesId, mountScale, mutation :: any, not keepRig)
 	m.Name = "MountedAnimal"
@@ -494,7 +498,9 @@ local function rebuildMountVisual()
 	activeMountModel = m
 
 	if hum then
-		hum.HipHeight = math.max(defaultHipHeight + 0.55, 2.05 * mountScale - 0.55)
+		hum.HipHeight = if isColossus
+			then math.max(defaultHipHeight + 1.2, 2.65 * mountScale)
+			else math.max(defaultHipHeight + 0.55, 2.05 * mountScale - 0.55)
 	end
 	setSitAnimation(true)
 end
