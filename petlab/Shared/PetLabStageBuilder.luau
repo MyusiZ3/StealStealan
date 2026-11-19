@@ -17,6 +17,7 @@ local AnimalVisualBuilder = require(ReplicatedStorage.Modules.AnimalVisualBuilde
 local VoxelCrateBuilder = require(ReplicatedStorage.Modules.VoxelCrateBuilder)
 local ClassicStudBiomeBuilder = require(ReplicatedStorage.Modules.ClassicStudBiomeBuilder)
 local VoxelFusionMachineBuilder = require(ReplicatedStorage.Modules.VoxelFusionMachineBuilder)
+local VoxelPetGuardBuilder = require(ReplicatedStorage.Modules.VoxelPetGuardBuilder)
 
 local PetLabStageBuilder = {}
 
@@ -963,6 +964,9 @@ function PetLabStageBuilder.BuildStage(): Folder
 	fSub.Text = "[PET SYNTHESIS ALTAR • 5-VIEW VOXEL]"
 	fSub.Parent = fCard
 
+	-- 3c. Hero 5-Biome Pet Guard / Enemy Lineup Showcase (X = -102..-17.5, Z = 42 facing -Z toward Spawn)
+	VoxelPetGuardBuilder.BuildShowroomLineup(stage)
+
 	-- 4. Dark Checkerboard Showroom Floor (8-stud tiles covering X = -64..64, Z = -168..32) & Back Wall
 	local checkerFolder = Instance.new("Folder")
 	checkerFolder.Name = "DarkCheckerboardBackdrop"
@@ -1115,6 +1119,14 @@ function PetLabStageBuilder.BuildStage(): Folder
 		cp.Name = cr .. "VoxelCrate"
 		cp.Parent = prefabs
 	end
+	for _, bId in ipairs(VoxelPetGuardBuilder.BIOME_ORDER) do
+		local gp = VoxelPetGuardBuilder.Build(bId, CFrame.new(0, 0, 0), {
+			canCollide = false,
+			withEffects = true,
+			parent = prefabs,
+		})
+		gp.Name = "PetGuard_" .. bId
+	end
 
 	for _, zone in ipairs(PetLabStageBuilder.BIOME_ZONES) do
 		local biomeDef = BIOME_DEF_BY_ID[zone.id]
@@ -1195,6 +1207,45 @@ function PetLabStageBuilder.BuildStage(): Folder
 			subtitle = subtitle,
 			parent = zoneModel,
 		})
+
+		-- Contextual Biome Entrance Sentinel Guard beside Left Arch Pillar (facing +Z toward approaching player)
+		local gCfg = VoxelPetGuardBuilder.GetConfig(zone.id)
+		local gX = -32.0
+		local gZ = zone.courtZ + 15.0
+		local gDaisH = 0.40
+		local gPadDia = 5.6 + gCfg.tier * 1.4
+		local gRing = makePart({
+			name = "SentinelDaisRing_" .. zone.id,
+			size = Vector3.new(0.16, gPadDia + 0.55, gPadDia + 0.55),
+			cframe = CFrame.new(gX, PetLabStageBuilder.SHOWROOM_FLOOR_Y + gDaisH - 0.08, gZ) * CFrame.Angles(0, 0, math.rad(90)),
+			color = gCfg.palette.neonPrimary,
+			material = Enum.Material.Neon,
+			shape = Enum.PartType.Cylinder,
+			canCollide = false,
+			parent = zoneModel,
+		})
+		gRing.CastShadow = false
+		makePart({
+			name = "SentinelDaisDeck_" .. zone.id,
+			size = Vector3.new(gDaisH, gPadDia, gPadDia),
+			cframe = CFrame.new(gX, PetLabStageBuilder.SHOWROOM_FLOOR_Y + gDaisH * 0.5, gZ) * CFrame.Angles(0, 0, math.rad(90)),
+			color = Color3.fromRGB(30, 34, 46),
+			shape = Enum.PartType.Cylinder,
+			canCollide = true,
+			parent = zoneModel,
+		})
+		local sentinelCF = CFrame.new(gX, PetLabStageBuilder.SHOWROOM_FLOOR_Y + gDaisH, gZ) * CFrame.Angles(0, math.pi, 0)
+		local sentinel = VoxelPetGuardBuilder.Build(zone.id, sentinelCF, {
+			canCollide = false,
+			withEffects = true,
+			parent = zoneModel,
+		})
+		sentinel.Name = "Showcase_BiomeGuard_" .. zone.id
+
+		local sPlaqueCF = CFrame.new(gX, PetLabStageBuilder.SHOWROOM_FLOOR_Y + 0.78, gZ + gPadDia * 0.5 + 0.65)
+			* CFrame.Angles(0, math.pi, 0)
+			* CFrame.Angles(math.rad(-30), 0, 0)
+		VoxelPetGuardBuilder.AttachPedestalPlaque(zoneModel, gCfg, sPlaqueCF, 6.2, 1.45)
 	end
 
 	-- 6. Dedicated Candidate Staging Wing (East Court @ X = 128): Voxel Front Row vs Lightweight Realistic Back Row
