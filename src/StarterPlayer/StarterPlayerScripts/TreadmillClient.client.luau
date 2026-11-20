@@ -331,7 +331,14 @@ type BeltRigCache = {
 	portal: { centerY: number, centerZ: number, core: BasePart?, rimParts: { { part: BasePart, baseAngle: number, radius: number } } }?,
 	primordialCore: { part: BasePart, baseSize: Vector3 }?,
 	chains: { { part: BasePart, baseLocalPos: Vector3, linkIdx: number, side: number } },
+	signature: string,
 }
+local function rigSignature(tm: Model): string
+	local segFolder = tm:FindFirstChild("BeltSegments")
+	local n = if segFolder then #segFolder:GetDescendants() else 0
+	local p = tm:GetPivot().Position
+	return string.format("%d|%.3f|%.2f|%.2f|%.2f", n, tm:GetScale(), p.X, p.Y, p.Z)
+end
 local beltRigs: { [Model]: BeltRigCache } = {}
 
 local function registerPlotTreadmillRig(tm: Model)
@@ -424,7 +431,13 @@ local function registerPlotTreadmillRig(tm: Model)
 		end
 	end
 
+	-- Streaming/scale race: never cache a half-streamed treadmill, retry on next scan
+	if #segments == 0 then
+		return
+	end
+
 	beltRigs[tm] = {
+		signature = rigSignature(tm),
 		model = tm,
 		level = lv,
 		originCF = originCF,
@@ -449,8 +462,11 @@ RunService.RenderStepped:Connect(function(dt: number)
 	rigScanAccum += dt
 	if rigScanAccum >= 0.8 then
 		rigScanAccum = 0
-		for tm in pairs(beltRigs) do
+		for tm, rig in pairs(beltRigs) do
 			if not tm.Parent then
+				beltRigs[tm] = nil
+			elseif rig.signature ~= rigSignature(tm) then
+				-- Parts streamed in / model rescaled / rebuilt: drop stale cache, re-register below
 				beltRigs[tm] = nil
 			end
 		end
