@@ -318,7 +318,7 @@ task.spawn(function()
 	Workspace.ChildAdded:Connect(registerIsland)
 end)
 
-RunService.RenderStepped:Connect(function()
+RunService.Heartbeat:Connect(function()
 	local now = os.clock()
 	local cam = Workspace.CurrentCamera
 	local camPos = if cam then cam.CFrame.Position else Vector3.new()
