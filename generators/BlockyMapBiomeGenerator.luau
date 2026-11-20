@@ -12,6 +12,7 @@ local BiomeConfig = require(ReplicatedStorage.Config.BiomeConfig)
 local DefaultBuilder = require(ReplicatedStorage.Modules.ClassicStudBiomeBuilder)
 local JungleBiomeAssetBuilder = require(ReplicatedStorage.Modules.JungleBiomeAssetBuilder)
 local MudBiomeAssetBuilder = require(ReplicatedStorage.Modules.MudBiomeAssetBuilder)
+local DesertBiomeAssetBuilder = require(ReplicatedStorage.Modules.DesertBiomeAssetBuilder)
 
 local BlockyMapBiomeGenerator = {}
 
@@ -1184,63 +1185,287 @@ local function populateMangroveSwampDecor(
 	end
 end
 
-local function populateSavannaCampDecor(propsFolder: Folder, biome: any, segMap: { [number]: { TerraceSeg } }, builder: any, rng: Random)
-	local lenZ = biome.zEnd - biome.zStart
+local function populateSavannaCampDecor(
+	propsFolder: Folder,
+	biome: any,
+	segMap: { [number]: { TerraceSeg } },
+	builder: any,
+	rng: Random,
+	crateCoordsOverride: { Vector3 }?,
+	desertBuilderOverride: any?
+)
+	local dbab = desertBuilderOverride or DesertBiomeAssetBuilder
+	dbab.EnsureLibrary()
+
+	local biomeModel = propsFolder.Parent
+	local crateCoords = crateCoordsOverride or collectPineWoodsCrates(biomeModel, biome)
 
 	placeDecorModel(builder.BuildBiomeHorizonArchway(CFrame.new(0, 0.25, biome.zStart + 10), 1.0, propsFolder, "SavannaCamp"), propsFolder)
 
-	-- Hero Left: Desert Watchtower & Step Pyramid
-	local towerZ = biome.zStart + lenZ * 0.26
-	placeDecorModel(builder.BuildVoxelWatchtower(CFrame.new(-35, 0, towerZ) * CFrame.Angles(0, math.rad(14), 0), 1.32, propsFolder, "Desert"), propsFolder)
-	local pyrZ = biome.zStart + lenZ * 0.56
-	placeDecorModel(builder.BuildDesertStepPyramid(CFrame.new(-42, 0, pyrZ), 1.32, propsFolder), propsFolder)
-
-	-- Hero Right: Sandstone Ruin Arch & Oasis Water Pool with Palms
-	local ruinZ = biome.zStart + lenZ * 0.36
-	placeDecorModel(builder.BuildDesertStoneArchRuin(CFrame.new(36, 0, ruinZ) * CFrame.Angles(0, math.rad(-25), 0), 1.28, propsFolder), propsFolder)
-	local oasisZ = biome.zStart + lenZ * 0.72
-	placeDecorModel(builder.BuildOasisWaterPool(CFrame.new(40, 0, oasisZ), 1.25, propsFolder), propsFolder)
-	placeDecorModel(builder.BuildDesertPalmTree(CFrame.new(47, 0, oasisZ + 8), 1.45, propsFolder), propsFolder)
-	placeDecorModel(builder.BuildDesertPalmTree(CFrame.new(33, 0, oasisZ - 8), 1.15, propsFolder), propsFolder)
-
-	-- Roadside Foreground: Pedestal Lanterns, Flowering Cacti & Deadwood Scrubs
-	for z = biome.zStart + 26, biome.zEnd - 22, 46 do
-		placeDecorModel(builder.BuildDesertPedestalLantern(CFrame.new(-20.5, 0.25, z), 0.95, propsFolder), propsFolder)
-		placeDecorModel(builder.BuildDesertPedestalLantern(CFrame.new(20.5, 0.25, z + 23), 0.95, propsFolder), propsFolder)
-		placeDecorModel(builder.BuildVoxelFlowerCactus(CFrame.new(-24, 0, z + 11) * CFrame.Angles(0, rng:NextNumber(0, 6), 0), randFloraScale(rng), propsFolder), propsFolder)
-		placeDecorModel(builder.BuildDesertDeadScrub(CFrame.new(24, 0, z - 8) * CFrame.Angles(0, rng:NextNumber(0, 6), 0), randFloraScale(rng), propsFolder), propsFolder)
+	-- Collect live or canonical OasisWaterPoolSurface rectangles (28x30 rim centered at (-38,870) and (38,1010))
+	local oases: { { x: number, z: number } } = {}
+	local terrainGroup = if biomeModel then biomeModel:FindFirstChild("BlockyTerrain") else nil
+	if terrainGroup then
+		for _, ch in ipairs(terrainGroup:GetChildren()) do
+			if ch:IsA("BasePart") and ch.Name == "OasisWaterPoolSurface" then
+				table.insert(oases, { x = ch.Position.X, z = ch.Position.Z })
+			end
+		end
+	end
+	if #oases == 0 then
+		oases = {
+			{ x = -38, z = 870 },
+			{ x = 38, z = 1010 },
+		}
 	end
 
-	local cactiAndTrees = { builder.BuildVoxelFlowerCactus, builder.BuildSaguaroCactusGiant, builder.BuildAcaciaTreeFlat, builder.BuildDesertPalmTree }
-	local flora = { builder.BuildBarrelCactusCluster, builder.BuildSavannaGrassTuft, builder.BuildDesertDeadScrub, builder.BuildDesertScrubBush }
-	local props = { builder.BuildSandstoneRuinedPillar, builder.BuildDesertSkullBone }
+	local function isInOasis(x: number, z: number, pad: number): boolean
+		for _, oa in ipairs(oases) do
+			if math.abs(x - oa.x) < (14 + pad) and math.abs(z - oa.z) < (15 + pad) then
+				return true
+			end
+		end
+		return false
+	end
 
+	local function isNearCrate(x: number, z: number, minDist: number): boolean
+		local minSq = minDist * minDist
+		for _, c in ipairs(crateCoords) do
+			local dx = x - c.X
+			local dz = z - c.Z
+			if dx * dx + dz * dz < minSq then
+				return true
+			end
+		end
+		return false
+	end
+
+	local heroSpots: { Vector3 } = {}
+	local function isNearHero(x: number, z: number, minDist: number): boolean
+		local minSq = minDist * minDist
+		for _, h in ipairs(heroSpots) do
+			local dx = x - h.X
+			local dz = z - h.Z
+			if dx * dx + dz * dz < minSq then
+				return true
+			end
+		end
+		return false
+	end
+
+	local function findSafeGroundX(prefX: number, z: number, sideSign: number, minCrateDist: number): number?
+		for _, shift in ipairs({ 0, -4 * sideSign, 4 * sideSign, -7 * sideSign, 7 * sideSign }) do
+			local candX = math.clamp(math.abs(prefX + shift), 23, 46) * sideSign
+			if not isInOasis(candX, z, 2.5) and not isNearCrate(candX, z, minCrateDist) and not isNearHero(candX, z, 9.5) then
+				return candX
+			end
+		end
+		return nil
+	end
+
+	local function spawnAsset(category: string, assetName: string, cframe: CFrame, scale: number?): Model
+		return dbab.SpawnFromLibrary(category, assetName, cframe, scale, propsFolder)
+	end
+
+	local allTrees = { "DesertPalmTree", "SmallPalmTree", "DeadDesertTree", "AncientTwistedTree" }
+	local allCacti = { "TallSaguaroCactus", "SmallSaguaroCactus", "PricklyPearCactus", "FloweringCactus" }
+	local floraTop = { "TallSaguaroCactus", "DesertPalmTree", "DeadDesertTree", "AncientTwistedTree", "SmallPalmTree", "SmallSaguaroCactus" }
+	local bushes = { "DryDesertBush", "SmallSucculentBush" }
+	local plants = { "GoldenDryGrass", "DesertFern", "FloweringDesertPlant", "SmallPurpleDesertFlowers", "DesertReeds" }
+	local rocks = { "SandstoneBoulder", "LayeredSandstoneRock", "TallRockPillar", "SmallRockClusters" }
+	local terrainProps = { "SandDunes", "CrackedDryGround", "SandstoneCliffs", "BrokenRockFormations" }
+	local extraDecor = { "WoodenBarrels", "WoodenCrates", "MerchantCart", "DesertSignpost", "AnimalBonesAndSkull", "AncientTreasureChest", "DesertBanners" }
+	local roadsideFixtures = { "WoodenDesertLantern", "SmallWoodenFences", "DesertBanners", "DesertSignpost" }
+
+	local cursors: { [string]: number } = {}
+	local function pickNext(key: string, list: { string }): string
+		local idx = ((cursors[key] or 0) % #list) + 1
+		cursors[key] = idx
+		return list[idx]
+	end
+
+	local function spawnDesertCluster(cx: number, cy: number, cz: number, sideSign: number, includeDecor: boolean)
+		local bx = cx + rng:NextNumber(-4.0, 4.0)
+		local bz = cz + rng:NextNumber(-4.0, 4.0)
+		if math.abs(bx) >= 21.5 and math.abs(bx) <= 48 and not isInOasis(bx, bz, 0.5) and not isNearCrate(bx, bz, 5.2) then
+			if rng:NextNumber() < 0.55 then
+				spawnAsset("Bushes", pickNext("bush", bushes), CFrame.new(bx, cy, bz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.85, 1.25))
+			else
+				spawnAsset("Cacti", pickNext("smallCac", allCacti), CFrame.new(bx, cy, bz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.82, 1.12))
+			end
+		end
+
+		local px = cx + rng:NextNumber(-4.4, 4.4)
+		local pz = cz + rng:NextNumber(-4.4, 4.4)
+		if math.abs(px) >= 21 and math.abs(px) <= 48 and not isInOasis(px, pz, 0.5) and not isNearCrate(px, pz, 4.8) then
+			spawnAsset("Plants", pickNext("plant", plants), CFrame.new(px, cy, pz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.86, 1.25))
+		end
+
+		local rx = cx - sideSign * rng:NextNumber(1.8, 3.8)
+		local rz = cz + rng:NextNumber(-3.6, 3.6)
+		if math.abs(rx) >= 22 and math.abs(rx) <= 48 and not isInOasis(rx, rz, 0.5) and not isNearCrate(rx, rz, 5.4) then
+			if includeDecor then
+				spawnAsset("TerrainProps", pickNext("tprop", terrainProps), CFrame.new(rx, cy, rz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.84, 1.15))
+			else
+				spawnAsset("Rocks", pickNext("rock", rocks), CFrame.new(rx, cy, rz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.82, 1.16))
+			end
+		end
+	end
+
+	-- 1. Dress Existing 2 OasisWaterPoolSurface Lagoons with Palms, Shoreline Reeds & Animated Water Channels
+	for _, oa in ipairs(oases) do
+		local sideSign = if oa.x < 0 then -1 else 1
+		local palmSpots = {
+			{ x = oa.x + sideSign * 7, z = oa.z - 16, name = "DesertPalmTree", sc = 1.28 },
+			{ x = oa.x - sideSign * 8, z = oa.z + 16, name = "DesertPalmTree", sc = 1.15 },
+			{ x = oa.x - sideSign * 10, z = oa.z - 12, name = "SmallPalmTree", sc = 1.08 },
+		}
+		for _, ps in ipairs(palmSpots) do
+			if math.abs(ps.x) >= 22 and not isNearCrate(ps.x, ps.z, 10.0) then
+				spawnAsset("Trees", ps.name, CFrame.new(ps.x, 0, ps.z) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), ps.sc)
+				table.insert(heroSpots, Vector3.new(ps.x, 0, ps.z))
+			end
+		end
+		for _, dz in ipairs({ -4, 4 }) do
+			local rx = oa.x - sideSign * 7.5
+			local rz = oa.z + dz
+			if not isNearCrate(rx, rz, 5.2) then
+				spawnAsset("Plants", "DesertReeds", CFrame.new(rx, 0.14, rz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.95, 1.2))
+			end
+		end
+		local chX = oa.x - sideSign * 12.5
+		if math.abs(chX) >= 23.5 and not isNearCrate(chX, oa.z, 9.5) then
+			local yaw = math.rad(if sideSign == -1 then -90 else 90)
+			spawnAsset("WaterFeatures", "SmallWaterChannels", CFrame.new(chX, 0.12, oa.z) * CFrame.Angles(0, yaw, 0), 1.04)
+			table.insert(heroSpots, Vector3.new(chX, 0, oa.z))
+		end
+	end
+
+	-- 2. Curated 4 Desert Zones (Sandy Desert, Cactus Canyon, Hidden Oasis, Ancient Ruins Kingdom)
+	local heroLandmarks = {
+		-- Zone 1: Sandy Desert (Z=800..900)
+		{ cat = "WaterFeatures", name = "OasisWithLilyPads", x = 35, z = 826, yaw = -74, sc = 1.10, side = 1 },
+		{ cat = "Decorations", name = "MerchantCart", x = 33, z = 894, yaw = -24, sc = 1.12, side = 1 },
+		-- Zone 2: Cactus Canyon (Z=900..1000)
+		{ cat = "WaterFeatures", name = "DryRiverbed", x = -35, z = 932, yaw = 14, sc = 1.15, side = -1 },
+		{ cat = "TerrainProps", name = "SandstoneCliffs", x = -41, z = 944, yaw = 20, sc = 1.25, side = -1 },
+		{ cat = "Structures", name = "AbandonedWatchtower", x = 37, z = 960, yaw = -18, sc = 1.18, side = 1 },
+		{ cat = "Rocks", name = "TallRockPillar", x = 40, z = 922, yaw = -12, sc = 1.24, side = 1 },
+		{ cat = "Decorations", name = "AnimalBonesAndSkull", x = -34, z = 988, yaw = 32, sc = 1.15, side = -1 },
+		-- Zone 3: Hidden Oasis Sanctuary (Z=995..1095)
+		{ cat = "WaterFeatures", name = "TurquoiseWaterPond", x = -37, z = 1002, yaw = 76, sc = 1.12, side = -1 },
+		{ cat = "WaterFeatures", name = "SmallOasisWaterfall", x = -38, z = 1062, yaw = 74, sc = 1.14, side = -1 },
+		{ cat = "WaterFeatures", name = "SmallDesertOasis", x = 36, z = 1094, yaw = -76, sc = 1.10, side = 1 },
+		-- Zone 4: Ancient Ruins Kingdom (Z=1090..1200)
+		{ cat = "Structures", name = "AncientStoneGate", x = 36, z = 1106, yaw = -22, sc = 1.14, side = 1 },
+		{ cat = "Structures", name = "DesertTempleEntrance", x = -38, z = 1130, yaw = 22, sc = 1.16, side = -1 },
+		{ cat = "Structures", name = "SandstoneMonument", x = 35, z = 1166, yaw = -18, sc = 1.18, side = 1 },
+		{ cat = "Ruins", name = "SmallRuinedTemple", x = -39, z = 1180, yaw = 16, sc = 1.14, side = -1 },
+		{ cat = "Ruins", name = "AncientSandstoneArch", x = -35, z = 1090, yaw = 28, sc = 1.12, side = -1 },
+		{ cat = "Ruins", name = "BrokenAncientPillars", x = 34, z = 1044, yaw = -25, sc = 1.12, side = 1 },
+		{ cat = "Ruins", name = "RuinedWalls", x = 34, z = 1186, yaw = -15, sc = 1.10, side = 1 },
+	}
+	for idx, hl in ipairs(heroLandmarks) do
+		local gx = findSafeGroundX(hl.x, hl.z, hl.side, 10.5)
+		if gx then
+			spawnAsset(hl.cat, hl.name, CFrame.new(gx, 0, hl.z) * CFrame.Angles(0, math.rad(hl.yaw), 0), hl.sc)
+			table.insert(heroSpots, Vector3.new(gx, 0, hl.z))
+			local dX = gx - hl.side * 6.0
+			local dZ = hl.z + (if idx % 2 == 0 then 5.5 else -5.5)
+			if math.abs(dX) >= 22 and not isInOasis(dX, dZ, 1.5) and not isNearCrate(dX, dZ, 6.0) then
+				spawnAsset("Decorations", pickNext("heroDecor", extraDecor), CFrame.new(dX, 0, dZ) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.95, 1.15))
+			end
+			spawnDesertCluster(gx - hl.side * 3.5, 0, hl.z, hl.side, idx % 2 == 1)
+		end
+	end
+
+	-- 3. Non-Uniform Roadside Warm Lanterns, Banners, Signposts & Flora Pockets (X = +/-21.4)
 	for _, sideSign in ipairs({ -1, 1 }) do
-		for i, seg in ipairs(segMap[sideSign]) do
-			local skipHero = (sideSign == -1 and (math.abs(seg.zCenter - towerZ) < 16 or math.abs(seg.zCenter - pyrZ) < 22))
-				or (sideSign == 1 and (math.abs(seg.zCenter - ruinZ) < 16 or math.abs(seg.zCenter - oasisZ) < 20))
+		local z = biome.zStart + rng:NextNumber(22, 30)
+		while z <= biome.zEnd - 18 do
+			local lx = sideSign * 21.4
+			local placeZ = z
+			if isNearCrate(lx, placeZ, 6.2) then
+				placeZ += 8.5
+			end
+			if placeZ <= biome.zEnd - 16 and not isNearCrate(lx, placeZ, 6.2) then
+				local fixName = pickNext("road_" .. tostring(sideSign), roadsideFixtures)
+				local yaw = if sideSign == -1 then 0 else math.pi
+				spawnAsset("Decorations", fixName, CFrame.new(lx, 0.2, placeZ) * CFrame.Angles(0, yaw, 0), rng:NextNumber(0.9, 1.0))
 
-			if not skipHero then
-				local fx = sideSign * rng:NextNumber(26, 46)
-				local fz = seg.zCenter + rng:NextNumber(-8, 8)
-				if i % 3 == 0 then
-					local pFn = props[rng:NextInteger(1, #props)]
-					placeDecorModel(pFn(CFrame.new(fx, 0, fz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), randRockScale(rng), propsFolder), propsFolder)
-				else
-					local cFn = cactiAndTrees[rng:NextInteger(1, #cactiAndTrees)]
-					placeDecorModel(cFn(CFrame.new(fx, 0, fz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), randTreeScale(rng), propsFolder), propsFolder)
+				local pocketX = sideSign * rng:NextNumber(23.0, 25.5)
+				if not isInOasis(pocketX, placeZ + 3.0, 0.5) and not isNearCrate(pocketX, placeZ + 3.0, 5.2) then
+					if rng:NextNumber() < 0.55 then
+						spawnAsset("Cacti", pickNext("roadCac", allCacti), CFrame.new(pocketX, 0, placeZ + 3.0) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.84, 1.12))
+					else
+						spawnAsset("Plants", pickNext("plant", plants), CFrame.new(pocketX, 0, placeZ + 3.0) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.88, 1.2))
+					end
 				end
-				local flFn = flora[rng:NextInteger(1, #flora)]
-				placeDecorModel(flFn(CFrame.new(sideSign * rng:NextNumber(22, 47), 0, seg.zCenter + rng:NextNumber(-8, 8)), randFloraScale(rng), propsFolder), propsFolder)
+				if not isInOasis(pocketX, placeZ - 3.4, 0.5) and not isNearCrate(pocketX, placeZ - 3.4, 5.2) then
+					if rng:NextNumber() < 0.45 then
+						spawnAsset("Decorations", pickNext("decor", extraDecor), CFrame.new(pocketX, 0, placeZ - 3.4) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.9, 1.12))
+					else
+						spawnAsset("Rocks", pickNext("rock", rocks), CFrame.new(pocketX, 0, placeZ - 3.4) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.75, 1.08))
+					end
+				end
+			end
+			z += rng:NextNumber(38, 56)
+		end
+	end
+
+	-- 4. Mid-Flank Canyon Flora & 3-Tier Terrace Skyline
+	for _, sideSign in ipairs({ -1, 1 }) do
+		for segIdx, seg in ipairs(segMap[sideSign]) do
+			local fz = seg.zCenter + rng:NextNumber(-7.5, 7.5)
+			local fx = sideSign * rng:NextNumber(26, 44)
+			if not isInOasis(fx, fz, 2.0) and not isNearHero(fx, fz, 9.5) and not isNearCrate(fx, fz, 10.0) then
+				if rng:NextNumber() < 0.36 then
+					spawnAsset("Trees", pickNext("midTree", allTrees), CFrame.new(fx, 0, fz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.95, 1.24))
+				elseif rng:NextNumber() < 0.72 then
+					spawnAsset("Cacti", pickNext("midCac", allCacti), CFrame.new(fx, 0, fz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.92, 1.26))
+				else
+					spawnAsset("Rocks", pickNext("midRock", rocks), CFrame.new(fx, 0, fz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.88, 1.24))
+				end
+				spawnDesertCluster(fx, 0, fz, sideSign, segIdx % 2 == 0)
+			elseif rng:NextNumber() < 0.5 then
+				local fxAlt = sideSign * rng:NextNumber(22.5, 26)
+				if not isInOasis(fxAlt, fz, 1.0) and not isNearHero(fxAlt, fz, 7.5) and not isNearCrate(fxAlt, fz, 5.5) then
+					spawnDesertCluster(fxAlt, 0, fz, sideSign, segIdx % 2 == 1)
+				end
 			end
 
-			-- Tier 1..3 Cacti, Mesa Arches & Acacias
-			local c1 = cactiAndTrees[rng:NextInteger(1, #cactiAndTrees)]
-			placeDecorModel(c1(CFrame.new(seg.t1X, seg.t1Y, seg.zCenter + rng:NextNumber(-6, 6)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), randTreeScale(rng), propsFolder), propsFolder)
-			local c2 = if i % 4 == 0 then builder.BuildSandstoneMesaArch else cactiAndTrees[rng:NextInteger(1, #cactiAndTrees)]
-			placeDecorModel(c2(CFrame.new(seg.t2X, seg.t2Y, seg.zCenter + rng:NextNumber(-6, 6)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), randTreeScale(rng) * 1.1, propsFolder), propsFolder)
-			if i % 2 == 0 then
-				placeDecorModel(builder.BuildSaguaroCactusGiant(CFrame.new(seg.t3X, seg.t3Y, seg.zCenter + rng:NextNumber(-6, 6)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), randTreeScale(rng) * 1.25, propsFolder), propsFolder)
+			-- Tier 1..3 Skyline (avoiding TerraceWaterfall chutes at segIdx == 5/-1 and segIdx == 10/1)
+			local onChute = (sideSign == -1 and segIdx == 5) or (sideSign == 1 and segIdx == 10)
+			if not onChute then
+				local t1Item = pickNext("t1", floraTop)
+				local t1Cat = if string.find(t1Item, "Cactus", 1, true) then "Cacti" else "Trees"
+				spawnAsset(t1Cat, t1Item, CFrame.new(seg.t1X, seg.t1Y, seg.zCenter + rng:NextNumber(-6.5, 6.5)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.92, 1.24))
+				if segIdx % 2 == 1 then
+					spawnAsset("Bushes", pickNext("bushT1", bushes), CFrame.new(seg.t1X - sideSign * rng:NextNumber(2.8, 5.0), seg.t1Y, seg.zCenter + rng:NextNumber(-6, 6)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.88, 1.2))
+				end
+			end
+
+			if not onChute then
+				if segIdx % 4 == 0 then
+					spawnAsset("Ruins", "AncientSandstoneArch", CFrame.new(seg.t2X, seg.t2Y, seg.zCenter + rng:NextNumber(-5, 5)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(1.05, 1.22))
+				else
+					local t2Item = pickNext("t2", floraTop)
+					local t2Cat = if string.find(t2Item, "Cactus", 1, true) then "Cacti" else "Trees"
+					spawnAsset(t2Cat, t2Item, CFrame.new(seg.t2X, seg.t2Y, seg.zCenter + rng:NextNumber(-6.5, 6.5)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(1.02, 1.3))
+				end
+			end
+			if segIdx % 3 == 2 then
+				spawnAsset("Rocks", pickNext("rockT2", rocks), CFrame.new(seg.t2X - sideSign * 4.0, seg.t2Y, seg.zCenter + rng:NextNumber(-5, 5)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.95, 1.3))
+			end
+
+			if segIdx % 2 == 1 then
+				spawnAsset("Cacti", "TallSaguaroCactus", CFrame.new(seg.t3X, seg.t3Y, seg.zCenter + rng:NextNumber(-6, 6)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(1.16, 1.42))
+			else
+				spawnAsset("TerrainProps", "SandstoneCliffs", CFrame.new(seg.t3X, seg.t3Y, seg.zCenter + rng:NextNumber(-6, 6)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(1.08, 1.32))
+			end
+
+			if segIdx % 2 == 0 then
+				task.wait()
 			end
 		end
 	end
@@ -1790,6 +2015,15 @@ function BlockyMapBiomeGenerator.RebuildMangroveSwampDecor(worldFolder: Folder, 
 	mbab.EnsureLibrary()
 	return rebuildSingleBiomeDecor(worldFolder, 2, builderOverride, function(propsFolder, biome, segMap, builder, rng, crates)
 		populateMangroveSwampDecor(propsFolder, biome, segMap, builder, rng, crates, mbab)
+	end)
+end
+
+-- Rebuilds ONLY SavannaCamp.CuratedDecor in-place without disturbing BlockyTerrain, CrateSpawns, PoacherPatrol, Biomes 1/2/4/5, or SkyIslands.
+function BlockyMapBiomeGenerator.RebuildSavannaCampDecor(worldFolder: Folder, builderOverride: any?, desertBuilderOverride: any?): Folder
+	local dbab = desertBuilderOverride or DesertBiomeAssetBuilder
+	dbab.EnsureLibrary()
+	return rebuildSingleBiomeDecor(worldFolder, 3, builderOverride, function(propsFolder, biome, segMap, builder, rng, crates)
+		populateSavannaCampDecor(propsFolder, biome, segMap, builder, rng, crates, dbab)
 	end)
 end
 
