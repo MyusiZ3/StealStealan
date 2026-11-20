@@ -13,6 +13,7 @@ local DefaultBuilder = require(ReplicatedStorage.Modules.ClassicStudBiomeBuilder
 local JungleBiomeAssetBuilder = require(ReplicatedStorage.Modules.JungleBiomeAssetBuilder)
 local MudBiomeAssetBuilder = require(ReplicatedStorage.Modules.MudBiomeAssetBuilder)
 local DesertBiomeAssetBuilder = require(ReplicatedStorage.Modules.DesertBiomeAssetBuilder)
+local WinterBiomeAssetBuilder = require(ReplicatedStorage.Modules.WinterBiomeAssetBuilder)
 
 local BlockyMapBiomeGenerator = {}
 
@@ -1471,75 +1472,333 @@ local function populateSavannaCampDecor(
 	end
 end
 
-local function populateAlpinePeaksDecor(propsFolder: Folder, biome: any, segMap: { [number]: { TerraceSeg } }, builder: any, rng: Random)
-	local lenZ = biome.zEnd - biome.zStart
+local function populateAlpinePeaksDecor(
+	propsFolder: Folder,
+	biome: any,
+	segMap: { [number]: { TerraceSeg } },
+	builder: any,
+	rng: Random,
+	crateCoordsOverride: { Vector3 }?,
+	winterBuilderOverride: any?
+)
+	local wbab = winterBuilderOverride or WinterBiomeAssetBuilder
+	wbab.EnsureLibrary()
+
+	local biomeModel = propsFolder.Parent
+	local crateCoords = crateCoordsOverride or collectPineWoodsCrates(biomeModel, biome)
 
 	placeDecorModel(builder.BuildBiomeHorizonArchway(CFrame.new(0, 0.25, biome.zStart + 10), 1.0, propsFolder, "AlpinePeaks"), propsFolder)
 
-	-- Subtle Overhead Falling Snow Anchor over the middle of AlpinePeaks
-	local snowCloud = makeBlock({
-		name = "AlpineSnowEmitterAnchor",
-		size = Vector3.new(120, 1, 220),
-		cframe = CFrame.new(0, 42, biome.zStart + lenZ * 0.5),
-		color = Color3.new(1, 1, 1),
-		transparency = 1,
-		canCollide = false,
-		canQuery = false,
-		canTouch = false,
-		parent = propsFolder,
-	})
-	addSurfaceParticles(snowCloud, 14, Color3.fromRGB(240, 248, 255), Color3.fromRGB(204, 236, 255), NumberSequence.new(0.28, 0.14), Enum.NormalId.Bottom, 0.3, NumberRange.new(4, 7), NumberRange.new(4.5, 6.5))
-
-	-- Hero Left: Cozy Snow Igloo + Friendly Voxel Snowman + Ice Crystals
-	local iglooZ = biome.zStart + lenZ * 0.34
-	placeDecorModel(builder.BuildVoxelSnowIgloo(CFrame.new(-38, 0, iglooZ) * CFrame.Angles(0, math.rad(135), 0), 1.32, propsFolder), propsFolder)
-	placeDecorModel(builder.BuildVoxelSnowman(CFrame.new(-28, 0, iglooZ - 10) * CFrame.Angles(0, math.rad(145), 0), 1.22, propsFolder), propsFolder)
-
-	-- Hero Right: Frozen Icicle Pergola & Giant Ice Crystal Spire
-	local pergZ = biome.zStart + lenZ * 0.52
-	placeDecorModel(builder.BuildFrozenIciclePergola(CFrame.new(36, 0, pergZ) * CFrame.Angles(0, math.rad(-25), 0), 1.32, propsFolder), propsFolder)
-	local spireZ = biome.zStart + lenZ * 0.78
-	placeDecorModel(builder.BuildGiantIceCrystalSpire(CFrame.new(44, 0, spireZ), 1.4, propsFolder), propsFolder)
-
-	-- Roadside Foreground: Cyan Glowing Frost Lanterns & Ice Crystal Clusters
-	for z = biome.zStart + 26, biome.zEnd - 22, 46 do
-		placeDecorModel(builder.BuildAlpineCyanLantern(CFrame.new(-20.5, 0.25, z), 0.95, propsFolder), propsFolder)
-		placeDecorModel(builder.BuildAlpineCyanLantern(CFrame.new(20.5, 0.25, z + 23), 0.95, propsFolder), propsFolder)
-		placeDecorModel(builder.BuildIceCrystalCluster(CFrame.new(-24, 0, z + 11) * CFrame.Angles(0, rng:NextNumber(0, 6), 0), randFloraScale(rng), propsFolder), propsFolder)
-		placeDecorModel(builder.BuildIceCrystalCluster(CFrame.new(24, 0, z - 8) * CFrame.Angles(0, rng:NextNumber(0, 6), 0), randFloraScale(rng), propsFolder), propsFolder)
+	-- Collect live or canonical GlacierIcePool rectangles (26x36 centered at X = +/-38)
+	local icePools: { { x: number, z: number } } = {}
+	local terrainGroup = if biomeModel then biomeModel:FindFirstChild("BlockyTerrain") else nil
+	if terrainGroup then
+		for _, ch in ipairs(terrainGroup:GetChildren()) do
+			if ch:IsA("BasePart") and (ch.Name == "GlacierIcePool" or ch.Name == "GlacierIcePoolSurface") then
+				table.insert(icePools, { x = ch.Position.X, z = ch.Position.Z })
+			end
+		end
+	end
+	if #icePools == 0 then
+		icePools = {
+			{ x = 38, z = 1248 },
+			{ x = -38, z = 1334 },
+			{ x = 38, z = 1420 },
+			{ x = -38, z = 1506 },
+			{ x = 38, z = 1592 },
+		}
 	end
 
-	local trees = { builder.BuildSnowyPineTreeTall, builder.BuildSnowyPineTreeTwin, builder.BuildFrostedBirchTree }
-	local flora = { builder.BuildIceCrystalCluster, builder.BuildCrystalFrostFlower, builder.BuildIceBerryBush, builder.BuildFrostGrassTuft }
-	local props = { builder.BuildGlacierBoulderSnowy, builder.BuildAlpineStoneCairn, builder.BuildFrozenHollowLog }
+	local function isInIcePool(x: number, z: number, pad: number): boolean
+		for _, ip in ipairs(icePools) do
+			if math.abs(x - ip.x) < (13 + pad) and math.abs(z - ip.z) < (18 + pad) then
+				return true
+			end
+		end
+		return false
+	end
 
+	local function isNearCrate(x: number, z: number, minDist: number): boolean
+		local minSq = minDist * minDist
+		for _, c in ipairs(crateCoords) do
+			local dx = x - c.X
+			local dz = z - c.Z
+			if dx * dx + dz * dz < minSq then
+				return true
+			end
+		end
+		return false
+	end
+
+	local heroSpots: { Vector3 } = {}
+	local function isNearHero(x: number, z: number, minDist: number): boolean
+		local minSq = minDist * minDist
+		for _, h in ipairs(heroSpots) do
+			local dx = x - h.X
+			local dz = z - h.Z
+			if dx * dx + dz * dz < minSq then
+				return true
+			end
+		end
+		return false
+	end
+
+	local function findSafeGroundX(prefX: number, z: number, sideSign: number, minCrateDist: number): number?
+		for _, shift in ipairs({ 0, -4 * sideSign, 4 * sideSign, -7 * sideSign, 7 * sideSign }) do
+			local candX = math.clamp(math.abs(prefX + shift), 24, 46) * sideSign
+			if not isInIcePool(candX, z, 2.5) and not isNearCrate(candX, z, minCrateDist) and not isNearHero(candX, z, 8.5) then
+				return candX
+			end
+		end
+		return nil
+	end
+
+	local function spawnAsset(category: string, assetName: string, cframe: CFrame, scale: number?): Model
+		return wbab.SpawnFromLibrary(category, assetName, cframe, scale, propsFolder)
+	end
+
+	local allTrees = {
+		"LargeSnowPineTree",
+		"MediumSnowPineTree",
+		"SmallSnowPineTree",
+		"FrostedSpruceTree",
+		"FrozenDeadTree",
+		"TwistedWinterTree",
+		"SnowCoveredOakTree",
+	}
+	local allBushes = { "SnowCoveredBush", "FrozenGreenBush", "SmallSnowCoveredShrubs" }
+	local allPlants = { "SmallFrostFern", "WinterGrass", "PurpleFrostFlowers", "BlueCrystalPlants", "FrozenReeds" }
+	local allRocks = { "SnowCoveredBoulder", "FrozenRockFormation", "FrozenCliffRocks", "SmallIceRocks" }
+	local allCrystals = { "IceSpikes", "BlueIceCrystalCluster" }
+	local terrainProps = { "SnowMounds", "SnowCoveredFallenLogs" }
+	local extraDecor = {
+		"WoodenCrates",
+		"FrozenWoodenBarrels",
+		"SnowCoveredSignposts",
+		"WoodenFences",
+		"FrozenBenches",
+		"SmallSnowCoveredWagons",
+		"DecorativeIceSculptures",
+		"Snowman",
+	}
+	local roadsideFixtures = { "WoodenWinterLantern", "WoodenFences", "SnowCoveredSignposts", "FrozenBenches" }
+
+	local cursors: { [string]: number } = {}
+	local function pickNext(key: string, list: { string }): string
+		local idx = ((cursors[key] or 0) % #list) + 1
+		cursors[key] = idx
+		return list[idx]
+	end
+
+	local function spawnWinterCluster(cx: number, cy: number, cz: number, sideSign: number, includeDecor: boolean)
+		local bx = cx + rng:NextNumber(-3.8, 3.8)
+		local bz = cz + rng:NextNumber(-3.8, 3.8)
+		if math.abs(bx) >= 21.5 and math.abs(bx) <= 48 and not isInIcePool(bx, bz, 0.5) and not isNearCrate(bx, bz, 5.2) then
+			if rng:NextNumber() < 0.65 then
+				spawnAsset("Bushes", pickNext("bush", allBushes), CFrame.new(bx, cy, bz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.86, 1.2))
+			else
+				spawnAsset("IceCrystals", pickNext("crys", allCrystals), CFrame.new(bx, cy, bz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.84, 1.12))
+			end
+		end
+
+		local px = cx + rng:NextNumber(-4.2, 4.2)
+		local pz = cz + rng:NextNumber(-4.2, 4.2)
+		if math.abs(px) >= 21.2 and math.abs(px) <= 48 and not isInIcePool(px, pz, 0.5) and not isNearCrate(px, pz, 4.8) then
+			spawnAsset("Plants", pickNext("plant", allPlants), CFrame.new(px, cy, pz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.88, 1.24))
+		end
+
+		local rx = cx - sideSign * rng:NextNumber(1.8, 3.6)
+		local rz = cz + rng:NextNumber(-3.4, 3.4)
+		if math.abs(rx) >= 22 and math.abs(rx) <= 48 and not isInIcePool(rx, rz, 0.5) and not isNearCrate(rx, rz, 5.4) then
+			if includeDecor then
+				spawnAsset("TerrainProps", pickNext("tprop", terrainProps), CFrame.new(rx, cy, rz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.86, 1.15))
+			else
+				spawnAsset("Rocks", pickNext("rock", allRocks), CFrame.new(rx, cy, rz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.82, 1.14))
+			end
+		end
+	end
+
+	-- 1. Dress Existing 5 GlacierIcePools (Shore Edges, Frozen Reeds, Bridges & Rivers)
+	for poolIdx, ip in ipairs(icePools) do
+		local sideSign = if ip.x < 0 then -1 else 1
+		local bankSpots = {
+			{ x = ip.x - sideSign * 7, z = ip.z - 19, cat = "Trees", name = "FrostedSpruceTree", sc = 1.18 },
+			{ x = ip.x + sideSign * 6, z = ip.z + 19, cat = "Trees", name = "SmallSnowPineTree", sc = 1.12 },
+		}
+		for _, bs in ipairs(bankSpots) do
+			if math.abs(bs.x) >= 23 and not isNearCrate(bs.x, bs.z, 9.5) then
+				spawnAsset(bs.cat, bs.name, CFrame.new(bs.x, 0, bs.z) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), bs.sc)
+				table.insert(heroSpots, Vector3.new(bs.x, 0, bs.z))
+			end
+		end
+
+		local edgeYaw = math.rad(if sideSign == -1 then 90 else -90)
+		local edgeZ = ip.z + (if poolIdx == 5 then 8 else -7)
+		if not isNearCrate(ip.x - sideSign * 12.0, edgeZ, 6.5) then
+			spawnAsset("WaterFeatures", "SnowCoveredWaterEdges", CFrame.new(ip.x - sideSign * 12.0, 0.14, edgeZ) * CFrame.Angles(0, edgeYaw, 0), 1.05)
+		end
+
+		for _, dz in ipairs({ -5, 6 }) do
+			local rx = ip.x - sideSign * 10.5
+			local rz = ip.z + dz
+			if not isNearCrate(rx, rz, 5.5) then
+				spawnAsset("Plants", "FrozenReeds", CFrame.new(rx, 0.14, rz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.95, 1.18))
+			end
+		end
+	end
+
+	-- Exact Glacier Bridges & Animated FrozenRiverSections
+	spawnAsset("WaterFeatures", "IceBridges", CFrame.new(38, 0.2, 1420), 1.24)
+	table.insert(heroSpots, Vector3.new(38, 0, 1420))
+	spawnAsset("WaterFeatures", "IceBridges", CFrame.new(-36, 0.2, 1506), 1.24)
+	table.insert(heroSpots, Vector3.new(-36, 0, 1506))
+	spawnAsset("WaterFeatures", "FrozenRiverSections", CFrame.new(-26.5, 0.14, 1506) * CFrame.Angles(0, math.rad(-90), 0), 0.92)
+	table.insert(heroSpots, Vector3.new(-26.5, 0, 1506))
+	spawnAsset("WaterFeatures", "IceBridges", CFrame.new(35, 0.2, 1592), 1.24)
+	table.insert(heroSpots, Vector3.new(35, 0, 1592))
+	spawnAsset("WaterFeatures", "FrozenRiverSections", CFrame.new(26.5, 0.14, 1592) * CFrame.Angles(0, math.rad(90), 0), 0.92)
+	table.insert(heroSpots, Vector3.new(26.5, 0, 1592))
+
+	-- EnvironmentalEffects Across the 4 Sub-Areas (Snowfall, Ice Sparkles, Frost Aura, Wind Drift)
+	spawnAsset("EnvironmentalEffects", "SnowfallEmitter", CFrame.new(-28, 0, 1292), 1.0)
+	spawnAsset("EnvironmentalEffects", "SnowfallEmitter", CFrame.new(24, 0, 1520), 1.0)
+	spawnAsset("EnvironmentalEffects", "FloatingIceSparkles", CFrame.new(32, 0, 1358), 1.1)
+	spawnAsset("EnvironmentalEffects", "FloatingIceSparkles", CFrame.new(-34, 0, 1398), 1.1)
+	spawnAsset("EnvironmentalEffects", "GlowingFrostAura", CFrame.new(-34, 0, 1368), 1.08)
+	spawnAsset("EnvironmentalEffects", "GlowingFrostAura", CFrame.new(34, 0, 1410), 1.08)
+	spawnAsset("EnvironmentalEffects", "SnowWindDrift", CFrame.new(-26, 0, 1582), 1.05)
+	spawnAsset("EnvironmentalEffects", "SnowWindDrift", CFrame.new(28, 0, 1624), 1.05)
+
+	-- 2. Curated 4 Winter Sub-Areas (Snowy Forest, Crystal Valley, Frozen Kingdom, Frozen Lake)
+	local heroLandmarks = {
+		-- Area 1: Snowy Forest (Z = 1200..1315)
+		{ cat = "TerrainProps", name = "SnowCoveredFallenLogs", x = -34, z = 1244, yaw = 32, sc = 1.1, side = -1 },
+		{ cat = "Decorations", name = "Snowman", x = -27, z = 1254, yaw = 72, sc = 1.18, side = -1 },
+		{ cat = "Decorations", name = "WinterCampfire", x = -29, z = 1262, yaw = 0, sc = 1.08, side = -1 },
+		{ cat = "Structures", name = "SmallAbandonedWatchtower", x = -38, z = 1272, yaw = 22, sc = 1.14, side = -1 },
+		{ cat = "Decorations", name = "SmallSnowCoveredWagons", x = -34, z = 1290, yaw = 36, sc = 1.06, side = -1 },
+		{ cat = "WaterFeatures", name = "FrozenWaterfall", x = 38, z = 1296, yaw = -90, sc = 1.36, side = 1 },
+		-- Area 2: Crystal Valley (Z = 1315..1430)
+		{ cat = "IceCrystals", name = "LargeCrystalFormation", x = 40, z = 1352, yaw = -20, sc = 1.2, side = 1 },
+		{ cat = "IceCrystals", name = "LargeCrystalFormation", x = -40, z = 1372, yaw = 24, sc = 1.18, side = -1 },
+		{ cat = "WaterFeatures", name = "IceCaveEntrance", x = 39, z = 1384, yaw = -90, sc = 1.12, side = 1 },
+		{ cat = "WaterFeatures", name = "BlueIceCrystalPonds", x = -40, z = 1412, yaw = 74, sc = 1.08, side = -1 },
+		-- Area 3: Frozen Kingdom (Z = 1430..1545)
+		{ cat = "Structures", name = "FrozenTempleEntrance", x = -39, z = 1436, yaw = 90, sc = 1.14, side = -1 },
+		{ cat = "Ruins", name = "SnowCoveredStoneWalls", x = 37, z = 1448, yaw = -78, sc = 1.1, side = 1 },
+		{ cat = "Structures", name = "FrozenCastleDecoration", x = 38, z = 1468, yaw = -22, sc = 1.14, side = 1 },
+		{ cat = "Decorations", name = "WinterCampfire", x = 30, z = 1476, yaw = 0, sc = 1.06, side = 1 },
+		{ cat = "Ruins", name = "AncientSnowRuins", x = 38, z = 1522, yaw = -68, sc = 1.08, side = 1 },
+		{ cat = "Structures", name = "FrozenStoneGate", x = 38, z = 1544, yaw = -24, sc = 1.12, side = 1 },
+		-- Area 4: Frozen Lake (Z = 1545..1650)
+		{ cat = "Ruins", name = "AncientFrozenStoneArch", x = -30, z = 1556, yaw = 26, sc = 1.06, side = -1 },
+		{ cat = "Ruins", name = "BrokenIcePillars", x = 29, z = 1560, yaw = -24, sc = 1.08, side = 1 },
+		{ cat = "Structures", name = "IceMonument", x = -39, z = 1568, yaw = 18, sc = 1.16, side = -1 },
+		{ cat = "WaterFeatures", name = "FrozenWaterfall", x = -38, z = 1594, yaw = 90, sc = 1.34, side = -1 },
+		{ cat = "Decorations", name = "DecorativeIceSculptures", x = 34, z = 1618, yaw = -32, sc = 1.12, side = 1 },
+		{ cat = "WaterFeatures", name = "FrozenLake", x = -39, z = 1636, yaw = 76, sc = 1.06, side = -1 },
+		{ cat = "WaterFeatures", name = "SmallIcePond", x = 36, z = 1634, yaw = -70, sc = 1.08, side = 1 },
+	}
+	for idx, hl in ipairs(heroLandmarks) do
+		local gx = findSafeGroundX(hl.x, hl.z, hl.side, 10.2)
+		if gx then
+			spawnAsset(hl.cat, hl.name, CFrame.new(gx, 0, hl.z) * CFrame.Angles(0, math.rad(hl.yaw), 0), hl.sc)
+			table.insert(heroSpots, Vector3.new(gx, 0, hl.z))
+			local dX = gx - hl.side * 5.8
+			local dZ = hl.z + (if idx % 2 == 0 then 5.2 else -5.2)
+			if math.abs(dX) >= 22 and not isInIcePool(dX, dZ, 1.5) and not isNearCrate(dX, dZ, 5.8) then
+				spawnAsset("Decorations", pickNext("heroDecor", extraDecor), CFrame.new(dX, 0, dZ) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.95, 1.12))
+			end
+			spawnWinterCluster(gx - hl.side * 3.2, 0, hl.z, hl.side, idx % 2 == 1)
+		end
+	end
+
+	-- 3. Non-Uniform Roadside Warm Lanterns, Fences, Signposts, Benches & Snow Flora Pockets
 	for _, sideSign in ipairs({ -1, 1 }) do
-		for i, seg in ipairs(segMap[sideSign]) do
-			local skipHero = (sideSign == -1 and math.abs(seg.zCenter - iglooZ) < 18)
-				or (sideSign == 1 and (math.abs(seg.zCenter - pergZ) < 16 or math.abs(seg.zCenter - spireZ) < 18))
+		local z = biome.zStart + rng:NextNumber(22, 30)
+		while z <= biome.zEnd - 18 do
+			local lx = sideSign * 21.4
+			local placeZ = z
+			if isNearCrate(lx, placeZ, 6.2) then
+				placeZ += 8.5
+			end
+			if placeZ <= biome.zEnd - 16 and not isNearCrate(lx, placeZ, 6.2) then
+				local fixName = pickNext("road_" .. tostring(sideSign), roadsideFixtures)
+				local yaw = if sideSign == -1 then 0 else math.pi
+				spawnAsset("Decorations", fixName, CFrame.new(lx, 0.2, placeZ) * CFrame.Angles(0, yaw, 0), rng:NextNumber(0.88, 0.98))
 
-			if not skipHero then
-				local fx = sideSign * rng:NextNumber(27, 46)
-				local fz = seg.zCenter + rng:NextNumber(-8, 8)
-				if i % 3 == 0 then
-					local pFn = props[rng:NextInteger(1, #props)]
-					placeDecorModel(pFn(CFrame.new(fx, 0, fz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), randRockScale(rng), propsFolder), propsFolder)
-				else
-					local tFn = trees[rng:NextInteger(1, #trees)]
-					placeDecorModel(tFn(CFrame.new(fx, 0, fz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), randTreeScale(rng), propsFolder), propsFolder)
+				local pocketX = sideSign * rng:NextNumber(23.0, 25.2)
+				if not isInIcePool(pocketX, placeZ + 3.0, 0.5) and not isNearCrate(pocketX, placeZ + 3.0, 5.2) then
+					if rng:NextNumber() < 0.45 then
+						spawnAsset("Bushes", pickNext("roadBush", allBushes), CFrame.new(pocketX, 0, placeZ + 3.0) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.86, 1.16))
+					else
+						spawnAsset("Plants", pickNext("roadPlant", allPlants), CFrame.new(pocketX, 0, placeZ + 3.0) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.88, 1.2))
+					end
 				end
-				local flFn = flora[rng:NextInteger(1, #flora)]
-				placeDecorModel(flFn(CFrame.new(sideSign * rng:NextNumber(22, 47), 0, seg.zCenter + rng:NextNumber(-8, 8)), randFloraScale(rng), propsFolder), propsFolder)
+				if not isInIcePool(pocketX, placeZ - 3.4, 0.5) and not isNearCrate(pocketX, placeZ - 3.4, 5.2) then
+					if rng:NextNumber() < 0.42 then
+						spawnAsset("IceCrystals", pickNext("roadCrys", allCrystals), CFrame.new(pocketX, 0, placeZ - 3.4) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.84, 1.12))
+					else
+						spawnAsset("Rocks", pickNext("roadRock", allRocks), CFrame.new(pocketX, 0, placeZ - 3.4) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.76, 1.06))
+					end
+				end
+			end
+			z += rng:NextNumber(40, 58)
+		end
+	end
+
+	-- 4. Mid-Flank Groves & 3-Tier Terrace Skyline (17 segments/side)
+	for _, sideSign in ipairs({ -1, 1 }) do
+		for segIdx, seg in ipairs(segMap[sideSign]) do
+			local fz = seg.zCenter + rng:NextNumber(-7.5, 7.5)
+			local fx = sideSign * rng:NextNumber(26, 44)
+			if not isInIcePool(fx, fz, 2.0) and not isNearHero(fx, fz, 8.8) and not isNearCrate(fx, fz, 10.0) then
+				if rng:NextNumber() < 0.58 then
+					spawnAsset("Trees", pickNext("midTree", allTrees), CFrame.new(fx, 0, fz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.92, 1.2))
+				elseif rng:NextNumber() < 0.78 then
+					spawnAsset("IceCrystals", pickNext("midCrys", allCrystals), CFrame.new(fx, 0, fz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.92, 1.22))
+				else
+					spawnAsset("Rocks", pickNext("midRock", allRocks), CFrame.new(fx, 0, fz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.88, 1.18))
+				end
+				spawnWinterCluster(fx, 0, fz, sideSign, segIdx % 2 == 0)
+			elseif rng:NextNumber() < 0.5 then
+				local fxAlt = sideSign * rng:NextNumber(22.5, 26)
+				if not isInIcePool(fxAlt, fz, 1.0) and not isNearHero(fxAlt, fz, 7.5) and not isNearCrate(fxAlt, fz, 5.5) then
+					spawnWinterCluster(fxAlt, 0, fz, sideSign, segIdx % 2 == 1)
+				end
 			end
 
-			-- Tier 1..3 Snowy Pines & Ice Spires
-			local t1 = trees[rng:NextInteger(1, #trees)]
-			placeDecorModel(t1(CFrame.new(seg.t1X, seg.t1Y, seg.zCenter + rng:NextNumber(-6, 6)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), randTreeScale(rng), propsFolder), propsFolder)
-			local t2 = if i % 5 == 0 then builder.BuildGiantIceCrystalSpire else trees[rng:NextInteger(1, #trees)]
-			placeDecorModel(t2(CFrame.new(seg.t2X, seg.t2Y, seg.zCenter + rng:NextNumber(-6, 6)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), randTreeScale(rng) * 1.15, propsFolder), propsFolder)
-			if i % 2 == 1 then
-				local t3 = trees[rng:NextInteger(1, #trees)]
-				placeDecorModel(t3(CFrame.new(seg.t3X, seg.t3Y, seg.zCenter + rng:NextNumber(-6, 6)), randTreeScale(rng) * 1.3, propsFolder), propsFolder)
+			-- Tier 1..3 Skyline (avoiding TerraceWaterfall chutes at segIdx == 5/-1 and segIdx == 12/1)
+			local onChute = (sideSign == -1 and segIdx == 5) or (sideSign == 1 and segIdx == 12)
+			if not onChute then
+				spawnAsset("Trees", pickNext("t1Tree", allTrees), CFrame.new(seg.t1X, seg.t1Y, seg.zCenter + rng:NextNumber(-6.5, 6.5)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.92, 1.22))
+				if segIdx % 2 == 1 then
+					spawnAsset("Bushes", pickNext("t1Bush", allBushes), CFrame.new(seg.t1X - sideSign * rng:NextNumber(2.8, 5.0), seg.t1Y, seg.zCenter + rng:NextNumber(-6, 6)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.88, 1.16))
+				end
+
+				if segIdx % 5 == 0 then
+					spawnAsset("IceCrystals", "LargeCrystalFormation", CFrame.new(seg.t2X, seg.t2Y, seg.zCenter + rng:NextNumber(-5, 5)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(1.05, 1.24))
+				elseif segIdx % 4 == 2 then
+					spawnAsset("Ruins", "AncientFrozenStoneArch", CFrame.new(seg.t2X, seg.t2Y, seg.zCenter + rng:NextNumber(-5, 5)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(1.02, 1.18))
+				else
+					spawnAsset("Trees", pickNext("t2Tree", allTrees), CFrame.new(seg.t2X, seg.t2Y, seg.zCenter + rng:NextNumber(-6.5, 6.5)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(1.02, 1.26))
+				end
+			end
+
+			if segIdx % 3 == 1 then
+				spawnAsset("Rocks", pickNext("t2Rock", allRocks), CFrame.new(seg.t2X - sideSign * 4.0, seg.t2Y, seg.zCenter + rng:NextNumber(-5, 5)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.95, 1.24))
+			end
+
+			if segIdx % 3 == 0 then
+				spawnAsset("Rocks", "FrozenCliffRocks", CFrame.new(seg.t3X, seg.t3Y, seg.zCenter + rng:NextNumber(-6, 6)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(1.06, 1.28))
+			elseif segIdx % 2 == 1 then
+				spawnAsset("Trees", pickNext("t3Tree", allTrees), CFrame.new(seg.t3X, seg.t3Y, seg.zCenter + rng:NextNumber(-6, 6)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(1.12, 1.32))
+			else
+				spawnAsset("TerrainProps", "SnowMounds", CFrame.new(seg.t3X, seg.t3Y, seg.zCenter + rng:NextNumber(-6, 6)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(1.06, 1.26))
+			end
+
+			if segIdx % 2 == 0 then
+				task.wait()
 			end
 		end
 	end
@@ -2024,6 +2283,15 @@ function BlockyMapBiomeGenerator.RebuildSavannaCampDecor(worldFolder: Folder, bu
 	dbab.EnsureLibrary()
 	return rebuildSingleBiomeDecor(worldFolder, 3, builderOverride, function(propsFolder, biome, segMap, builder, rng, crates)
 		populateSavannaCampDecor(propsFolder, biome, segMap, builder, rng, crates, dbab)
+	end)
+end
+
+-- Rebuilds ONLY AlpinePeaks.CuratedDecor in-place without disturbing BlockyTerrain, CrateSpawns, PoacherPatrol, Biomes 1/2/3/5, or SkyIslands.
+function BlockyMapBiomeGenerator.RebuildAlpinePeaksDecor(worldFolder: Folder, builderOverride: any?, winterBuilderOverride: any?): Folder
+	local wbab = winterBuilderOverride or WinterBiomeAssetBuilder
+	wbab.EnsureLibrary()
+	return rebuildSingleBiomeDecor(worldFolder, 4, builderOverride, function(propsFolder, biome, segMap, builder, rng, crates)
+		populateAlpinePeaksDecor(propsFolder, biome, segMap, builder, rng, crates, wbab)
 	end)
 end
 
