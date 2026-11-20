@@ -819,17 +819,45 @@ Remotes.Get("PlayWorldVFX").OnClientEvent:Connect(function(vfxType, data)
 	end
 end)
 
+-- Instant local toggle (settings UI sets these attrs) so pets show/hide without waiting for the server round-trip.
+local PET_VIEW_KEYS = { "hideOwnAnimals", "hideOtherAnimals" }
+local function overrideAttr(key: string): string
+	return "LocalOverride_" .. key
+end
+
 Remotes.Get("ProfileSync").OnClientEvent:Connect(function(profile)
 	if type(profile) == "table" and type(profile.settings) == "table" then
-		local changed = (currentSettings.hideOtherAnimals ~= profile.settings.hideOtherAnimals)
-			or (currentSettings.hideOwnAnimals ~= profile.settings.hideOwnAnimals)
-			or (currentSettings.lowVFX ~= profile.settings.lowVFX)
-		currentSettings = profile.settings
+		local merged = table.clone(profile.settings)
+		for _, key in ipairs(PET_VIEW_KEYS) do
+			local ov = localPlayer:GetAttribute(overrideAttr(key))
+			if type(ov) == "boolean" then
+				if merged[key] == ov then
+					localPlayer:SetAttribute(overrideAttr(key), nil) -- server caught up
+				else
+					merged[key] = ov -- stale sync in flight, keep what the player just chose
+				end
+			end
+		end
+		local changed = (currentSettings.hideOtherAnimals ~= merged.hideOtherAnimals)
+			or (currentSettings.hideOwnAnimals ~= merged.hideOwnAnimals)
+			or (currentSettings.lowVFX ~= merged.lowVFX)
+		currentSettings = merged
 		if changed then
 			rebuildEntities(true)
 		end
 	end
 end)
+
+for _, key in ipairs(PET_VIEW_KEYS) do
+	localPlayer:GetAttributeChangedSignal(overrideAttr(key)):Connect(function()
+		local ov = localPlayer:GetAttribute(overrideAttr(key))
+		if type(ov) == "boolean" and (currentSettings :: any)[key] ~= ov then
+			currentSettings = table.clone(currentSettings)
+			;(currentSettings :: any)[key] = ov
+			rebuildEntities(true)
+		end
+	end)
+end
 
 Workspace:GetAttributeChangedSignal("TitanicZooActive"):Connect(function()
 	rebuildEntities(true)

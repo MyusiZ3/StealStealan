@@ -5120,18 +5120,28 @@ makeWindowHeader(settingsWindow, "Settings", Color3.fromRGB(236, 240, 246), Colo
 	openModal(nil)
 end)
 
-local settingsBody = Instance.new("Frame")
+local settingsBody = Instance.new("ScrollingFrame")
+settingsBody.Name = "SettingsScroll"
 settingsBody.Size = UDim2.new(1, -24, 1, -64)
 settingsBody.Position = UDim2.fromOffset(12, 54)
 settingsBody.BackgroundColor3 = Color3.fromRGB(24, 26, 30)
+settingsBody.BorderSizePixel = 0
+settingsBody.ScrollBarThickness = 8
+settingsBody.ScrollBarImageColor3 = Color3.fromRGB(190, 196, 210)
+settingsBody.ScrollingDirection = Enum.ScrollingDirection.Y
+settingsBody.CanvasSize = UDim2.fromOffset(0, 0)
+settingsBody.AutomaticCanvasSize = Enum.AutomaticSize.Y
+settingsBody.ClipsDescendants = true
 settingsBody.Parent = settingsWindow
 makeCorner(settingsBody, 8)
 local sbLayout = Instance.new("UIListLayout")
 sbLayout.Padding = UDim.new(0, 8)
 sbLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+sbLayout.SortOrder = Enum.SortOrder.LayoutOrder
 sbLayout.Parent = settingsBody
 local sbPad = Instance.new("UIPadding")
 sbPad.PaddingTop = UDim.new(0, 8)
+sbPad.PaddingBottom = UDim.new(0, 12)
 sbPad.Parent = settingsBody
 
 local function renderSettingsModal()
@@ -5222,11 +5232,24 @@ local function renderSettingsModal()
 	addSliderRow("SFX", "Sfx Volume!", if s.sfxEnabled then s.sfxVolume else 0, function(val)
 		Remotes.Get("UpdateSettings"):FireServer({ sfxEnabled = val > 0.02, sfxVolume = val })
 	end)
+	-- Optimistic toggle: update local profile + UI instantly, then tell server (no wait for ProfileSync round-trip)
+	local function flipSetting(key: string, invert: boolean?)
+		playClickSFX()
+		if not profile or type(profile.settings) ~= "table" then return end
+		local cur = (profile.settings :: any)[key] == true
+		local nextVal = not cur
+		;(profile.settings :: any)[key] = nextVal
+		if key == "hideOwnAnimals" or key == "hideOtherAnimals" then
+			localPlayer:SetAttribute("LocalOverride_" .. key, nextVal)
+		end
+		Remotes.Get("UpdateSettings"):FireServer({ [key] = nextVal })
+		renderSettingsModal()
+	end
 	addSwitchRow("View others Pets", not s.hideOtherAnimals, function()
-		Remotes.Get("UpdateSettings"):FireServer({ hideOtherAnimals = not s.hideOtherAnimals })
+		flipSetting("hideOtherAnimals")
 	end)
 	addSwitchRow("View my Pets", not s.hideOwnAnimals, function()
-		Remotes.Get("UpdateSettings"):FireServer({ hideOwnAnimals = not s.hideOwnAnimals })
+		flipSetting("hideOwnAnimals")
 	end)
 	addSwitchRow("View my Crates", viewCratesEnabled, function()
 		playClickSFX()
@@ -5237,7 +5260,7 @@ local function renderSettingsModal()
 	local cutsceneOn = ((s :: any).hatchCutsceneEnabled ~= false)
 	addSwitchRow("Hatch Cutscene (Epic+)", cutsceneOn, function()
 		playClickSFX()
-		local nextVal = not cutsceneOn
+		local nextVal = not (profile and type(profile.settings) == "table" and (profile.settings :: any).hatchCutsceneEnabled ~= false)
 		if profile and type(profile.settings) == "table" then
 			(profile.settings :: any).hatchCutsceneEnabled = nextVal
 		end
