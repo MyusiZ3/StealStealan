@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BiomeConfig = require(ReplicatedStorage.Config.BiomeConfig)
 local DefaultBuilder = require(ReplicatedStorage.Modules.ClassicStudBiomeBuilder)
+local JungleBiomeAssetBuilder = require(ReplicatedStorage.Modules.JungleBiomeAssetBuilder)
 
 local BlockyMapBiomeGenerator = {}
 
@@ -516,70 +517,366 @@ end
 -- BIOME-SPECIFIC DENSE FOREGROUND / MIDGROUND / TERRACE COMPOSITION
 -- ============================================================================
 
-local function populatePineWoodsDecor(propsFolder: Folder, biome: any, segMap: { [number]: { TerraceSeg } }, builder: any, rng: Random)
-	local lenZ = biome.zEnd - biome.zStart
+local function collectPineWoodsCrates(biomeModel: Instance?, biome: any, fallbackRng: Random?): { Vector3 }
+	local coords: { Vector3 } = {}
+	if biomeModel then
+		local cs = biomeModel:FindFirstChild("CrateSpawns")
+		if cs then
+			for _, ch in ipairs(cs:GetChildren()) do
+				if ch:IsA("BasePart") then
+					table.insert(coords, ch.Position)
+				end
+			end
+		end
+	end
+	if #coords == 0 then
+		-- Exact deterministic coordinates generated for PineWoods CrateSpawns
+		local lenZ = biome.zEnd - biome.zStart
+		local detRng = fallbackRng or Random.new(42069)
+		table.insert(coords, Vector3.new(10, 0.25, 174))
+		for s = 1, 11 do
+			local side = if s % 2 == 0 then 1 else -1
+			local sx = side * detRng:NextNumber(20, 46)
+			local sz = biome.zStart + 30 + ((s - 1) / 10) * (lenZ - 65)
+			table.insert(coords, Vector3.new(sx, 0.2, sz))
+		end
+	end
+	return coords
+end
 
-	-- Horizon Archway framing entry
+local function populatePineWoodsDecor(
+	propsFolder: Folder,
+	biome: any,
+	segMap: { [number]: { TerraceSeg } },
+	builder: any,
+	rng: Random,
+	crateCoordsOverride: { Vector3 }?,
+	assetBuilderOverride: any?
+)
+	local jbab = assetBuilderOverride or JungleBiomeAssetBuilder
+	jbab.EnsureLibrary()
+
+	local lenZ = biome.zEnd - biome.zStart
+	local crateCoords = crateCoordsOverride or collectPineWoodsCrates(propsFolder.Parent, biome)
+
+	-- Horizon Archway framing biome entry
 	placeDecorModel(builder.BuildBiomeHorizonArchway(CFrame.new(0, 0.25, biome.zStart + 10), 1.0, propsFolder, "PineWoods"), propsFolder)
 
-	-- Hero Left: Forest Watchtower + Ranger Campsite (placed neatly on flat left pocket)
-	local towerZ = biome.zStart + lenZ * 0.34
-	placeDecorModel(builder.BuildVoxelWatchtower(CFrame.new(-35, 0, towerZ) * CFrame.Angles(0, math.rad(15), 0), 1.35, propsFolder, "Forest"), propsFolder)
-	placeDecorModel(builder.BuildTreeStump(CFrame.new(-42, 0, towerZ + 14), 1.15, propsFolder), propsFolder)
-	placeDecorModel(builder.BuildFallenHollowLog(CFrame.new(-32, 0, towerZ + 18) * CFrame.Angles(0, 0.4, 0), 1.15, propsFolder), propsFolder)
-
-	-- Hero Right: Stream, Small Arched Wood Bridge & Grove
-	local streamZ = biome.zStart + lenZ * 0.62
-	placeDecorModel(builder.BuildForestStreamAndBridge(CFrame.new(36, 0.05, streamZ) * CFrame.Angles(0, math.rad(90), 0), 1.32, propsFolder), propsFolder)
-	placeDecorModel(builder.BuildLushVoxelTreeWithVines(CFrame.new(44, 0, streamZ - 26), 1.38, propsFolder), propsFolder)
-
-	-- Roadside Foreground: Wood Fences + Glowing Lanterns & Wildflowers every ~44 studs
-	for z = biome.zStart + 26, biome.zEnd - 22, 44 do
-		placeDecorModel(builder.BuildVoxelFenceWithLantern(CFrame.new(-20.5, 0.25, z) * CFrame.Angles(0, math.rad(90), 0), 0.92, propsFolder), propsFolder)
-		placeDecorModel(builder.BuildVoxelFenceWithLantern(CFrame.new(20.5, 0.25, z + 22) * CFrame.Angles(0, math.rad(90), 0), 0.92, propsFolder), propsFolder)
-		placeDecorModel(builder.BuildWildflowerPatch(CFrame.new(-24, 0, z + 10) * CFrame.Angles(0, rng:NextNumber(0, 6), 0), randFloraScale(rng), propsFolder), propsFolder)
-		placeDecorModel(builder.BuildWildflowerPatch(CFrame.new(24, 0, z - 6) * CFrame.Angles(0, rng:NextNumber(0, 6), 0), randFloraScale(rng), propsFolder), propsFolder)
+	local function isNearCrate(x: number, z: number, minDist: number): boolean
+		local minSq = minDist * minDist
+		for _, c in ipairs(crateCoords) do
+			local dx = x - c.X
+			local dz = z - c.Z
+			if dx * dx + dz * dz < minSq then
+				return true
+			end
+		end
+		return false
 	end
 
-	-- Midground & Upper Terrace Dense Vegetation
-	local trees = { builder.BuildLushVoxelTreeWithVines, builder.BuildPineTreeTall, builder.BuildPineTreeTwin, builder.BuildOakTreeBroad, builder.BuildBirchTreeForest }
-	local flora = { builder.BuildWildflowerPatch, builder.BuildBerryBush, builder.BuildFernCluster, builder.BuildGrassTuftCluster, builder.BuildMushroomCluster }
-	local props = { builder.BuildMossyBoulder, builder.BuildRockCluster, builder.BuildTreeStump, builder.BuildFallenHollowLog }
+	local heroSpots: { Vector3 } = {}
+	local function isNearHero(x: number, z: number, minDist: number): boolean
+		local minSq = minDist * minDist
+		for _, h in ipairs(heroSpots) do
+			local dx = x - h.X
+			local dz = z - h.Z
+			if dx * dx + dz * dz < minSq then
+				return true
+			end
+		end
+		return false
+	end
 
+	local function findSafeGroundX(prefX: number, z: number, sideSign: number, minCrateDist: number): number?
+		for _, shift in ipairs({ 0, -4 * sideSign, 4 * sideSign, -8 * sideSign, 8 * sideSign }) do
+			local candX = math.clamp(math.abs(prefX + shift), 22, 47) * sideSign
+			if not isNearCrate(candX, z, minCrateDist) and not isNearHero(candX, z, 9.5) then
+				return candX
+			end
+		end
+		return nil
+	end
+
+	local function spawnAsset(category: string, assetName: string, cframe: CFrame, scale: number?): Model
+		return jbab.SpawnFromLibrary(category, assetName, cframe, scale, propsFolder)
+	end
+
+	local giantTreeNames = {
+		"GiantJungleTree_CanopyArch",
+		"GiantJungleTree_TwinFork",
+		"GiantJungleTree_AncientBanyan",
+		"GiantJungleTree_LayeredPine",
+		"GiantJungleTree_OverhangLimb",
+	}
+	local smallTreeNames = {
+		"SmallJungleTree_Broadleaf",
+		"SmallJungleTree_TropicalPalm",
+		"SmallJungleTree_SplitUmbrella",
+		"SmallJungleTree_SteppedCanopy",
+		"SmallJungleTree_SpruceSapling",
+	}
+	local bushNames = {
+		"Bush_DenseBlocky",
+		"Bush_UprightBerry",
+		"Bush_PinkBlossom",
+		"Bush_RedBlossom",
+		"Bush_PurpleBlossom",
+		"Bush_WideLowThicket",
+	}
+	local plantNames = {
+		"Plant_TallGrassTuft",
+		"Plant_BroadBananaLeaf",
+		"Plant_LushJungleFern",
+		"Plant_SpireSapling",
+		"Plant_TropicalReeds",
+		"Plant_SpreadingLowFern",
+		"Plant_BroadMonstera",
+		"Plant_MossyCloverPatch",
+	}
+	local flowerNames = {
+		"Flower_BlueVioletStalks",
+		"Flower_RedOrangeCluster",
+		"Flower_PurpleLavenderDuo",
+		"Flower_SunnyWildflowerMix",
+		"Flower_TropicalOrchidPatch",
+	}
+	local rockNames = {
+		"Rock_TallMossyBoulder",
+		"Rock_MediumMossyMound",
+		"Rock_LowFlatMossStone",
+		"Rock_LayeredMonolith",
+		"Rock_CobbleScatterCluster",
+		"Rock_SteppedCliffOutcrop",
+	}
+	local mushroomNames = {
+		"Mushroom_RedSpottedTrio",
+		"Mushroom_GiantRedToadstool",
+		"Mushroom_BrownShelfCluster",
+		"Mushroom_GlowJungleShrooms",
+	}
+	local rootNames = {
+		"TreeRoot_GiantArch",
+		"TreeRoot_TwistedSprawl",
+		"TreeRoot_MossyButtress",
+		"TreeRoot_ExposedKnuckle",
+	}
+	local logNames = {
+		"FallenLog_HollowMossy",
+		"FallenLog_SplitTimber",
+		"FallenLog_VineBridge",
+	}
+	local lanternNames = {
+		"Lantern_OverhangArmPost",
+		"Lantern_StandingPathPost",
+		"Lantern_FencePostLamp",
+	}
+
+	local cursors: { [string]: number } = {}
+	local function pickNext(key: string, list: { string }): string
+		local idx = ((cursors[key] or 0) % #list) + 1
+		cursors[key] = idx
+		return list[idx]
+	end
+
+	local function spawnNaturalCluster(cx: number, cy: number, cz: number, sideSign: number, includeShroom: boolean)
+		local bushCount = rng:NextInteger(1, 2)
+		for _ = 1, bushCount do
+			local bx = cx + rng:NextNumber(-4.2, 4.2)
+			local bz = cz + rng:NextNumber(-4.2, 4.2)
+			if math.abs(bx) >= 21 and math.abs(bx) <= 49 and not isNearCrate(bx, bz, 5.2) then
+				spawnAsset("Bushes", pickNext("bush", bushNames), CFrame.new(bx, cy, bz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.82, 1.24))
+			end
+		end
+		local plantCount = rng:NextInteger(1, 2)
+		for _ = 1, plantCount do
+			local px = cx + rng:NextNumber(-4.6, 4.6)
+			local pz = cz + rng:NextNumber(-4.6, 4.6)
+			if math.abs(px) >= 20.5 and math.abs(px) <= 49 and not isNearCrate(px, pz, 4.5) then
+				spawnAsset("Plants", pickNext("plant", plantNames), CFrame.new(px, cy, pz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.84, 1.28))
+			end
+		end
+		local fx = cx + rng:NextNumber(-3.6, 3.6)
+		local fz = cz + rng:NextNumber(-3.6, 3.6)
+		if math.abs(fx) >= 20.5 and math.abs(fx) <= 49 and not isNearCrate(fx, fz, 4.5) then
+			if includeShroom then
+				spawnAsset("Mushrooms", pickNext("shroom", mushroomNames), CFrame.new(fx, cy, fz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.88, 1.25))
+			else
+				spawnAsset("Flowers", pickNext("flower", flowerNames), CFrame.new(fx, cy, fz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.88, 1.24))
+			end
+		end
+		if rng:NextNumber() < 0.45 then
+			local rx = cx - sideSign * rng:NextNumber(1.6, 3.8)
+			local rz = cz + rng:NextNumber(-3.4, 3.4)
+			if math.abs(rx) >= 22 and math.abs(rx) <= 48 and not isNearCrate(rx, rz, 5.5) then
+				spawnAsset("Rocks", pickNext("rock", rockNames), CFrame.new(rx, cy, rz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.75, 1.15))
+			end
+		end
+	end
+
+	-- 1. Hero WaterFeatures (Ponds & Animated Mini Waterfalls) nestled in clearings facing road
+	local waterPlacements = {
+		{ name = "WaterFeature_MiniWaterfallPond", x = -38, z = biome.zStart + 104, sc = 1.12, side = -1 },
+		{ name = "WaterFeature_CascadeRockBasin", x = 38, z = biome.zStart + 126, sc = 1.10, side = 1 },
+		{ name = "WaterFeature_MiniWaterfallPond", x = 37, z = biome.zStart + 214, sc = 1.14, side = 1 },
+		{ name = "WaterFeature_LilyPadPond", x = 36, z = biome.zStart + 40, sc = 1.08, side = 1 },
+		{ name = "WaterFeature_StoneLotusPool", x = -36, z = biome.zStart + 154, sc = 1.08, side = -1 },
+		{ name = "WaterFeature_LilyPadPond", x = -37, z = biome.zStart + 250, sc = 1.05, side = -1 },
+	}
+	for _, wp in ipairs(waterPlacements) do
+		local gx = findSafeGroundX(wp.x, wp.z, wp.side, 10.5)
+		if gx then
+			local yaw = math.rad(-wp.side * 76)
+			spawnAsset("WaterFeatures", wp.name, CFrame.new(gx, 0, wp.z) * CFrame.Angles(0, yaw, 0), wp.sc)
+			table.insert(heroSpots, Vector3.new(gx, 0, wp.z))
+			spawnNaturalCluster(gx, 0, wp.z, wp.side, false)
+		end
+	end
+
+	-- 2. Ancient Mossy Stone Ruins (All 3 Ruin variants placed along asymmetric clearings)
+	local ruinPlacements = {
+		{ name = "Ruin_MossyStoneArchway", x = -36, z = biome.zStart + 52, yawDeg = 24, sc = 1.15, side = -1 },
+		{ name = "Ruin_BrokenArchWall", x = 36, z = biome.zStart + 92, yawDeg = -22, sc = 1.12, side = 1 },
+		{ name = "Ruin_PillarAndPawBanner", x = -30, z = biome.zStart + 126, yawDeg = 76, sc = 1.05, side = -1 },
+		{ name = "Ruin_MossyStoneArchway", x = 37, z = biome.zStart + 190, yawDeg = -20, sc = 1.12, side = 1 },
+		{ name = "Ruin_BrokenArchWall", x = -37, z = biome.zStart + 228, yawDeg = 18, sc = 1.10, side = -1 },
+		{ name = "Ruin_PillarAndPawBanner", x = 31, z = biome.zStart + 262, yawDeg = -82, sc = 1.05, side = 1 },
+	}
+	for _, rp in ipairs(ruinPlacements) do
+		local gx = findSafeGroundX(rp.x, rp.z, rp.side, 10.5)
+		if gx then
+			spawnAsset("Ruins", rp.name, CFrame.new(gx, 0, rp.z) * CFrame.Angles(0, math.rad(rp.yawDeg), 0), rp.sc)
+			table.insert(heroSpots, Vector3.new(gx, 0, rp.z))
+			spawnNaturalCluster(gx, 0, rp.z, rp.side, true)
+		end
+	end
+
+	-- 3. Giant Jungle Tree Side Landmarks + Flanked Tree Roots & Fallen Logs
+	local giantLandmarks = {
+		{ name = "GiantJungleTree_CanopyArch", x = -43, z = biome.zStart + 36, sc = 1.38, side = -1 },
+		{ name = "GiantJungleTree_AncientBanyan", x = 44, z = biome.zStart + 62, sc = 1.32, side = 1 },
+		{ name = "GiantJungleTree_LayeredPine", x = -42, z = biome.zStart + 100, sc = 1.34, side = -1 },
+		{ name = "GiantJungleTree_TwinFork", x = 43, z = biome.zStart + 146, sc = 1.35, side = 1 },
+		{ name = "GiantJungleTree_OverhangLimb", x = -43, z = biome.zStart + 190, sc = 1.34, side = -1 },
+		{ name = "GiantJungleTree_CanopyArch", x = 43, z = biome.zStart + 224, sc = 1.38, side = 1 },
+		{ name = "GiantJungleTree_AncientBanyan", x = -42, z = biome.zStart + 264, sc = 1.28, side = -1 },
+		{ name = "GiantJungleTree_LayeredPine", x = 43, z = biome.zStart + 278, sc = 1.30, side = 1 },
+	}
+	for idx, gt in ipairs(giantLandmarks) do
+		local gx = findSafeGroundX(gt.x, gt.z, gt.side, 10.5)
+		if gx then
+			local yaw = rng:NextNumber(0, 6.28)
+			spawnAsset("Trees", gt.name, CFrame.new(gx, 0, gt.z) * CFrame.Angles(0, yaw, 0), gt.sc)
+			table.insert(heroSpots, Vector3.new(gx, 0, gt.z))
+			local rootZ = gt.z + (if idx % 2 == 0 then -4.2 else 4.2)
+			local rootX = gx - gt.side * 3.6
+			if math.abs(rootX) >= 22 and not isNearCrate(rootX, rootZ, 6.5) then
+				spawnAsset("Decorations", pickNext("root", rootNames), CFrame.new(rootX, 0, rootZ) * CFrame.Angles(0, yaw + 0.6, 0), rng:NextNumber(0.92, 1.18))
+			end
+			spawnNaturalCluster(gx - gt.side * 2.5, 0, gt.z, gt.side, idx % 2 == 1)
+		end
+	end
+
+	-- Fallen Logs tucked naturally in forest glades
+	for idx, lg in ipairs({
+		{ x = -32, z = biome.zStart + 48, side = -1, name = "FallenLog_HollowMossy" },
+		{ x = 31, z = biome.zStart + 114, side = 1, name = "FallenLog_SplitTimber" },
+		{ x = -33, z = biome.zStart + 174, side = -1, name = "FallenLog_VineBridge" },
+		{ x = 33, z = biome.zStart + 244, side = 1, name = "FallenLog_HollowMossy" },
+	}) do
+		local gx = findSafeGroundX(lg.x, lg.z, lg.side, 7.2)
+		if gx then
+			spawnAsset("Decorations", lg.name, CFrame.new(gx, 0, lg.z) * CFrame.Angles(0, rng:NextNumber(-0.8, 0.8), 0), rng:NextNumber(0.95, 1.15))
+			table.insert(heroSpots, Vector3.new(gx, 0, lg.z))
+			if idx % 2 == 1 then
+				spawnAsset("Mushrooms", pickNext("shroom", mushroomNames), CFrame.new(gx - lg.side * 2.4, 0, lg.z + 2.0), rng:NextNumber(0.95, 1.25))
+			end
+		end
+	end
+
+	-- 4. Asymmetric Non-Uniform Roadside Lanterns & Flora Pockets (X = +/- 21.0..23.5)
 	for _, sideSign in ipairs({ -1, 1 }) do
-		for _, seg in ipairs(segMap[sideSign]) do
-			-- Avoid crowding hero structures directly
-			local skipHeroL = (sideSign == -1 and math.abs(seg.zCenter - towerZ) < 18)
-			local skipHeroR = (sideSign == 1 and math.abs(seg.zCenter - streamZ) < 18)
+		local z = biome.zStart + rng:NextNumber(22, 30)
+		while z <= biome.zEnd - 20 do
+			local lx = sideSign * 21.4
+			local placeZ = z
+			if isNearCrate(lx, placeZ, 6.2) then
+				placeZ += 8.5
+			end
+			if placeZ <= biome.zEnd - 18 and not isNearCrate(lx, placeZ, 6.2) then
+				local lName = pickNext("lantern_" .. tostring(sideSign), lanternNames)
+				local yaw = if lName == "Lantern_FencePostLamp"
+					then (if sideSign == -1 then 0 else math.pi)
+					elseif lName == "Lantern_OverhangArmPost" then (if sideSign == -1 then 0 else math.pi)
+					else rng:NextNumber(0, 6.28)
+				spawnAsset("Decorations", lName, CFrame.new(lx, 0.2, placeZ) * CFrame.Angles(0, yaw, 0), rng:NextNumber(0.88, 0.98))
 
-			if not skipHeroL and not skipHeroR then
-				local fx = sideSign * rng:NextNumber(26, 46)
-				local fz = seg.zCenter + rng:NextNumber(-8, 8)
-				if rng:NextNumber() < 0.65 then
-					local tFn = trees[rng:NextInteger(1, #trees)]
-					placeDecorModel(tFn(CFrame.new(fx, 0, fz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), randTreeScale(rng), propsFolder), propsFolder)
-				else
-					local pFn = props[rng:NextInteger(1, #props)]
-					placeDecorModel(pFn(CFrame.new(fx, 0, fz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), randRockScale(rng), propsFolder), propsFolder)
+				local pocketX = sideSign * rng:NextNumber(23.5, 26.0)
+				if not isNearCrate(pocketX, placeZ + 3.2, 5.2) then
+					spawnAsset("Plants", pickNext("plant", plantNames), CFrame.new(pocketX, 0, placeZ + 3.2) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.88, 1.2))
 				end
-				local flFn = flora[rng:NextInteger(1, #flora)]
-				placeDecorModel(flFn(CFrame.new(sideSign * rng:NextNumber(22, 47), 0, seg.zCenter + rng:NextNumber(-9, 9)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), randFloraScale(rng), propsFolder), propsFolder)
+				if not isNearCrate(pocketX, placeZ - 3.6, 5.2) then
+					local pickFlora = if rng:NextNumber() < 0.65 then "Flowers" else "Bushes"
+					local fName = if pickFlora == "Flowers" then pickNext("flower", flowerNames) else pickNext("bush", bushNames)
+					spawnAsset(pickFlora, fName, CFrame.new(pocketX, 0, placeZ - 3.6) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.85, 1.18))
+				end
+			end
+			z += rng:NextNumber(34, 52)
+		end
+	end
+
+	-- 5. Organic Mid-Flank Small Trees & Stepped 3-Tier Skyline Canopies
+	for _, sideSign in ipairs({ -1, 1 }) do
+		for segIdx, seg in ipairs(segMap[sideSign]) do
+			-- Playable mid-flank natural clusters (with glade breathing gaps)
+			local fz = seg.zCenter + rng:NextNumber(-7.5, 7.5)
+			local fx = sideSign * rng:NextNumber(27, 45)
+			if not isNearHero(fx, fz, 9.5) and not isNearCrate(fx, fz, 7.2) then
+				if rng:NextNumber() < 0.72 then
+					local treeName = pickNext("smallTree", smallTreeNames)
+					spawnAsset("Trees", treeName, CFrame.new(fx, 0, fz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.92, 1.32))
+					spawnNaturalCluster(fx, 0, fz, sideSign, segIdx % 3 == 0)
+				else
+					spawnAsset("Rocks", pickNext("rock", rockNames), CFrame.new(fx, 0, fz) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.85, 1.32))
+					spawnNaturalCluster(fx, 0, fz, sideSign, true)
+				end
+			elseif rng:NextNumber() < 0.55 then
+				local fxAlt = sideSign * rng:NextNumber(23, 28)
+				if not isNearHero(fxAlt, fz, 7.5) and not isNearCrate(fxAlt, fz, 5.5) then
+					spawnNaturalCluster(fxAlt, 0, fz, sideSign, false)
+				end
 			end
 
-			-- Tier 1 Top Dressing (grounded strictly at seg.t1Y)
-			if rng:NextNumber() < 0.85 then
-				local tFn1 = trees[rng:NextInteger(1, #trees)]
-				placeDecorModel(tFn1(CFrame.new(seg.t1X, seg.t1Y, seg.zCenter + rng:NextNumber(-7, 7)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), randTreeScale(rng) * 0.9, propsFolder), propsFolder)
+			-- Tier 1 Top Dressing (strictly grounded at seg.t1Y)
+			local t1z = seg.zCenter + rng:NextNumber(-6.5, 6.5)
+			if segIdx % 4 == 2 then
+				local gt1 = pickNext("giantTier", giantTreeNames)
+				spawnAsset("Trees", gt1, CFrame.new(seg.t1X, seg.t1Y, t1z) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(1.12, 1.32))
+			elseif rng:NextNumber() < 0.85 then
+				local st1 = pickNext("smallT1", smallTreeNames)
+				spawnAsset("Trees", st1, CFrame.new(seg.t1X, seg.t1Y, t1z) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.88, 1.24))
 			end
-			local fl1 = flora[rng:NextInteger(1, #flora)]
-			placeDecorModel(fl1(CFrame.new(seg.t1X - sideSign * 3, seg.t1Y, seg.zCenter + rng:NextNumber(-7, 7)), randFloraScale(rng), propsFolder), propsFolder)
+			spawnAsset("Bushes", pickNext("bushT1", bushNames), CFrame.new(seg.t1X - sideSign * rng:NextNumber(2.8, 5.5), seg.t1Y, seg.zCenter + rng:NextNumber(-6, 6)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.85, 1.22))
+			if segIdx % 2 == 0 then
+				spawnAsset("Plants", pickNext("plantT1", plantNames), CFrame.new(seg.t1X - sideSign * 4.5, seg.t1Y, seg.zCenter + rng:NextNumber(-5, 5)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.9, 1.25))
+			end
 
-			-- Tier 2 & Tier 3 Background Skyline Trees (grounded at seg.t2Y / seg.t3Y)
-			local tFn2 = trees[rng:NextInteger(1, #trees)]
-			placeDecorModel(tFn2(CFrame.new(seg.t2X, seg.t2Y, seg.zCenter + rng:NextNumber(-8, 8)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), randTreeScale(rng) * 1.1, propsFolder), propsFolder)
+			-- Tier 2 Canopy & Boulders (strictly grounded at seg.t2Y)
+			local t2Name = if segIdx % 5 == 0 then pickNext("giantTier", giantTreeNames) else pickNext("smallT2", smallTreeNames)
+			spawnAsset("Trees", t2Name, CFrame.new(seg.t2X, seg.t2Y, seg.zCenter + rng:NextNumber(-7, 7)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(1.02, 1.35))
+			if segIdx % 3 == 1 then
+				spawnAsset("Rocks", pickNext("rockT2", rockNames), CFrame.new(seg.t2X - sideSign * 4, seg.t2Y, seg.zCenter + rng:NextNumber(-5, 5)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(0.95, 1.35))
+			end
 
-			local tFn3 = trees[rng:NextInteger(1, #trees)]
-			placeDecorModel(tFn3(CFrame.new(seg.t3X, seg.t3Y, seg.zCenter + rng:NextNumber(-8, 8)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), randTreeScale(rng) * 1.25, propsFolder), propsFolder)
+			-- Tier 3 Outer Skyline (strictly grounded at seg.t3Y)
+			if segIdx % 2 == 1 then
+				spawnAsset("Trees", pickNext("giantTier3", giantTreeNames), CFrame.new(seg.t3X, seg.t3Y, seg.zCenter + rng:NextNumber(-6, 6)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(1.18, 1.48))
+			else
+				spawnAsset("Trees", pickNext("smallT3", smallTreeNames), CFrame.new(seg.t3X, seg.t3Y, seg.zCenter + rng:NextNumber(-6, 6)) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), rng:NextNumber(1.08, 1.38))
+			end
+
+			if segIdx % 2 == 0 then
+				task.wait()
+			end
 		end
 	end
 end
@@ -1140,6 +1437,100 @@ function BlockyMapBiomeGenerator.Build(worldFolder: Folder, builderOverride: any
 	placeDecorModel(builder.BuildColossalHorizonVolcano(CFrame.new(0, -4, endZ + 85), 1.2, skyFolder), skyFolder)
 
 	return biomesFolder
+end
+
+-- Rebuilds ONLY PineWoods.CuratedDecor in-place without disturbing BlockyTerrain, CrateSpawns, PoacherPatrol, Biomes 2-5, or SkyIslands.
+function BlockyMapBiomeGenerator.RebuildPineWoodsDecor(worldFolder: Folder, builderOverride: any?, assetBuilderOverride: any?): Folder
+	local builder = builderOverride or DefaultBuilder
+	local jbab = assetBuilderOverride or JungleBiomeAssetBuilder
+	builder.EnsureClassicStudsVariant()
+	jbab.EnsureLibrary()
+
+	local biomesFolder = worldFolder:FindFirstChild("Biomes")
+	local biomeModel = if biomesFolder then biomesFolder:FindFirstChild("PineWoods") else nil
+	if not biomeModel then
+		error("[BlockyMapBiomeGenerator] Workspace.GameWorld.Biomes.PineWoods not found")
+	end
+
+	local pineBiome = BiomeConfig[1]
+	local terrainGroup = biomeModel:FindFirstChild("BlockyTerrain")
+	local propsFolder = biomeModel:FindFirstChild("CuratedDecor")
+	if not propsFolder or not propsFolder:IsA("Folder") then
+		propsFolder = Instance.new("Folder")
+		propsFolder.Name = "CuratedDecor"
+		propsFolder.Parent = biomeModel
+	end
+
+	-- Preserve TerraceWaterfall & WaterfallSplashFoam parts already in CuratedDecor
+	local preservedWaterfalls: { Instance } = {}
+	for _, ch in ipairs(propsFolder:GetChildren()) do
+		if ch.Name == "TerraceWaterfall" or ch.Name == "WaterfallSplashFoam" then
+			ch.Parent = nil
+			table.insert(preservedWaterfalls, ch)
+		end
+	end
+
+	-- Clear existing PineWoods decor in responsive chunks
+	local existingChildren = propsFolder:GetChildren()
+	for i, ch in ipairs(existingChildren) do
+		ch:Destroy()
+		if i % 60 == 0 then
+			task.wait()
+		end
+	end
+
+	for _, wf in ipairs(preservedWaterfalls) do
+		wf.Parent = propsFolder
+	end
+
+	-- Reconstruct live segMap from existing BlockyTerrain Terrace1/2/3_Cap parts
+	local segMap: { [number]: { TerraceSeg } } = { [-1] = {}, [1] = {} }
+	if terrainGroup then
+		local t1Caps: { [number]: { BasePart } } = { [-1] = {}, [1] = {} }
+		local t2Caps: { [number]: { BasePart } } = { [-1] = {}, [1] = {} }
+		local t3Caps: { [number]: { BasePart } } = { [-1] = {}, [1] = {} }
+		for _, ch in ipairs(terrainGroup:GetChildren()) do
+			if ch:IsA("BasePart") then
+				local side = if ch.Position.X < 0 then -1 else 1
+				if ch.Name == "Terrace1_Cap" then
+					table.insert(t1Caps[side], ch)
+				elseif ch.Name == "Terrace2_Cap" then
+					table.insert(t2Caps[side], ch)
+				elseif ch.Name == "Terrace3_Cap" then
+					table.insert(t3Caps[side], ch)
+				end
+			end
+		end
+		local function byZ(a: BasePart, b: BasePart): boolean
+			return a.Position.Z < b.Position.Z
+		end
+		for _, sideSign in ipairs({ -1, 1 }) do
+			table.sort(t1Caps[sideSign], byZ)
+			table.sort(t2Caps[sideSign], byZ)
+			table.sort(t3Caps[sideSign], byZ)
+			local count = math.min(#t1Caps[sideSign], #t2Caps[sideSign], #t3Caps[sideSign])
+			for i = 1, count do
+				local c1 = t1Caps[sideSign][i]
+				local c2 = t2Caps[sideSign][i]
+				local c3 = t3Caps[sideSign][i]
+				table.insert(segMap[sideSign], {
+					zCenter = c1.Position.Z,
+					t1X = c1.Position.X - sideSign * 3.7,
+					t1Y = c1.Position.Y + c1.Size.Y * 0.5,
+					t2X = c2.Position.X - sideSign * 2.7,
+					t2Y = c2.Position.Y + c2.Size.Y * 0.5,
+					t3X = c3.Position.X - sideSign * 5.6,
+					t3Y = c3.Position.Y + c3.Size.Y * 0.5,
+				})
+			end
+		end
+	end
+
+	local crateCoords = collectPineWoodsCrates(biomeModel, pineBiome)
+	local biomeRng = Random.new(pineBiome.order * 1000 + 42)
+	populatePineWoodsDecor(propsFolder :: Folder, pineBiome, segMap, builder, biomeRng, crateCoords, jbab)
+
+	return propsFolder :: Folder
 end
 
 return BlockyMapBiomeGenerator

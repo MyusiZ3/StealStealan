@@ -245,11 +245,50 @@ local function registerIsland(inst: Instance)
 	end)
 end
 
+local boundContainers: { [Instance]: boolean } = setmetatable({}, { __mode = "k" }) :: any
+
 local function bindSkyContainer(container: Instance)
+	if boundContainers[container] then
+		return
+	end
+	boundContainers[container] = true
 	for _, ch in ipairs(container:GetChildren()) do
 		registerIsland(ch)
 	end
 	container.ChildAdded:Connect(registerIsland)
+end
+
+local function bindBiomeFolder(biomeFolder: Instance)
+	if boundContainers[biomeFolder] then
+		return
+	end
+	boundContainers[biomeFolder] = true
+	local decor = biomeFolder:FindFirstChild("CuratedDecor")
+	if decor then
+		bindSkyContainer(decor)
+	end
+	biomeFolder.ChildAdded:Connect(function(ch)
+		if ch.Name == "CuratedDecor" then
+			bindSkyContainer(ch)
+		end
+	end)
+end
+
+local function bindBiomeContainer(biomesFolder: Instance)
+	if boundContainers[biomesFolder] then
+		return
+	end
+	boundContainers[biomesFolder] = true
+	for _, ch in ipairs(biomesFolder:GetChildren()) do
+		if ch:IsA("Folder") or ch:IsA("Model") then
+			bindBiomeFolder(ch)
+		end
+	end
+	biomesFolder.ChildAdded:Connect(function(ch)
+		if ch:IsA("Folder") or ch:IsA("Model") then
+			bindBiomeFolder(ch)
+		end
+	end)
 end
 
 task.spawn(function()
@@ -259,9 +298,15 @@ task.spawn(function()
 		if sky then
 			bindSkyContainer(sky)
 		end
+		local biomes = gw:FindFirstChild("Biomes")
+		if biomes then
+			bindBiomeContainer(biomes)
+		end
 		gw.ChildAdded:Connect(function(ch)
 			if ch.Name == "SkyIslands" then
 				bindSkyContainer(ch)
+			elseif ch.Name == "Biomes" then
+				bindBiomeContainer(ch)
 			end
 		end)
 	end
