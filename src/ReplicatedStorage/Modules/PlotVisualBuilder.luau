@@ -754,6 +754,14 @@ function PlotVisualBuilder.BuildPenFences(plotModel: Model, plotCF: CFrame, penL
 		end
 	end
 
+	-- Kandang tidak punya collider: semua part pagar/dekorasi tembus, kecuali lantai perluasan plot
+	for _, d in ipairs(folder:GetDescendants()) do
+		if d:IsA("BasePart") and d.Name ~= "PlotBaseRearExt" then
+			d.CanCollide = false
+			d.CanQuery = false
+		end
+	end
+
 	plotModel:SetAttribute("AppliedPenTier", tier)
 	plotModel:SetAttribute("AppliedPenLevel", lv)
 end
